@@ -13,6 +13,9 @@ mkdirSync(dbDir, { recursive: true });
 
 const sqlite = new Database(join(dbDir, "sqlite.db"), { create: true });
 
+// Enforce relational integrity for Drizzle foreign keys.
+sqlite.run("PRAGMA foreign_keys = ON;");
+
 // Enable WAL mode for better concurrent performance
 sqlite.run("PRAGMA journal_mode = WAL;");
 
