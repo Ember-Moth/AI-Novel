@@ -10,6 +10,7 @@ import {
   TreeNodePanel,
   type TreeRowContext,
 } from "@/features/project/components/nodes";
+import { actionAnchorId } from "@/features/project/model/action-error";
 import type { ContentTreeNodeVM } from "@/features/project/model/types";
 
 function ContentTreeNodeRow({
@@ -35,20 +36,24 @@ function ContentTreeNodeRow({
   onToggle: (_id: string) => void;
   onSelect: (_node: ContentTreeNodeVM) => void;
   onRename: (_nodeId: string, _title: string | null) => Promise<boolean>;
-  onCreateChild: (_node: ContentTreeNodeVM) => void;
-  onDelete: (_id: string) => void;
+  onCreateChild: (_node: ContentTreeNodeVM, _anchorId: string) => void;
+  onDelete: (_id: string, _anchorId: string) => void;
   timelineLabelMap: ReadonlyMap<string, string>;
   isBusy: boolean;
   canCreate: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const hasBody = node.body.trim().length > 0;
+  const rowAnchorId = actionAnchorId("content", "row", node.id);
+  const addChildAnchorId = actionAnchorId("content", "add-child", node.id);
+  const deleteAnchorId = actionAnchorId("content", "delete", node.id);
 
   return (
     <SidebarListRow
       depth={depth}
       isActive={isActive}
       group
+      anchorId={rowAnchorId}
       onClick={() => {
         onSelect(node);
         if (hasChildren && !isExpanded) {
@@ -79,13 +84,15 @@ function ContentTreeNodeRow({
       actions={
         <>
           <RowActionButton
-            onClick={() => onCreateChild(node)}
+            anchorId={addChildAnchorId}
+            onClick={() => onCreateChild(node, addChildAnchorId)}
             disabled={isBusy || isEditing || !canCreate}
             title="添加子节点"
             icon="icon-[material-symbols--add]"
           />
           <RowActionButton
-            onClick={() => onDelete(node.id)}
+            anchorId={deleteAnchorId}
+            onClick={() => onDelete(node.id, deleteAnchorId)}
             disabled={isBusy || isEditing}
             title="删除节点"
             icon="icon-[material-symbols--close]"
@@ -114,8 +121,8 @@ export function ContentTreePanel({
   onToggle: (_id: string) => void;
   onSelect: (_node: ContentTreeNodeVM) => void;
   onRename: (_nodeId: string, _title: string | null) => Promise<boolean>;
-  onCreateChild: (_node: ContentTreeNodeVM) => void;
-  onDelete: (_id: string) => void;
+  onCreateChild: (_node: ContentTreeNodeVM, _anchorId: string) => void;
+  onDelete: (_id: string, _anchorId: string) => void;
   activeId: string | null;
   timelineLabelMap: ReadonlyMap<string, string>;
   isBusy: boolean;

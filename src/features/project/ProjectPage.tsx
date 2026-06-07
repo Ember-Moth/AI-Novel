@@ -1,8 +1,11 @@
-import { ScopeProvider } from "bunshi/react";
+import { ScopeProvider, useMolecule } from "bunshi/react";
+import { useSetAtom } from "jotai";
 
+import { ActionErrorBubble } from "@/features/project/components/ActionErrorBubble";
 import { FullPageMessage } from "@/features/project/components/FullPageMessage";
 import { PanelPlaceholder } from "@/features/project/components/PanelPlaceholder";
 import { SidebarPanels } from "@/features/project/components/SidebarPanels";
+import { actionAnchorId, clearActionError } from "@/features/project/model/action-error";
 import { AuxTreePanel } from "@/features/project/panels/AuxTreePanel";
 import { ContentTreePanel } from "@/features/project/panels/ContentTreePanel";
 import { EditorArea } from "@/features/project/panels/EditorArea";
@@ -10,7 +13,14 @@ import { TimelinePanel } from "@/features/project/panels/TimelinePanel";
 import { useProjectActions } from "@/features/project/state/hooks/useProjectActions";
 import { useProjectWorkspace } from "@/features/project/state/hooks/useProjectWorkspace";
 import { useProjectWorkspaceEffects } from "@/features/project/state/hooks/useProjectWorkspaceEffects";
+import { ErrorsMolecule } from "@/features/project/state/molecules/errors";
 import { ProjectScope } from "@/features/project/state/scopes";
+
+const CONTENT_CREATE_SIBLING_ANCHOR = actionAnchorId("content", "create-sibling");
+const AUX_CREATE_DIR_ANCHOR = actionAnchorId("aux", "create-dir");
+const AUX_CREATE_FILE_ANCHOR = actionAnchorId("aux", "create-file");
+const TIMELINE_ADD_ANCHOR = actionAnchorId("timeline", "add");
+const PAGE_ERROR_ANCHOR = actionAnchorId("sidebar", "page-error");
 
 export function ProjectPage({ id: projectId }: { id: string }) {
   return (
@@ -23,6 +33,10 @@ export function ProjectPage({ id: projectId }: { id: string }) {
 function ProjectWorkspace({ projectId }: { projectId: string }) {
   const workspace = useProjectWorkspace(projectId);
   const actions = useProjectActions(workspace);
+  const errors = useMolecule(ErrorsMolecule);
+  const setContentError = useSetAtom(errors.contentErrorAtom);
+  const setTimelineError = useSetAtom(errors.timelineErrorAtom);
+  const setAuxError = useSetAtom(errors.auxErrorAtom);
   useProjectWorkspaceEffects(workspace, actions.flushBodySave, actions.flushAuxSave);
 
   const {
@@ -57,7 +71,12 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
     timelineBusy,
     auxBusy,
     pageError,
+    pageErrorDismissed,
+    setPageErrorDismissed,
   } = workspace;
+
+  const pageErrorBubble =
+    pageError && !pageErrorDismissed ? { message: pageError, anchorId: PAGE_ERROR_ANCHOR } : null;
 
   if (workspaceQuery.isLoading) {
     return (
@@ -91,6 +110,18 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex h-dvh w-full select-none overflow-hidden bg-editor-background text-foreground">
+      <ActionErrorBubble error={contentError} onDismiss={() => clearActionError(setContentError)} />
+      <ActionErrorBubble error={auxError} onDismiss={() => clearActionError(setAuxError)} />
+      <ActionErrorBubble
+        error={timelineError}
+        onDismiss={() => clearActionError(setTimelineError)}
+      />
+      <ActionErrorBubble
+        error={pageErrorBubble}
+        onDismiss={() => setPageErrorDismissed(true)}
+        size="sm"
+      />
+
       <div className="flex w-12 shrink-0 flex-col items-center gap-1 bg-activity-bar-background pt-2">
         <div className="flex w-full items-center justify-center border-l-2 border-l-activity-bar-active-foreground py-1">
           <span className="icon-[material-symbols--description] text-2xl text-activity-bar-active-foreground" />
@@ -106,13 +137,12 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      <div className="flex w-72 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar-background">
-        {pageError ? (
-          <div className="m-2 flex items-start gap-2 rounded-md border border-border bg-editor-background px-3 py-2 text-sm text-accent-foreground">
-            <span className="icon-[material-symbols--warning] mt-0.5 shrink-0 text-base" />
-            <span>{pageError}</span>
-          </div>
-        ) : null}
+      <div className="relative flex w-72 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar-background">
+        <div
+          data-action-anchor={PAGE_ERROR_ANCHOR}
+          className="pointer-events-none absolute left-2 top-2 h-px w-px"
+          aria-hidden
+        />
 
         <SidebarPanels
           panels={[
@@ -121,7 +151,8 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
               actions: (
                 <button
                   type="button"
-                  onClick={actions.handleContentCreateSibling}
+                  data-action-anchor={CONTENT_CREATE_SIBLING_ANCHOR}
+                  onClick={() => actions.handleContentCreateSibling(CONTENT_CREATE_SIBLING_ANCHOR)}
                   disabled={contentBusy || !contentRootId || !activeTimelinePointId}
                   className="icon-[material-symbols--add] text-base hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                   title="添加同级节点"
@@ -131,27 +162,19 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                 contentQuery.isLoading && contentTree.length === 0 ? (
                   <PanelPlaceholder icon="icon-[material-symbols--sync]" label="正在加载正文..." />
                 ) : (
-                  <>
-                    {contentError ? (
-                      <div className="mx-2 mb-2 flex items-start gap-2 rounded-md border border-border bg-editor-background px-3 py-2 text-xs text-accent-foreground">
-                        <span className="icon-[material-symbols--warning] mt-0.5 shrink-0 text-sm" />
-                        <span>{contentError}</span>
-                      </div>
-                    ) : null}
-                    <ContentTreePanel
-                      tree={contentTree}
-                      expandedIds={expandedContentIds}
-                      onToggle={actions.toggleContentExpanded}
-                      onSelect={actions.handleContentSelect}
-                      onRename={actions.handleContentRename}
-                      activeId={activeContentNodeId}
-                      timelineLabelMap={timelineLabelMap}
-                      onCreateChild={actions.handleContentCreateChild}
-                      onDelete={actions.handleContentDelete}
-                      isBusy={contentBusy}
-                      canCreate={!!activeTimelinePointId}
-                    />
-                  </>
+                  <ContentTreePanel
+                    tree={contentTree}
+                    expandedIds={expandedContentIds}
+                    onToggle={actions.toggleContentExpanded}
+                    onSelect={actions.handleContentSelect}
+                    onRename={actions.handleContentRename}
+                    activeId={activeContentNodeId}
+                    timelineLabelMap={timelineLabelMap}
+                    onCreateChild={actions.handleContentCreateChild}
+                    onDelete={actions.handleContentDelete}
+                    isBusy={contentBusy}
+                    canCreate={!!activeTimelinePointId}
+                  />
                 ),
             },
             {
@@ -160,14 +183,16 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                 <>
                   <button
                     type="button"
-                    onClick={actions.handleAuxCreateSiblingDir}
+                    data-action-anchor={AUX_CREATE_DIR_ANCHOR}
+                    onClick={() => actions.handleAuxCreateSiblingDir(AUX_CREATE_DIR_ANCHOR)}
                     disabled={auxBusy || !auxRootId || !activeTimelinePointId}
                     className="icon-[material-symbols--create-new-folder] text-base hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                     title="添加文件夹"
                   />
                   <button
                     type="button"
-                    onClick={actions.handleAuxCreateSiblingFile}
+                    data-action-anchor={AUX_CREATE_FILE_ANCHOR}
+                    onClick={() => actions.handleAuxCreateSiblingFile(AUX_CREATE_FILE_ANCHOR)}
                     disabled={auxBusy || !auxRootId || !activeTimelinePointId}
                     className="icon-[material-symbols--note-add] text-base hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                     title="添加文件"
@@ -181,26 +206,18 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                     label="正在根据当前时间点加载辅助信息..."
                   />
                 ) : (
-                  <>
-                    {auxError ? (
-                      <div className="mx-2 mb-2 flex items-start gap-2 rounded-md border border-border bg-editor-background px-3 py-2 text-xs text-accent-foreground">
-                        <span className="icon-[material-symbols--warning] mt-0.5 shrink-0 text-sm" />
-                        <span>{auxError}</span>
-                      </div>
-                    ) : null}
-                    <AuxTreePanel
-                      tree={auxTree}
-                      expandedIds={expandedAuxIds}
-                      onToggle={actions.toggleAuxExpanded}
-                      activeId={activeAuxNodeId}
-                      onSelect={actions.handleAuxSelect}
-                      onCreateChildDir={actions.handleAuxCreateChildDir}
-                      onCreateChildFile={actions.handleAuxCreateChildFile}
-                      onRename={actions.handleAuxRename}
-                      onDelete={actions.handleAuxDelete}
-                      isBusy={auxBusy}
-                    />
-                  </>
+                  <AuxTreePanel
+                    tree={auxTree}
+                    expandedIds={expandedAuxIds}
+                    onToggle={actions.toggleAuxExpanded}
+                    activeId={activeAuxNodeId}
+                    onSelect={actions.handleAuxSelect}
+                    onCreateChildDir={actions.handleAuxCreateChildDir}
+                    onCreateChildFile={actions.handleAuxCreateChildFile}
+                    onRename={actions.handleAuxRename}
+                    onDelete={actions.handleAuxDelete}
+                    isBusy={auxBusy}
+                  />
                 ),
             },
             {
@@ -208,7 +225,8 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
               actions: (
                 <button
                   type="button"
-                  onClick={actions.handleTimelineAdd}
+                  data-action-anchor={TIMELINE_ADD_ANCHOR}
+                  onClick={() => actions.handleTimelineAdd(TIMELINE_ADD_ANCHOR)}
                   disabled={timelineBusy || !activeTimelinePointId}
                   className="icon-[material-symbols--add] text-base hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                   title="添加时间点"
@@ -221,30 +239,22 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                     label="正在加载时间轴..."
                   />
                 ) : (
-                  <>
-                    {timelineError ? (
-                      <div className="mx-2 mb-2 flex items-start gap-2 rounded-md border border-border bg-editor-background px-3 py-2 text-xs text-accent-foreground">
-                        <span className="icon-[material-symbols--warning] mt-0.5 shrink-0 text-sm" />
-                        <span>{timelineError}</span>
-                      </div>
-                    ) : null}
-                    <TimelinePanel
-                      points={timelinePoints}
-                      activeId={activeTimelinePointId}
-                      anchoredPointId={
-                        editorTarget === "content"
-                          ? (activeContentNode?.anchorTimelinePointId ?? null)
-                          : null
-                      }
-                      canSetAnchor={editorTarget === "content" && !!activeContentNode}
-                      isBusy={timelineBusy || contentBusy}
-                      onSelect={actions.handleTimelineSelect}
-                      onSetAnchor={actions.handleContentAnchorSet}
-                      onReorder={actions.handleTimelineReorder}
-                      onDelete={actions.handleTimelineDelete}
-                      onRename={actions.handleTimelineRename}
-                    />
-                  </>
+                  <TimelinePanel
+                    points={timelinePoints}
+                    activeId={activeTimelinePointId}
+                    anchoredPointId={
+                      editorTarget === "content"
+                        ? (activeContentNode?.anchorTimelinePointId ?? null)
+                        : null
+                    }
+                    canSetAnchor={editorTarget === "content" && !!activeContentNode}
+                    isBusy={timelineBusy || contentBusy}
+                    onSelect={actions.handleTimelineSelect}
+                    onSetAnchor={actions.handleContentAnchorSet}
+                    onReorder={actions.handleTimelineReorder}
+                    onDelete={actions.handleTimelineDelete}
+                    onRename={actions.handleTimelineRename}
+                  />
                 ),
             },
           ]}

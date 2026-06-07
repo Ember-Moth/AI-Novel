@@ -3,15 +3,18 @@ export function RowActionButton({
   disabled,
   title,
   icon,
+  anchorId,
 }: {
   onClick: () => void;
   disabled?: boolean;
   title: string;
   icon: string;
+  anchorId?: string;
 }) {
   return (
     <button
       type="button"
+      data-action-anchor={anchorId}
       onClick={(event) => {
         event.stopPropagation();
         onClick();

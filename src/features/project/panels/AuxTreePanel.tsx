@@ -10,6 +10,7 @@ import {
   TreeNodePanel,
   type TreeRowContext,
 } from "@/features/project/components/nodes";
+import { actionAnchorId } from "@/features/project/model/action-error";
 import type { AuxTreeNodeVM } from "@/features/project/model/types";
 
 function AuxTreeNodeRow({
@@ -32,13 +33,17 @@ function AuxTreeNodeRow({
   onToggle: (_id: string) => void;
   onSelect: (_node: AuxTreeNodeVM) => void;
   onRename: (_nodeId: string, _name: string) => Promise<boolean>;
-  onCreateChildDir: (_node: AuxTreeNodeVM) => void;
-  onCreateChildFile: (_node: AuxTreeNodeVM) => void;
-  onDelete: (_id: string) => void;
+  onCreateChildDir: (_node: AuxTreeNodeVM, _anchorId: string) => void;
+  onCreateChildFile: (_node: AuxTreeNodeVM, _anchorId: string) => void;
+  onDelete: (_id: string, _anchorId: string) => void;
   isBusy: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const isDir = node.nodeType === "dir";
+  const rowAnchorId = actionAnchorId("aux", "row", node.id);
+  const addDirAnchorId = actionAnchorId("aux", "add-dir", node.id);
+  const addFileAnchorId = actionAnchorId("aux", "add-file", node.id);
+  const deleteAnchorId = actionAnchorId("aux", "delete", node.id);
 
   const label = (
     <InlineEditableText
@@ -57,6 +62,7 @@ function AuxTreeNodeRow({
         depth={depth}
         isActive={isActive}
         group
+        anchorId={rowAnchorId}
         onClick={() => {
           onSelect(node);
           onToggle(node.id);
@@ -69,19 +75,22 @@ function AuxTreeNodeRow({
         actions={
           <>
             <RowActionButton
-              onClick={() => onCreateChildDir(node)}
+              anchorId={addDirAnchorId}
+              onClick={() => onCreateChildDir(node, addDirAnchorId)}
               disabled={isBusy || isEditing}
               title="添加子文件夹"
               icon="icon-[material-symbols--create-new-folder]"
             />
             <RowActionButton
-              onClick={() => onCreateChildFile(node)}
+              anchorId={addFileAnchorId}
+              onClick={() => onCreateChildFile(node, addFileAnchorId)}
               disabled={isBusy || isEditing}
               title="添加子文件"
               icon="icon-[material-symbols--note-add]"
             />
             <RowActionButton
-              onClick={() => onDelete(node.id)}
+              anchorId={deleteAnchorId}
+              onClick={() => onDelete(node.id, deleteAnchorId)}
               disabled={isBusy || isEditing}
               title="删除节点"
               icon="icon-[material-symbols--close]"
@@ -97,6 +106,7 @@ function AuxTreeNodeRow({
       depth={depth}
       isActive={isActive}
       group
+      anchorId={rowAnchorId}
       onClick={() => onSelect(node)}
       leading={<ExpandToggle hasChildren={false} expanded={false} />}
       icon={<AuxNodeIcon nodeType={node.nodeType} />}
@@ -108,7 +118,8 @@ function AuxTreeNodeRow({
       }
       actions={
         <RowActionButton
-          onClick={() => onDelete(node.id)}
+          anchorId={deleteAnchorId}
+          onClick={() => onDelete(node.id, deleteAnchorId)}
           disabled={isBusy || isEditing}
           title="删除节点"
           icon="icon-[material-symbols--close]"
@@ -136,9 +147,9 @@ export function AuxTreePanel({
   activeId: string | null;
   onSelect: (_node: AuxTreeNodeVM) => void;
   onRename: (_nodeId: string, _name: string) => Promise<boolean>;
-  onCreateChildDir: (_node: AuxTreeNodeVM) => void;
-  onCreateChildFile: (_node: AuxTreeNodeVM) => void;
-  onDelete: (_id: string) => void;
+  onCreateChildDir: (_node: AuxTreeNodeVM, _anchorId: string) => void;
+  onCreateChildFile: (_node: AuxTreeNodeVM, _anchorId: string) => void;
+  onDelete: (_id: string, _anchorId: string) => void;
   isBusy: boolean;
 }) {
   if (tree.length === 0) {

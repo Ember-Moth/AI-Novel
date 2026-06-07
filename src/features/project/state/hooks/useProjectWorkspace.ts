@@ -1,7 +1,7 @@
 import { skipToken } from "@codehz/rpc";
 import { useMolecule } from "bunshi/react";
 import { useAtom } from "jotai";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
 import {
   buildContentParentMap,
@@ -36,6 +36,7 @@ export function useProjectWorkspace(projectId: string) {
   const [contentError] = useAtom(errors.contentErrorAtom);
   const [timelineError] = useAtom(errors.timelineErrorAtom);
   const [auxError] = useAtom(errors.auxErrorAtom);
+  const [pageErrorDismissed, setPageErrorDismissed] = useAtom(errors.pageErrorDismissedAtom);
 
   const workspaceQuery = rpc.useQuery("workspaces.default", { projectId });
   const workspaceId = workspaceQuery.data?.id;
@@ -152,6 +153,12 @@ export function useProjectWorkspace(projectId: string) {
     auxQuery.error?.message ??
     null;
 
+  useEffect(() => {
+    if (pageError) {
+      setPageErrorDismissed(false);
+    }
+  }, [pageError, setPageErrorDismissed]);
+
   return {
     projectId,
     workspaceQuery,
@@ -205,6 +212,8 @@ export function useProjectWorkspace(projectId: string) {
     timelineBusy,
     auxBusy,
     pageError,
+    pageErrorDismissed,
+    setPageErrorDismissed,
   };
 }
 

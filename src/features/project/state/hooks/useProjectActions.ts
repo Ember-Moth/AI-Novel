@@ -3,6 +3,11 @@ import { useAtom, useSetAtom } from "jotai";
 import { useCallback } from "react";
 
 import {
+  actionAnchorId,
+  clearActionError,
+  setActionError,
+} from "@/features/project/model/action-error";
+import {
   collectContentSubtreeIds,
   findAuxNode,
   findContentDeleteFallback,
@@ -271,7 +276,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
   );
 
   const createAuxDir = useCallback(
-    async (parentDirId: string) => {
+    async (parentDirId: string, anchorId: string) => {
       if (!workspaceId || !activeTimelinePointId) {
         return;
       }
@@ -279,7 +284,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
       const siblings = listAuxSiblings(auxTree, parentDirId, auxRootId);
       const name = nextAuxDirName(siblings);
 
-      setAuxError(null);
+      clearActionError(setAuxError);
 
       try {
         const node = await mkdirAux.mutate({
@@ -291,7 +296,11 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         setActiveAuxNodeId(node.id);
         expandAuxParent(parentDirId);
       } catch (error) {
-        setAuxError(error instanceof Error ? error.message : "创建辅助文件夹失败，请稍后重试。");
+        setActionError(
+          setAuxError,
+          error instanceof Error ? error.message : "创建辅助文件夹失败，请稍后重试。",
+          anchorId,
+        );
       }
     },
     [
@@ -307,7 +316,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
   );
 
   const createAuxFile = useCallback(
-    async (parentDirId: string) => {
+    async (parentDirId: string, anchorId: string) => {
       if (!workspaceId || !activeTimelinePointId) {
         return;
       }
@@ -315,7 +324,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
       const siblings = listAuxSiblings(auxTree, parentDirId, auxRootId);
       const name = nextAuxFileName(siblings);
 
-      setAuxError(null);
+      clearActionError(setAuxError);
 
       try {
         const node = await writeFileAux.mutate({
@@ -328,7 +337,11 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         setActiveAuxNodeId(node.id);
         expandAuxParent(parentDirId);
       } catch (error) {
-        setAuxError(error instanceof Error ? error.message : "创建辅助文件失败，请稍后重试。");
+        setActionError(
+          setAuxError,
+          error instanceof Error ? error.message : "创建辅助文件失败，请稍后重试。",
+          anchorId,
+        );
       }
     },
     [
@@ -531,56 +544,63 @@ export function useProjectActions(workspace: ProjectWorkspace) {
     [setCommittedBodies, setDrafts, setExpandedContentIds, setPendingSaveCounts, setSaveErrors],
   );
 
-  const handleContentCreateSibling = useCallback(async () => {
-    if (!workspaceId || !contentRootId || !activeTimelinePointId) {
-      return;
-    }
+  const handleContentCreateSibling = useCallback(
+    async (anchorId: string) => {
+      if (!workspaceId || !contentRootId || !activeTimelinePointId) {
+        return;
+      }
 
-    const anchorPointId = activeTimelinePointId;
-    const parentId = activeContentNode
-      ? (contentParentMap.get(activeContentNode.id) ?? contentRootId)
-      : contentRootId;
-    const title = `新节点 ${flatContentNodes.length + 1}`;
+      const anchorPointId = activeTimelinePointId;
+      const parentId = activeContentNode
+        ? (contentParentMap.get(activeContentNode.id) ?? contentRootId)
+        : contentRootId;
+      const title = `新节点 ${flatContentNodes.length + 1}`;
 
-    setContentError(null);
+      clearActionError(setContentError);
 
-    try {
-      const node = await createContent.mutate({
-        workspaceId,
-        parentId,
-        afterSiblingId: activeContentNode?.id,
-        anchorPointId,
-        title,
-      });
-      flushDirtyContentBeforeSwitch();
-      activateContentNode(node.id, node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID);
-      expandContentParent(parentId);
-    } catch (error) {
-      setContentError(error instanceof Error ? error.message : "创建正文节点失败，请稍后重试。");
-    }
-  }, [
-    activateContentNode,
-    activeContentNode,
-    activeTimelinePointId,
-    contentParentMap,
-    contentRootId,
-    createContent,
-    expandContentParent,
-    flatContentNodes.length,
-    flushDirtyContentBeforeSwitch,
-    setContentError,
-    workspaceId,
-  ]);
+      try {
+        const node = await createContent.mutate({
+          workspaceId,
+          parentId,
+          afterSiblingId: activeContentNode?.id,
+          anchorPointId,
+          title,
+        });
+        flushDirtyContentBeforeSwitch();
+        activateContentNode(node.id, node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID);
+        expandContentParent(parentId);
+      } catch (error) {
+        setActionError(
+          setContentError,
+          error instanceof Error ? error.message : "创建正文节点失败，请稍后重试。",
+          anchorId,
+        );
+      }
+    },
+    [
+      activateContentNode,
+      activeContentNode,
+      activeTimelinePointId,
+      contentParentMap,
+      contentRootId,
+      createContent,
+      expandContentParent,
+      flatContentNodes.length,
+      flushDirtyContentBeforeSwitch,
+      setContentError,
+      workspaceId,
+    ],
+  );
 
   const handleContentCreateChild = useCallback(
-    async (parentNode: ContentTreeNodeVM) => {
+    async (parentNode: ContentTreeNodeVM, anchorId: string) => {
       if (!workspaceId || !activeTimelinePointId) {
         return;
       }
 
       const title = `新节点 ${flatContentNodes.length + 1}`;
 
-      setContentError(null);
+      clearActionError(setContentError);
 
       try {
         const node = await createContent.mutate({
@@ -593,7 +613,11 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         activateContentNode(node.id, node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID);
         expandContentParent(parentNode.id);
       } catch (error) {
-        setContentError(error instanceof Error ? error.message : "创建正文节点失败，请稍后重试。");
+        setActionError(
+          setContentError,
+          error instanceof Error ? error.message : "创建正文节点失败，请稍后重试。",
+          anchorId,
+        );
       }
     },
     [
@@ -609,7 +633,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
   );
 
   const handleContentDelete = useCallback(
-    async (nodeId: string) => {
+    async (nodeId: string, anchorId: string) => {
       if (!workspaceId) {
         return;
       }
@@ -631,7 +655,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
           )
         : null;
 
-      setContentError(null);
+      clearActionError(setContentError);
 
       try {
         await deleteContent.mutate({ workspaceId, nodeId });
@@ -644,7 +668,11 @@ export function useProjectActions(workspace: ProjectWorkspace) {
           }
         }
       } catch (error) {
-        setContentError(error instanceof Error ? error.message : "删除正文节点失败，请稍后重试。");
+        setActionError(
+          setContentError,
+          error instanceof Error ? error.message : "删除正文节点失败，请稍后重试。",
+          anchorId,
+        );
       }
     },
     [
@@ -662,7 +690,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
   );
 
   const handleContentAnchorSet = useCallback(
-    async (pointId: string) => {
+    async (pointId: string, anchorId: string) => {
       if (!workspaceId || !activeContentNode) {
         return;
       }
@@ -671,7 +699,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         return;
       }
 
-      setContentError(null);
+      clearActionError(setContentError);
 
       try {
         await updateContent.mutate({
@@ -681,7 +709,11 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         });
         setActiveTimelinePointId(pointId);
       } catch (error) {
-        setContentError(error instanceof Error ? error.message : "设置时间锚点失败，请稍后重试。");
+        setActionError(
+          setContentError,
+          error instanceof Error ? error.message : "设置时间锚点失败，请稍后重试。",
+          anchorId,
+        );
       }
     },
     [activeContentNode, setActiveTimelinePointId, setContentError, updateContent, workspaceId],
@@ -693,7 +725,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         return false;
       }
 
-      setContentError(null);
+      clearActionError(setContentError);
 
       try {
         await updateContent.mutate({
@@ -703,8 +735,10 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         });
         return true;
       } catch (error) {
-        setContentError(
+        setActionError(
+          setContentError,
           error instanceof Error ? error.message : "重命名正文节点失败，请稍后重试。",
+          actionAnchorId("content", "row", nodeId),
         );
         return false;
       }
@@ -723,7 +757,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         return false;
       }
 
-      setTimelineError(null);
+      clearActionError(setTimelineError);
 
       try {
         await updateTimeline.mutate({
@@ -733,41 +767,52 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         });
         return true;
       } catch (error) {
-        setTimelineError(error instanceof Error ? error.message : "重命名时间点失败，请稍后重试。");
+        setActionError(
+          setTimelineError,
+          error instanceof Error ? error.message : "重命名时间点失败，请稍后重试。",
+          actionAnchorId("timeline", "row", pointId),
+        );
         return false;
       }
     },
     [setTimelineError, updateTimeline, workspaceId],
   );
 
-  const handleTimelineAdd = useCallback(async () => {
-    if (!workspaceId || !activeTimelinePointId) {
-      return;
-    }
+  const handleTimelineAdd = useCallback(
+    async (anchorId: string) => {
+      if (!workspaceId || !activeTimelinePointId) {
+        return;
+      }
 
-    const newIndex = timelinePoints.filter((point) => !point.isImplicitOrigin).length + 1;
-    setTimelineError(null);
+      const newIndex = timelinePoints.filter((point) => !point.isImplicitOrigin).length + 1;
+      clearActionError(setTimelineError);
 
-    try {
-      const point = await createTimeline.mutate({
-        workspaceId,
-        afterPointId: activeTimelinePointId,
-        key: `timeline_${crypto.randomUUID().replaceAll("-", "").slice(0, 10)}`,
-        label: `新时间点 ${newIndex}`,
-        description: "",
-      });
-      setActiveTimelinePointId(point.id);
-    } catch (error) {
-      setTimelineError(error instanceof Error ? error.message : "创建时间点失败，请稍后重试。");
-    }
-  }, [
-    activeTimelinePointId,
-    createTimeline,
-    setActiveTimelinePointId,
-    setTimelineError,
-    timelinePoints,
-    workspaceId,
-  ]);
+      try {
+        const point = await createTimeline.mutate({
+          workspaceId,
+          afterPointId: activeTimelinePointId,
+          key: `timeline_${crypto.randomUUID().replaceAll("-", "").slice(0, 10)}`,
+          label: `新时间点 ${newIndex}`,
+          description: "",
+        });
+        setActiveTimelinePointId(point.id);
+      } catch (error) {
+        setActionError(
+          setTimelineError,
+          error instanceof Error ? error.message : "创建时间点失败，请稍后重试。",
+          anchorId,
+        );
+      }
+    },
+    [
+      activeTimelinePointId,
+      createTimeline,
+      setActiveTimelinePointId,
+      setTimelineError,
+      timelinePoints,
+      workspaceId,
+    ],
+  );
 
   const handleTimelineReorder = useCallback(
     async (fromIndex: number, toIndex: number) => {
@@ -791,7 +836,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
           ? ORIGIN_TIMELINE_POINT_ID
           : (orderedMovablePoints[newIndex - 1]?.id ?? ORIGIN_TIMELINE_POINT_ID);
 
-      setTimelineError(null);
+      clearActionError(setTimelineError);
 
       try {
         await moveTimeline.mutate({
@@ -800,50 +845,58 @@ export function useProjectActions(workspace: ProjectWorkspace) {
           afterPointId,
         });
       } catch (error) {
-        setTimelineError(
+        setActionError(
+          setTimelineError,
           error instanceof Error ? error.message : "调整时间轴顺序失败，请稍后重试。",
+          actionAnchorId("timeline", "row", movedPoint.id),
         );
       }
     },
     [moveTimeline, setTimelineError, timelinePoints, workspaceId],
   );
 
-  const handleAuxCreateSiblingDir = useCallback(async () => {
-    const parentDirId = resolveAuxParentForSibling(activeAuxNodeId);
-    if (!parentDirId) {
-      return;
-    }
+  const handleAuxCreateSiblingDir = useCallback(
+    async (anchorId: string) => {
+      const parentDirId = resolveAuxParentForSibling(activeAuxNodeId);
+      if (!parentDirId) {
+        return;
+      }
 
-    await createAuxDir(parentDirId);
-  }, [activeAuxNodeId, createAuxDir, resolveAuxParentForSibling]);
+      await createAuxDir(parentDirId, anchorId);
+    },
+    [activeAuxNodeId, createAuxDir, resolveAuxParentForSibling],
+  );
 
-  const handleAuxCreateSiblingFile = useCallback(async () => {
-    const parentDirId = resolveAuxParentForSibling(activeAuxNodeId);
-    if (!parentDirId) {
-      return;
-    }
+  const handleAuxCreateSiblingFile = useCallback(
+    async (anchorId: string) => {
+      const parentDirId = resolveAuxParentForSibling(activeAuxNodeId);
+      if (!parentDirId) {
+        return;
+      }
 
-    await createAuxFile(parentDirId);
-  }, [activeAuxNodeId, createAuxFile, resolveAuxParentForSibling]);
+      await createAuxFile(parentDirId, anchorId);
+    },
+    [activeAuxNodeId, createAuxFile, resolveAuxParentForSibling],
+  );
 
   const handleAuxCreateChildDir = useCallback(
-    async (parentNode: AuxTreeNodeVM) => {
+    async (parentNode: AuxTreeNodeVM, anchorId: string) => {
       if (parentNode.nodeType !== "dir") {
         return;
       }
 
-      await createAuxDir(parentNode.id);
+      await createAuxDir(parentNode.id, anchorId);
     },
     [createAuxDir],
   );
 
   const handleAuxCreateChildFile = useCallback(
-    async (parentNode: AuxTreeNodeVM) => {
+    async (parentNode: AuxTreeNodeVM, anchorId: string) => {
       if (parentNode.nodeType !== "dir") {
         return;
       }
 
-      await createAuxFile(parentNode.id);
+      await createAuxFile(parentNode.id, anchorId);
     },
     [createAuxFile],
   );
@@ -864,7 +917,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         return false;
       }
 
-      setAuxError(null);
+      clearActionError(setAuxError);
 
       try {
         await moveAux.mutate({
@@ -876,7 +929,11 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         });
         return true;
       } catch (error) {
-        setAuxError(error instanceof Error ? error.message : "重命名辅助节点失败，请稍后重试。");
+        setActionError(
+          setAuxError,
+          error instanceof Error ? error.message : "重命名辅助节点失败，请稍后重试。",
+          actionAnchorId("aux", "row", nodeId),
+        );
         return false;
       }
     },
@@ -884,12 +941,12 @@ export function useProjectActions(workspace: ProjectWorkspace) {
   );
 
   const handleAuxDelete = useCallback(
-    async (nodeId: string) => {
+    async (nodeId: string, anchorId: string) => {
       if (!workspaceId || !activeTimelinePointId) {
         return;
       }
 
-      setAuxError(null);
+      clearActionError(setAuxError);
 
       try {
         await deleteAux.mutate({
@@ -902,7 +959,11 @@ export function useProjectActions(workspace: ProjectWorkspace) {
           setActiveAuxNodeId(null);
         }
       } catch (error) {
-        setAuxError(error instanceof Error ? error.message : "删除辅助节点失败，请稍后重试。");
+        setActionError(
+          setAuxError,
+          error instanceof Error ? error.message : "删除辅助节点失败，请稍后重试。",
+          anchorId,
+        );
       }
     },
     [
@@ -917,12 +978,12 @@ export function useProjectActions(workspace: ProjectWorkspace) {
   );
 
   const handleTimelineDelete = useCallback(
-    async (pointId: string) => {
+    async (pointId: string, anchorId: string) => {
       if (!workspaceId || pointId === ORIGIN_TIMELINE_POINT_ID) {
         return;
       }
 
-      setTimelineError(null);
+      clearActionError(setTimelineError);
 
       try {
         await deleteTimeline.mutate({
@@ -933,7 +994,11 @@ export function useProjectActions(workspace: ProjectWorkspace) {
           setActiveTimelinePointId(ORIGIN_TIMELINE_POINT_ID);
         }
       } catch (error) {
-        setTimelineError(error instanceof Error ? error.message : "删除时间点失败，请稍后重试。");
+        setActionError(
+          setTimelineError,
+          error instanceof Error ? error.message : "删除时间点失败，请稍后重试。",
+          anchorId,
+        );
       }
     },
     [
