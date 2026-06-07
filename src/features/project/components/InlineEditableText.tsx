@@ -11,6 +11,8 @@ import {
 const INPUT_CLASS_NAME =
   "box-border h-5.5 min-w-0 flex-1 rounded border border-border bg-editor-background px-1.5 text-[13px] leading-5.5 text-foreground outline-none select-text focus:border-accent-foreground";
 
+const DISPLAY_CLASS_NAME = "block min-h-5.5 min-w-0 flex-1 w-full leading-5.5";
+
 export function useInlineEdit({
   value,
   onCommit,
@@ -187,7 +189,7 @@ export function InlineEditableText({
 
   return (
     <span
-      className={className ?? "block leading-5.5"}
+      className={className ? `${DISPLAY_CLASS_NAME} ${className}` : DISPLAY_CLASS_NAME}
       onDoubleClick={(event) => {
         if (!editable || disabled) {
           return;
