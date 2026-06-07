@@ -9,6 +9,7 @@ import {
   createDefaultWorkspaceWithExecutor,
   createTimelinePoint,
   deleteAuxNodeAt,
+  deleteContentNode,
   deleteTimelinePoint,
   exportAuxSnapshotTree,
   exportContentSubtree,
@@ -145,6 +146,10 @@ export const content = {
       return node;
     },
   ),
+  delete: mutation<Parameters<typeof deleteContentNode>[0], void>((input, ctx) => {
+    deleteContentNode(input);
+    ctx.invalidate(`content:${input.workspaceId}`);
+  }),
   exportSubtree: query<
     { workspaceId: string; rootNodeId?: string },
     ReturnType<typeof exportContentSubtree>

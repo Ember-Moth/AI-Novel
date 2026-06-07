@@ -1056,6 +1056,28 @@ export function moveContentNode(input: {
   });
 }
 
+export function deleteContentNode(input: { workspaceId: string; nodeId: string }) {
+  return db.transaction((tx) => {
+    const workspace = getWorkspaceOrThrow(tx, input.workspaceId);
+    const contentRootId = assertContentRoot(workspace);
+    const node = getContentNodeOrThrow(tx, workspace.id, input.nodeId);
+    invariant(node.id !== contentRootId, "Cannot delete the hidden content root");
+
+    const oldPrev = getContentPrevSibling(tx, workspace.id, node.id);
+    const timestamp = now();
+
+    if (oldPrev) {
+      tx.update(schema.contentNodes)
+        .set({ nextSiblingId: node.nextSiblingId, updatedAt: timestamp })
+        .where(eq(schema.contentNodes.id, oldPrev.id))
+        .run();
+    }
+
+    tx.delete(schema.contentNodes).where(eq(schema.contentNodes.id, node.id)).run();
+    touchWorkspace(tx, workspace.id);
+  });
+}
+
 export function updateContentNode(input: {
   workspaceId: string;
   nodeId: string;

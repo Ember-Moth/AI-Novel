@@ -187,6 +187,36 @@ test("symlink keeps following the same aux node after rename and move", () => {
   expect(exported.nodes[1]?.children.map((node) => node.name)).toEqual(["home", "villa"]);
 });
 
+test("content node deletion removes subtree and preserves sibling order", () => {
+  const workspace = seedProject("project_content_delete");
+  const rootId = workspace.contentRootId!;
+
+  const chapter1 = service.createContentNode({
+    workspaceId: workspace.id,
+    parentId: rootId,
+    kind: "chapter",
+    title: "Chapter 1",
+  });
+  service.createContentNode({
+    workspaceId: workspace.id,
+    parentId: rootId,
+    afterSiblingId: chapter1.id,
+    kind: "chapter",
+    title: "Chapter 2",
+  });
+  service.createContentNode({
+    workspaceId: workspace.id,
+    parentId: chapter1.id,
+    kind: "scene",
+    title: "Scene 1",
+  });
+
+  service.deleteContentNode({ workspaceId: workspace.id, nodeId: chapter1.id });
+
+  const exported = service.exportContentSubtree(workspace.id);
+  expect(exported.nodes.map((node) => node.title)).toEqual(["Chapter 2"]);
+});
+
 test("timeline point deletion is blocked when content still anchors to it", () => {
   const workspace = seedProject("project_guard");
   const contentRootId = workspace.contentRootId!;

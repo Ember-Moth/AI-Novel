@@ -14,6 +14,8 @@ import type { ContentTreeNodeVM } from "./types";
 import {
   buildContentParentMap,
   collectAncestorIds,
+  collectContentSubtreeIds,
+  findContentNode,
   findPreferredContentNode,
   flattenAuxNodes,
   flattenContentNodes,
@@ -37,9 +39,11 @@ export function ProjectLayout({ id: projectId }: { id: string }) {
   const [pendingSaveCounts, setPendingSaveCounts] = useState<Record<string, number>>({});
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
   const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [contentError, setContentError] = useState<string | null>(null);
 
   const workspaceQuery = rpc.useQuery("workspaces.default", { projectId });
   const workspaceId = workspaceQuery.data?.id;
+  const contentRootId = workspaceQuery.data?.contentRootId ?? null;
 
   const timelineQuery = rpc.useQuery("timeline.list", workspaceId ? { workspaceId } : skipToken);
   const contentQuery = rpc.useQuery(
@@ -54,6 +58,8 @@ export function ProjectLayout({ id: projectId }: { id: string }) {
   );
 
   const updateContent = rpc.useMutation("content.update");
+  const createContent = rpc.useMutation("content.create");
+  const deleteContent = rpc.useMutation("content.delete");
   const createTimeline = rpc.useMutation("timeline.create");
   const moveTimeline = rpc.useMutation("timeline.move");
   const deleteTimeline = rpc.useMutation("timeline.delete");
@@ -346,6 +352,130 @@ export function ProjectLayout({ id: projectId }: { id: string }) {
     setSaveErrors((previous) => omitRecordKey(previous, activeContentNode.id));
   };
 
+  const expandContentParent = (parentId: string) => {
+    setExpandedContentIds((previous) => {
+      if (previous.has(parentId)) {
+        return previous;
+      }
+
+      const next = new Set(previous);
+      next.add(parentId);
+      return next;
+    });
+  };
+
+  const handleContentCreateSibling = async () => {
+    if (!workspaceId || !contentRootId) {
+      return;
+    }
+
+    const anchorPointId =
+      activeContentNode?.anchorTimelinePointId ?? activeTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID;
+    const parentId = activeContentNode
+      ? (contentParentMap.get(activeContentNode.id) ?? contentRootId)
+      : contentRootId;
+    const title = `新节点 ${flatContentNodes.length + 1}`;
+
+    setContentError(null);
+
+    try {
+      const node = await createContent.mutate({
+        workspaceId,
+        parentId,
+        afterSiblingId: activeContentNode?.id,
+        anchorPointId,
+        title,
+      });
+      setActiveContentNodeId(node.id);
+      setActiveTimelinePointId(node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID);
+      expandContentParent(parentId);
+    } catch (error) {
+      setContentError(error instanceof Error ? error.message : "创建正文节点失败，请稍后重试。");
+    }
+  };
+
+  const handleContentCreateChild = async (parentNode: ContentTreeNodeVM) => {
+    if (!workspaceId) {
+      return;
+    }
+
+    const title = `新节点 ${flatContentNodes.length + 1}`;
+
+    setContentError(null);
+
+    try {
+      const node = await createContent.mutate({
+        workspaceId,
+        parentId: parentNode.id,
+        anchorPointId: parentNode.anchorTimelinePointId,
+        title,
+      });
+      setActiveContentNodeId(node.id);
+      setActiveTimelinePointId(node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID);
+      expandContentParent(parentNode.id);
+    } catch (error) {
+      setContentError(error instanceof Error ? error.message : "创建正文节点失败，请稍后重试。");
+    }
+  };
+
+  const clearContentNodeLocalState = (nodeIds: Set<string>) => {
+    const omitMany = <TValue,>(record: Record<string, TValue>) => {
+      let changed = false;
+      const next = { ...record };
+
+      for (const nodeId of nodeIds) {
+        if (nodeId in next) {
+          delete next[nodeId];
+          changed = true;
+        }
+      }
+
+      return changed ? next : record;
+    };
+
+    setDrafts((previous) => omitMany(previous));
+    setCommittedBodies((previous) => omitMany(previous));
+    setPendingSaveCounts((previous) => omitMany(previous));
+    setSaveErrors((previous) => omitMany(previous));
+    setExpandedContentIds((previous) => {
+      let changed = false;
+      const next = new Set(previous);
+
+      for (const nodeId of nodeIds) {
+        if (next.delete(nodeId)) {
+          changed = true;
+        }
+      }
+
+      return changed ? next : previous;
+    });
+  };
+
+  const handleContentDelete = async (nodeId: string) => {
+    if (!workspaceId) {
+      return;
+    }
+
+    const targetNode = findContentNode(contentTree, nodeId);
+    if (!targetNode) {
+      return;
+    }
+
+    const deletedIds = collectContentSubtreeIds(targetNode);
+
+    setContentError(null);
+
+    try {
+      await deleteContent.mutate({ workspaceId, nodeId });
+      clearContentNodeLocalState(deletedIds);
+      if (activeContentNodeId && deletedIds.has(activeContentNodeId)) {
+        setActiveContentNodeId(null);
+      }
+    } catch (error) {
+      setContentError(error instanceof Error ? error.message : "删除正文节点失败，请稍后重试。");
+    }
+  };
+
   const handleTimelineAdd = async () => {
     if (!workspaceId || !activeTimelinePointId) {
       return;
@@ -422,6 +552,7 @@ export function ProjectLayout({ id: projectId }: { id: string }) {
     }
   };
 
+  const contentBusy = createContent.isPending || deleteContent.isPending;
   const timelineBusy =
     createTimeline.isPending || moveTimeline.isPending || deleteTimeline.isPending;
   const pageError =
@@ -486,7 +617,24 @@ export function ProjectLayout({ id: projectId }: { id: string }) {
           </div>
         ) : null}
 
-        <SidebarSection title="正文">
+        <SidebarSection
+          title="正文"
+          actions={
+            <button
+              type="button"
+              onClick={handleContentCreateSibling}
+              disabled={contentBusy || !contentRootId}
+              className="icon-[material-symbols--add] text-base hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              title="添加同级节点"
+            />
+          }
+        >
+          {contentError ? (
+            <div className="mx-2 mb-2 flex items-start gap-2 rounded-md border border-border bg-editor-background px-3 py-2 text-xs text-accent-foreground">
+              <span className="icon-[material-symbols--warning] mt-0.5 shrink-0 text-sm" />
+              <span>{contentError}</span>
+            </div>
+          ) : null}
           {contentQuery.isLoading && contentTree.length === 0 ? (
             <PanelPlaceholder icon="icon-[material-symbols--sync]" label="正在加载正文..." />
           ) : (
@@ -497,6 +645,9 @@ export function ProjectLayout({ id: projectId }: { id: string }) {
               onSelect={handleContentSelect}
               activeId={activeContentNodeId}
               timelineLabelMap={timelineLabelMap}
+              onCreateChild={handleContentCreateChild}
+              onDelete={handleContentDelete}
+              isBusy={contentBusy}
             />
           )}
         </SidebarSection>
