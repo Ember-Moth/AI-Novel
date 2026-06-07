@@ -122,27 +122,31 @@ function ContentTreeNodeRow({
             <span className="truncate">{node.title}</span>
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => onCreateChild(node)}
-          disabled={isBusy || isRenaming}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-foreground-muted opacity-0 transition hover:bg-button-hover-background hover:text-foreground group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
-          title="添加子节点"
-        >
-          <span className="icon-[material-symbols--add] text-sm leading-none" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onDelete(node.id)}
-          disabled={isBusy || isRenaming}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-foreground-muted opacity-0 transition hover:bg-button-hover-background hover:text-foreground group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
-          title="删除节点"
-        >
-          <span className="icon-[material-symbols--delete] text-sm leading-none" />
-        </button>
-        <span className="shrink-0 self-center text-[10px] leading-none text-accent-foreground opacity-70">
-          {timelineLabelMap.get(node.anchorTimelinePointId) ?? node.anchorTimelinePointId}
-        </span>
+        <div className="grid h-5 shrink-0 items-center">
+          <div className="col-start-1 row-start-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+            <button
+              type="button"
+              onClick={() => onCreateChild(node)}
+              disabled={isBusy || isRenaming}
+              className="flex h-5 w-5 items-center justify-center rounded text-foreground-muted transition hover:bg-button-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+              title="添加子节点"
+            >
+              <span className="icon-[material-symbols--add] text-sm leading-none" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(node.id)}
+              disabled={isBusy || isRenaming}
+              className="flex h-5 w-5 items-center justify-center rounded text-foreground-muted transition hover:bg-button-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+              title="删除节点"
+            >
+              <span className="icon-[material-symbols--delete] text-sm leading-none" />
+            </button>
+          </div>
+          <span className="col-start-1 row-start-1 justify-self-end self-center max-w-20 truncate text-[10px] leading-none text-accent-foreground opacity-70 transition group-hover:hidden">
+            {timelineLabelMap.get(node.anchorTimelinePointId) ?? node.anchorTimelinePointId}
+          </span>
+        </div>
       </div>
       {hasChildren && isExpanded ? (
         <div>
