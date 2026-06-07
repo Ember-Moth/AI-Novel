@@ -89,7 +89,7 @@ function ContentTreeNodeRow({
                 onClick={() => onDelete(node.id)}
                 disabled={isBusy || isEditing}
                 title="删除节点"
-                icon="icon-[material-symbols--delete]"
+                icon="icon-[material-symbols--close]"
               />
             </>
           }
