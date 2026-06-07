@@ -134,6 +134,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
               expandedIds={expandedContentIds}
               onToggle={actions.toggleContentExpanded}
               onSelect={actions.handleContentSelect}
+              onRename={actions.handleContentRename}
               activeId={activeContentNodeId}
               timelineLabelMap={timelineLabelMap}
               onCreateChild={actions.handleContentCreateChild}

@@ -328,6 +328,31 @@ export function useProjectActions(workspace: ProjectWorkspace) {
     ],
   );
 
+  const handleContentRename = useCallback(
+    async (nodeId: string, title: string | null) => {
+      if (!workspaceId) {
+        return false;
+      }
+
+      setContentError(null);
+
+      try {
+        await updateContent.mutate({
+          workspaceId,
+          nodeId,
+          title,
+        });
+        return true;
+      } catch (error) {
+        setContentError(
+          error instanceof Error ? error.message : "重命名正文节点失败，请稍后重试。",
+        );
+        return false;
+      }
+    },
+    [setContentError, updateContent, workspaceId],
+  );
+
   const handleTimelineAdd = useCallback(async () => {
     if (!workspaceId || !activeTimelinePointId) {
       return;
@@ -431,6 +456,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
     toggleAuxExpanded,
     handleContentSelect,
     handleBodyChange,
+    handleContentRename,
     handleContentCreateSibling,
     handleContentCreateChild,
     handleContentDelete,
