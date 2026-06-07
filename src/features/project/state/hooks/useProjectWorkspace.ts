@@ -111,6 +111,8 @@ export function useProjectWorkspace(projectId: string) {
     (activeContentNode && timelineLabelMap.get(activeContentNode.anchorTimelinePointId)) ||
     (activeTimelinePointId ? timelineLabelMap.get(activeTimelinePointId) : undefined) ||
     "原点";
+  const browsingTimelineLabel =
+    (activeTimelinePointId && timelineLabelMap.get(activeTimelinePointId)) || "原点";
   const activeSaveBaseline = activeContentNode
     ? (committedBodies[activeContentNode.id] ?? activeContentNode.body)
     : "";
@@ -135,7 +137,7 @@ export function useProjectWorkspace(projectId: string) {
       ? "content"
       : null;
 
-  const contentBusy = createContent.isPending || deleteContent.isPending;
+  const contentBusy = createContent.isPending || deleteContent.isPending || updateContent.isPending;
   const timelineBusy =
     createTimeline.isPending ||
     moveTimeline.isPending ||
@@ -192,6 +194,7 @@ export function useProjectWorkspace(projectId: string) {
     editorBody,
     editorContent,
     activeTimelineLabel,
+    browsingTimelineLabel,
     activeSaveState,
     auxSaveState,
     editorTarget,

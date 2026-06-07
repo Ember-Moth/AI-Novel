@@ -46,6 +46,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
     editorBody,
     editorContent,
     activeTimelineLabel,
+    browsingTimelineLabel,
     activeSaveState,
     auxSaveState,
     editorTarget,
@@ -188,6 +189,13 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                         <span>{auxError}</span>
                       </div>
                     ) : null}
+                    {editorTarget === "content" &&
+                    activeContentNode &&
+                    activeTimelinePointId !== activeContentNode.anchorTimelinePointId ? (
+                      <div className="mx-2 mb-2 text-[11px] text-foreground-muted">
+                        浏览：{browsingTimelineLabel}
+                      </div>
+                    ) : null}
                     <AuxTreePanel
                       tree={auxTree}
                       expandedIds={expandedAuxIds}
@@ -236,8 +244,10 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                           ? (activeContentNode?.anchorTimelinePointId ?? null)
                           : null
                       }
-                      isBusy={timelineBusy}
+                      canSetAnchor={editorTarget === "content" && !!activeContentNode}
+                      isBusy={timelineBusy || contentBusy}
                       onSelect={actions.handleTimelineSelect}
+                      onSetAnchor={actions.handleContentAnchorSet}
                       onReorder={actions.handleTimelineReorder}
                       onDelete={actions.handleTimelineDelete}
                       onRename={actions.handleTimelineRename}

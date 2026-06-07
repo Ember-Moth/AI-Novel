@@ -10,8 +10,10 @@ export function TimelinePanel({
   points,
   activeId,
   anchoredPointId = null,
+  canSetAnchor = false,
   isBusy,
   onSelect,
+  onSetAnchor,
   onReorder,
   onDelete,
   onRename,
@@ -19,8 +21,10 @@ export function TimelinePanel({
   points: TimelinePointVM[];
   activeId: string | null;
   anchoredPointId?: string | null;
+  canSetAnchor?: boolean;
   isBusy: boolean;
   onSelect: (_id: string) => void;
+  onSetAnchor?: (_id: string) => void;
   onReorder: (_fromIndex: number, _toIndex: number) => void;
   onDelete: (_id: string) => void;
   onRename: (_pointId: string, _label: string) => Promise<boolean>;
@@ -36,12 +40,14 @@ export function TimelinePanel({
         isDragDisabled={(point) => point.isImplicitOrigin}
         renderRow={({ item: point, isActive, draggable, dragProps }) => {
           const isAnchored = anchoredPointId === point.id;
+          const showSetAnchor = canSetAnchor && !isAnchored && onSetAnchor;
+          const showDelete = !point.isImplicitOrigin;
 
           return (
             <SidebarListRow
               depth={0}
               isActive={isActive}
-              group={!point.isImplicitOrigin}
+              group={showSetAnchor || !point.isImplicitOrigin}
               className={point.isImplicitOrigin ? "opacity-90" : ""}
               onClick={() => onSelect(point.id)}
               draggable={draggable}
@@ -67,14 +73,24 @@ export function TimelinePanel({
                 ) : undefined
               }
               actions={
-                !point.isImplicitOrigin ? (
-                  <div className="ml-auto opacity-0 transition group-hover:opacity-100">
-                    <RowActionButton
-                      onClick={() => onDelete(point.id)}
-                      disabled={isBusy}
-                      title="删除时间点"
-                      icon="icon-[material-symbols--close]"
-                    />
+                showSetAnchor || showDelete ? (
+                  <div className="ml-auto flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                    {showSetAnchor ? (
+                      <RowActionButton
+                        onClick={() => onSetAnchor(point.id)}
+                        disabled={isBusy}
+                        title="设为锚点"
+                        icon="icon-[material-symbols--anchor]"
+                      />
+                    ) : null}
+                    {showDelete ? (
+                      <RowActionButton
+                        onClick={() => onDelete(point.id)}
+                        disabled={isBusy}
+                        title="删除时间点"
+                        icon="icon-[material-symbols--close]"
+                      />
+                    ) : null}
                   </div>
                 ) : undefined
               }

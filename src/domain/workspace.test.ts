@@ -250,6 +250,40 @@ test("deleting a middle content sibling rewires next sibling without violating u
   expect(exported.nodes.map((node) => node.title)).toEqual(["Chapter 1", "Chapter 3"]);
 });
 
+test("content node anchor point can be updated", () => {
+  const workspace = seedProject("project_anchor_update");
+  const contentRootId = workspace.contentRootId!;
+
+  const pointA = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    key: "anchor_point_a",
+    label: "Point A",
+  });
+  const pointB = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: pointA.id,
+    key: "anchor_point_b",
+    label: "Point B",
+  });
+  const scene = service.createContentNode({
+    workspaceId: workspace.id,
+    parentId: contentRootId,
+    anchorPointId: pointA.id,
+    kind: "scene",
+    title: "Scene",
+  });
+
+  service.updateContentNode({
+    workspaceId: workspace.id,
+    nodeId: scene.id,
+    anchorPointId: pointB.id,
+  });
+
+  const exported = service.exportContentSubtree(workspace.id);
+  expect(exported.nodes[0]?.anchorTimelinePointId).toBe(pointB.id);
+});
+
 test("timeline point deletion is blocked when content still anchors to it", () => {
   const workspace = seedProject("project_guard");
   const contentRootId = workspace.contentRootId!;

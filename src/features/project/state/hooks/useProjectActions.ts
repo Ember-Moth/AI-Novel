@@ -661,6 +661,32 @@ export function useProjectActions(workspace: ProjectWorkspace) {
     ],
   );
 
+  const handleContentAnchorSet = useCallback(
+    async (pointId: string) => {
+      if (!workspaceId || !activeContentNode) {
+        return;
+      }
+
+      if (pointId === activeContentNode.anchorTimelinePointId) {
+        return;
+      }
+
+      setContentError(null);
+
+      try {
+        await updateContent.mutate({
+          workspaceId,
+          nodeId: activeContentNode.id,
+          anchorPointId: pointId,
+        });
+        setActiveTimelinePointId(pointId);
+      } catch (error) {
+        setContentError(error instanceof Error ? error.message : "设置时间锚点失败，请稍后重试。");
+      }
+    },
+    [activeContentNode, setActiveTimelinePointId, setContentError, updateContent, workspaceId],
+  );
+
   const handleContentRename = useCallback(
     async (nodeId: string, title: string | null) => {
       if (!workspaceId) {
@@ -930,6 +956,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
     handleAuxContentChange,
     handleTimelineSelect,
     handleContentRename,
+    handleContentAnchorSet,
     handleContentCreateSibling,
     handleContentCreateChild,
     handleContentDelete,
