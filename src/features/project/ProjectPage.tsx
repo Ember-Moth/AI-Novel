@@ -23,7 +23,7 @@ export function ProjectPage({ id: projectId }: { id: string }) {
 function ProjectWorkspace({ projectId }: { projectId: string }) {
   const workspace = useProjectWorkspace(projectId);
   const actions = useProjectActions(workspace);
-  useProjectWorkspaceEffects(workspace, actions.flushBodySave);
+  useProjectWorkspaceEffects(workspace, actions.flushBodySave, actions.flushAuxSave);
 
   const {
     workspaceQuery,
@@ -42,9 +42,13 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
     expandedContentIds,
     expandedAuxIds,
     activeContentNode,
+    activeAuxNode,
     editorBody,
+    editorContent,
     activeTimelineLabel,
     activeSaveState,
+    auxSaveState,
+    editorTarget,
     auxRootId,
     contentError,
     timelineError,
@@ -188,7 +192,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                       expandedIds={expandedAuxIds}
                       onToggle={actions.toggleAuxExpanded}
                       activeId={activeAuxNodeId}
-                      onSelect={(node) => actions.setActiveAuxNodeId(node.id)}
+                      onSelect={actions.handleAuxSelect}
                       onCreateChildDir={actions.handleAuxCreateChildDir}
                       onCreateChildFile={actions.handleAuxCreateChildFile}
                       onRename={actions.handleAuxRename}
@@ -227,7 +231,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                       points={timelinePoints}
                       activeId={activeTimelinePointId}
                       isBusy={timelineBusy}
-                      onSelect={actions.setActiveTimelinePointId}
+                      onSelect={actions.handleTimelineSelect}
                       onReorder={actions.handleTimelineReorder}
                       onDelete={actions.handleTimelineDelete}
                       onRename={actions.handleTimelineRename}
@@ -241,11 +245,16 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <EditorArea
-          node={activeContentNode}
+          target={editorTarget}
+          contentNode={activeContentNode}
+          auxNode={activeAuxNode}
           body={editorBody}
+          auxContent={editorContent}
           timelineLabel={activeTimelineLabel}
-          saveState={activeSaveState}
+          contentSaveState={activeSaveState}
+          auxSaveState={auxSaveState}
           onBodyChange={actions.handleBodyChange}
+          onAuxContentChange={actions.handleAuxContentChange}
         />
       </div>
     </div>

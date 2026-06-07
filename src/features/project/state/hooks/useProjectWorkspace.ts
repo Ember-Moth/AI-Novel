@@ -11,8 +11,8 @@ import {
   normalizeContentNodes,
   normalizeTimelinePoints,
 } from "@/features/project/model/normalize";
-import { buildAuxParentMap } from "@/features/project/model/tree";
-import type { ContentTreeNodeVM, SaveState } from "@/features/project/model/types";
+import { buildAuxParentMap, findAuxNode } from "@/features/project/model/tree";
+import type { AuxTreeNodeVM, ContentTreeNodeVM, SaveState } from "@/features/project/model/types";
 import { rpc } from "@/server/rpc/client";
 
 import { EditorMolecule } from "../molecules/editor";
@@ -99,9 +99,14 @@ export function useProjectWorkspace(projectId: string) {
   const activeContentNode: ContentTreeNodeVM | null = activeContentNodeId
     ? (contentNodeMap.get(activeContentNodeId) ?? null)
     : null;
+  const activeAuxNode: AuxTreeNodeVM | null = activeAuxNodeId
+    ? (findAuxNode(auxTree, activeAuxNodeId) ?? null)
+    : null;
   const editorBody = activeContentNode
     ? (drafts[activeContentNode.id] ?? activeContentNode.body)
     : "";
+  const editorContent =
+    activeAuxNode?.nodeType === "file" ? (drafts[activeAuxNode.id] ?? activeAuxNode.content) : "";
   const activeTimelineLabel =
     (activeContentNode && timelineLabelMap.get(activeContentNode.anchorTimelinePointId)) ||
     (activeTimelinePointId ? timelineLabelMap.get(activeTimelinePointId) : undefined) ||
@@ -114,6 +119,21 @@ export function useProjectWorkspace(projectId: string) {
     isDirty: activeContentNode ? editorBody !== activeSaveBaseline : false,
     error: activeContentNode ? (saveErrors[activeContentNode.id] ?? null) : null,
   };
+  const auxSaveBaseline =
+    activeAuxNode?.nodeType === "file"
+      ? (committedBodies[activeAuxNode.id] ?? activeAuxNode.content)
+      : "";
+  const auxSaveState: SaveState = {
+    isSaving:
+      activeAuxNode?.nodeType === "file" ? (pendingSaveCounts[activeAuxNode.id] ?? 0) > 0 : false,
+    isDirty: activeAuxNode?.nodeType === "file" ? editorContent !== auxSaveBaseline : false,
+    error: activeAuxNode?.nodeType === "file" ? (saveErrors[activeAuxNode.id] ?? null) : null,
+  };
+  const editorTarget: "content" | "aux" | null = activeAuxNode
+    ? "aux"
+    : activeContentNode
+      ? "content"
+      : null;
 
   const contentBusy = createContent.isPending || deleteContent.isPending;
   const timelineBusy =
@@ -168,9 +188,13 @@ export function useProjectWorkspace(projectId: string) {
     drafts,
     committedBodies,
     activeContentNode,
+    activeAuxNode,
     editorBody,
+    editorContent,
     activeTimelineLabel,
     activeSaveState,
+    auxSaveState,
+    editorTarget,
     contentError,
     timelineError,
     auxError,

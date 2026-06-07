@@ -2,6 +2,7 @@ import { useMolecule } from "bunshi/react";
 import { useAtom, useSetAtom } from "jotai";
 import { useEffect } from "react";
 
+import { flattenAuxNodes } from "@/features/project/model/normalize";
 import { collectAncestorIds, findPreferredContentNode } from "@/features/project/model/tree";
 
 import { AUTOSAVE_DELAY_MS } from "../constants";
@@ -12,6 +13,7 @@ import type { ProjectWorkspace } from "./useProjectWorkspace";
 export function useProjectWorkspaceEffects(
   workspace: ProjectWorkspace,
   flushBodySave: (_nodeId: string, _body: string) => Promise<void>,
+  flushAuxSave: (_nodeId: string, _content: string) => Promise<void>,
 ) {
   const selection = useMolecule(SelectionMolecule);
   const editor = useMolecule(EditorMolecule);
@@ -36,11 +38,16 @@ export function useProjectWorkspaceEffects(
     auxTree,
     auxNodeIdSet,
     activeContentNode,
+    activeAuxNode,
   } = workspace;
 
   useEffect(() => {
     if (flatContentNodes.length === 0) {
       setActiveContentNodeId(null);
+      return;
+    }
+
+    if (activeAuxNodeId) {
       return;
     }
 
@@ -52,7 +59,14 @@ export function useProjectWorkspaceEffects(
     if (preferredNode) {
       setActiveContentNodeId(preferredNode.id);
     }
-  }, [activeContentNodeId, contentNodeMap, contentTree, flatContentNodes, setActiveContentNodeId]);
+  }, [
+    activeAuxNodeId,
+    activeContentNodeId,
+    contentNodeMap,
+    contentTree,
+    flatContentNodes,
+    setActiveContentNodeId,
+  ]);
 
   useEffect(() => {
     if (!activeContentNodeId) {
@@ -164,4 +178,45 @@ export function useProjectWorkspaceEffects(
 
     return () => clearTimeout(timeout);
   }, [activeContentNode, committedBodies, drafts, flushBodySave, workspaceId]);
+
+  useEffect(() => {
+    if (!workspaceId || activeAuxNode?.nodeType !== "file") {
+      return;
+    }
+
+    const draft = drafts[activeAuxNode.id];
+    if (draft === undefined) {
+      return;
+    }
+
+    const baseline = committedBodies[activeAuxNode.id] ?? activeAuxNode.content;
+    if (draft === baseline) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      void flushAuxSave(activeAuxNode.id, draft);
+    }, AUTOSAVE_DELAY_MS);
+
+    return () => clearTimeout(timeout);
+  }, [activeAuxNode, committedBodies, drafts, flushAuxSave, workspaceId]);
+
+  useEffect(() => {
+    const auxNodeMap = new Map(flattenAuxNodes(auxTree).map((node) => [node.id, node]));
+
+    setCommittedBodies((previous) => {
+      let changed = false;
+      const next = { ...previous };
+
+      for (const [nodeId, committedContent] of Object.entries(previous)) {
+        const node = auxNodeMap.get(nodeId);
+        if (node?.nodeType === "file" && node.content === committedContent) {
+          delete next[nodeId];
+          changed = true;
+        }
+      }
+
+      return changed ? next : previous;
+    });
+  }, [auxTree, setCommittedBodies]);
 }

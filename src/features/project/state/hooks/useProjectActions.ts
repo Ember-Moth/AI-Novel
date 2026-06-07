@@ -4,6 +4,7 @@ import { useCallback } from "react";
 
 import {
   collectContentSubtreeIds,
+  findAuxNode,
   findContentNode,
   listAuxSiblings,
   nextAuxDirName,
@@ -107,6 +108,90 @@ export function useProjectActions(workspace: ProjectWorkspace) {
       }
     },
     [setCommittedBodies, setPendingSaveCounts, setSaveErrors, updateContent, workspaceId],
+  );
+
+  const flushAuxSave = useCallback(
+    async (nodeId: string, content: string, timelinePointId = activeTimelinePointId) => {
+      if (!workspaceId || !timelinePointId) {
+        return;
+      }
+
+      setPendingSaveCounts((previous) => ({
+        ...previous,
+        [nodeId]: (previous[nodeId] ?? 0) + 1,
+      }));
+      setSaveErrors((previous) => omitRecordKey(previous, nodeId));
+
+      try {
+        await writeFileAux.mutate({
+          workspaceId,
+          timelinePointId,
+          nodeId,
+          content,
+        });
+        setCommittedBodies((previous) => ({
+          ...previous,
+          [nodeId]: content,
+        }));
+      } catch (error) {
+        setSaveErrors((previous) => ({
+          ...previous,
+          [nodeId]: error instanceof Error ? error.message : "保存失败，请稍后重试。",
+        }));
+      } finally {
+        setPendingSaveCounts((previous) => {
+          const nextCount = (previous[nodeId] ?? 1) - 1;
+          if (nextCount <= 0) {
+            return omitRecordKey(previous, nodeId);
+          }
+
+          return {
+            ...previous,
+            [nodeId]: nextCount,
+          };
+        });
+      }
+    },
+    [
+      activeTimelinePointId,
+      setCommittedBodies,
+      setPendingSaveCounts,
+      setSaveErrors,
+      workspaceId,
+      writeFileAux,
+    ],
+  );
+
+  const flushDirtyContent = useCallback(() => {
+    if (!activeContentNode) {
+      return;
+    }
+
+    const currentBody = drafts[activeContentNode.id] ?? activeContentNode.body;
+    const baseline = committedBodies[activeContentNode.id] ?? activeContentNode.body;
+    if (currentBody !== baseline) {
+      void flushBodySave(activeContentNode.id, currentBody);
+    }
+  }, [activeContentNode, committedBodies, drafts, flushBodySave]);
+
+  const flushDirtyAux = useCallback(
+    (timelinePointId = activeTimelinePointId) => {
+      if (!activeAuxNodeId || !timelinePointId) {
+        return;
+      }
+
+      const auxNode = findAuxNode(auxTree, activeAuxNodeId);
+      if (auxNode?.nodeType !== "file") {
+        return;
+      }
+
+      const currentContent = drafts[auxNode.id] ?? auxNode.content;
+      const baseline = committedBodies[auxNode.id] ?? auxNode.content;
+      if (currentContent !== baseline) {
+        void flushAuxSave(auxNode.id, currentContent, timelinePointId);
+      }
+    },
+    [activeAuxNodeId, activeTimelinePointId, auxTree, committedBodies, drafts, flushAuxSave],
   );
 
   const toggleContentExpanded = useCallback(
@@ -259,6 +344,8 @@ export function useProjectActions(workspace: ProjectWorkspace) {
 
   const handleContentSelect = useCallback(
     (node: ContentTreeNodeVM) => {
+      flushDirtyAux();
+
       if (activeContentNode && activeContentNode.id !== node.id) {
         const currentBody = drafts[activeContentNode.id] ?? activeContentNode.body;
         const currentBaseline = committedBodies[activeContentNode.id] ?? activeContentNode.body;
@@ -267,6 +354,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         }
       }
 
+      setActiveAuxNodeId(null);
       setActiveContentNodeId(node.id);
       setActiveTimelinePointId(node.anchorTimelinePointId);
     },
@@ -275,8 +363,89 @@ export function useProjectActions(workspace: ProjectWorkspace) {
       committedBodies,
       drafts,
       flushBodySave,
+      flushDirtyAux,
+      setActiveAuxNodeId,
       setActiveContentNodeId,
       setActiveTimelinePointId,
+    ],
+  );
+
+  const handleAuxSelect = useCallback(
+    (node: AuxTreeNodeVM) => {
+      flushDirtyContent();
+
+      if (activeAuxNodeId && activeAuxNodeId !== node.id) {
+        const previousNode = findAuxNode(auxTree, activeAuxNodeId);
+        if (previousNode?.nodeType === "file") {
+          const currentContent = drafts[previousNode.id] ?? previousNode.content;
+          const baseline = committedBodies[previousNode.id] ?? previousNode.content;
+          if (currentContent !== baseline) {
+            void flushAuxSave(previousNode.id, currentContent);
+          }
+        }
+      }
+
+      setActiveContentNodeId(null);
+      setActiveAuxNodeId(node.id);
+    },
+    [
+      activeAuxNodeId,
+      auxTree,
+      committedBodies,
+      drafts,
+      flushAuxSave,
+      flushDirtyContent,
+      setActiveAuxNodeId,
+      setActiveContentNodeId,
+    ],
+  );
+
+  const handleAuxContentChange = useCallback(
+    (nextContent: string) => {
+      if (!activeAuxNodeId) {
+        return;
+      }
+
+      const auxNode = findAuxNode(auxTree, activeAuxNodeId);
+      if (auxNode?.nodeType !== "file") {
+        return;
+      }
+
+      setDrafts((previous) => ({
+        ...previous,
+        [auxNode.id]: nextContent,
+      }));
+      setSaveErrors((previous) => omitRecordKey(previous, auxNode.id));
+    },
+    [activeAuxNodeId, auxTree, setDrafts, setSaveErrors],
+  );
+
+  const handleTimelineSelect = useCallback(
+    (pointId: string) => {
+      if (pointId === activeTimelinePointId) {
+        return;
+      }
+
+      flushDirtyAux(activeTimelinePointId ?? undefined);
+
+      if (activeAuxNodeId) {
+        setDrafts((previous) => omitRecordKey(previous, activeAuxNodeId));
+        setCommittedBodies((previous) => omitRecordKey(previous, activeAuxNodeId));
+        setPendingSaveCounts((previous) => omitRecordKey(previous, activeAuxNodeId));
+        setSaveErrors((previous) => omitRecordKey(previous, activeAuxNodeId));
+      }
+
+      setActiveTimelinePointId(pointId);
+    },
+    [
+      activeAuxNodeId,
+      activeTimelinePointId,
+      flushDirtyAux,
+      setActiveTimelinePointId,
+      setCommittedBodies,
+      setDrafts,
+      setPendingSaveCounts,
+      setSaveErrors,
     ],
   );
 
@@ -293,6 +462,30 @@ export function useProjectActions(workspace: ProjectWorkspace) {
       setSaveErrors((previous) => omitRecordKey(previous, activeContentNode.id));
     },
     [activeContentNode, setDrafts, setSaveErrors],
+  );
+
+  const clearAuxNodeLocalState = useCallback(
+    (nodeIds: Set<string>) => {
+      const omitMany = <TValue>(record: Record<string, TValue>) => {
+        let changed = false;
+        const next = { ...record };
+
+        for (const nodeId of nodeIds) {
+          if (nodeId in next) {
+            delete next[nodeId];
+            changed = true;
+          }
+        }
+
+        return changed ? next : record;
+      };
+
+      setDrafts((previous) => omitMany(previous));
+      setCommittedBodies((previous) => omitMany(previous));
+      setPendingSaveCounts((previous) => omitMany(previous));
+      setSaveErrors((previous) => omitMany(previous));
+    },
+    [setCommittedBodies, setDrafts, setPendingSaveCounts, setSaveErrors],
   );
 
   const clearContentNodeLocalState = useCallback(
@@ -654,6 +847,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
           timelinePointId: activeTimelinePointId,
           nodeId,
         });
+        clearAuxNodeLocalState(new Set([nodeId]));
         if (activeAuxNodeId === nodeId) {
           setActiveAuxNodeId(null);
         }
@@ -664,6 +858,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
     [
       activeAuxNodeId,
       activeTimelinePointId,
+      clearAuxNodeLocalState,
       deleteAux,
       setActiveAuxNodeId,
       setAuxError,
@@ -702,10 +897,14 @@ export function useProjectActions(workspace: ProjectWorkspace) {
 
   return {
     flushBodySave,
+    flushAuxSave,
     toggleContentExpanded,
     toggleAuxExpanded,
     handleContentSelect,
+    handleAuxSelect,
     handleBodyChange,
+    handleAuxContentChange,
+    handleTimelineSelect,
     handleContentRename,
     handleContentCreateSibling,
     handleContentCreateChild,
