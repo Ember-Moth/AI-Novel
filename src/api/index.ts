@@ -10,6 +10,7 @@ import {
   createTimelinePoint,
   deleteAuxNodeAt,
   deleteTimelinePoint,
+  exportAuxSnapshotTree,
   exportContentSubtree,
   getDefaultWorkspace,
   linkAt,
@@ -221,6 +222,15 @@ export const aux = {
     ReturnType<typeof listAuxDirAt>
   >(({ workspaceId, pointId, dirId, path }, ctx) => {
     const result = listAuxDirAt(workspaceId, pointId, { dirId, path });
+    ctx.watch(`aux:${workspaceId}`);
+    ctx.watch(`timeline:${workspaceId}`);
+    return result;
+  }),
+  snapshotTree: query<
+    { workspaceId: string; pointId?: string | typeof ORIGIN_TIMELINE_POINT_ID },
+    ReturnType<typeof exportAuxSnapshotTree>
+  >(({ workspaceId, pointId }, ctx) => {
+    const result = exportAuxSnapshotTree(workspaceId, pointId);
     ctx.watch(`aux:${workspaceId}`);
     ctx.watch(`timeline:${workspaceId}`);
     return result;

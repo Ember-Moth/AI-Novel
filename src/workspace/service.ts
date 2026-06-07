@@ -47,6 +47,25 @@ export interface ExportedContentSubtree {
   nodes: ExportedContentNode[];
 }
 
+export interface ExportedAuxNode {
+  id: string;
+  nodeType: AuxNodeType;
+  parentAuxNodeId: string | null;
+  name: string | null;
+  content: string | null;
+  symlinkTargetAuxNodeId: string | null;
+  symlinkTargetPath: string | null;
+  timelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID;
+  path: string;
+  children: ExportedAuxNode[];
+}
+
+export interface ExportedAuxSnapshotTree {
+  rootNodeId: string;
+  timelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID;
+  nodes: ExportedAuxNode[];
+}
+
 export interface ResolvedAuxNode {
   id: string;
   nodeType: AuxNodeType;
@@ -546,6 +565,30 @@ function listChildrenFromSnapshot(
   return [...snapshot.values()]
     .filter((node) => node.parentAuxNodeId === parentId)
     .sort((left, right) => (left.name ?? "").localeCompare(right.name ?? ""));
+}
+
+function exportAuxNode(
+  snapshot: Map<string, ResolvedAuxSnapshotNode>,
+  node: ResolvedAuxSnapshotNode,
+): ExportedAuxNode {
+  const symlinkTargetPath = node.symlinkTargetAuxNodeId
+    ? (snapshot.get(node.symlinkTargetAuxNodeId)?.path ?? null)
+    : null;
+
+  return {
+    id: node.id,
+    nodeType: node.nodeType,
+    parentAuxNodeId: node.parentAuxNodeId,
+    name: node.name,
+    content: node.content,
+    symlinkTargetAuxNodeId: node.symlinkTargetAuxNodeId,
+    symlinkTargetPath,
+    timelinePointId: node.timelinePointId,
+    path: node.path,
+    children: listChildrenFromSnapshot(snapshot, node.id).map((child) =>
+      exportAuxNode(snapshot, child),
+    ),
+  };
 }
 
 function resolveAuxNodeIdFromPath(
@@ -1336,6 +1379,21 @@ export function listAuxDirAt(
   invariant(dir.nodeType === "dir" || dir.nodeType === "root", "Target is not a directory");
 
   return listChildrenFromSnapshot(snapshot, dir.id);
+}
+
+export function exportAuxSnapshotTree(workspaceId: string, pointId?: TimelinePointRef) {
+  const workspace = getWorkspaceOrThrow(db, workspaceId);
+  const auxRootId = assertAuxRoot(workspace);
+  const timelinePointId = validateTimelinePointRef(db, workspace.id, pointId);
+  const snapshot = buildReachableAuxSnapshot(db, workspace, timelinePointId);
+
+  return {
+    rootNodeId: auxRootId,
+    timelinePointId: pointIdOrOrigin(timelinePointId),
+    nodes: listChildrenFromSnapshot(snapshot, auxRootId).map((node) =>
+      exportAuxNode(snapshot, node),
+    ),
+  } satisfies ExportedAuxSnapshotTree;
 }
 
 export function composeWritingContext(workspaceId: string, contentNodeId: string): WritingContext {

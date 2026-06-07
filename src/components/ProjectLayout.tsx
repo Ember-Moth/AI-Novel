@@ -1,460 +1,158 @@
-import React, { useCallback, useState } from "react";
+import { skipToken } from "@codehz/rpc";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-// ============================================================
-// Mock data types
-// ============================================================
+import { rpc } from "@/api/client";
 
-interface MockTimelinePoint {
-  id: string;
-  key: string;
-  label: string;
-  description: string;
-}
+const ORIGIN_TIMELINE_POINT_ID = "origin";
+const AUTOSAVE_DELAY_MS = 600;
 
-interface MockContentNode {
+interface ContentTreeNodeVM {
   id: string;
   title: string;
   body: string;
   anchorTimelinePointId: string;
-  children: MockContentNode[];
+  children: ContentTreeNodeVM[];
 }
 
-interface MockAuxNode {
+interface TimelinePointVM {
+  id: string;
+  key: string;
+  label: string;
+  description: string;
+  isImplicitOrigin: boolean;
+}
+
+interface AuxTreeNodeVM {
   id: string;
   nodeType: "dir" | "file" | "symlink";
   name: string;
-  content?: string;
-  symlinkTargetPath?: string;
-  children?: MockAuxNode[];
+  content: string;
+  path: string;
+  symlinkTargetPath: string | null;
+  children: AuxTreeNodeVM[];
 }
 
-// ============================================================
-// Mock data
-// ============================================================
+interface RawContentTreeNode {
+  id: string;
+  title: string | null;
+  body: string | null;
+  anchorTimelinePointId: string;
+  children: RawContentTreeNode[];
+}
 
-const mockTimelinePoints: MockTimelinePoint[] = [
-  { id: "origin", key: "origin", label: "原点", description: "故事初始状态" },
-  { id: "beginning", key: "beginning", label: "开端", description: "故事开始" },
-  { id: "development", key: "development", label: "发展", description: "情节展开" },
-  { id: "climax", key: "climax", label: "高潮", description: "冲突爆发" },
-  { id: "ending", key: "ending", label: "结局", description: "故事收束" },
-];
+interface RawTimelinePoint {
+  id: string;
+  key: string;
+  label: string;
+  description: string | null;
+  isImplicitOrigin: boolean;
+}
 
-const mockContentTree: MockContentNode[] = [
-  {
-    id: "vol1",
-    title: "第一卷：觉醒",
-    body: "这是故事的开端。\n\n在平凡与非凡之间，只隔着一道门。\n\n林明即将发现这扇门的存在。",
-    anchorTimelinePointId: "beginning",
-    children: [
-      {
-        id: "ch1",
-        title: "第一章：平凡的日常",
-        body: "林明走在熟悉的校园走廊上，阳光透过窗户洒在地面。\n\n今天是开学的第一天，周围充满了喧闹声。\n\n他习惯性地走向三年二班的教室。",
-        anchorTimelinePointId: "origin",
-        children: [
-          {
-            id: "s1",
-            title: "教室",
-            body: "教室里已经有不少同学到了。\n\n「早上好，林明！」\n\n小美朝他挥了挥手，脸上带着灿烂的笑容。\n\n「早啊。」林明点点头，走向自己的座位。",
-            anchorTimelinePointId: "origin",
-            children: [],
-          },
-          {
-            id: "s2",
-            title: "走廊偶遇",
-            body: "课间，林明在走廊上遇到了小美。\n\n「听说了吗？今天会有转学生来。」\n\n小美神秘兮兮地说道。\n\n「转学生？」林明不以为意地应了一声。",
-            anchorTimelinePointId: "origin",
-            children: [],
-          },
-        ],
-      },
-      {
-        id: "ch2",
-        title: "第二章：异常降临",
-        body: "一切都从那个下午开始改变。\n\n图书馆深处传来的异光，打破了校园的平静。\n\n林明意识到，有什么超出常识的事情正在发生。",
-        anchorTimelinePointId: "beginning",
-        children: [
-          {
-            id: "s3",
-            title: "图书馆的异光",
-            body: "图书馆深处，一本古老的书籍正在发出微弱的蓝光。\n\n林明伸手触碰了书页。\n\n瞬间，周围的空气开始扭曲。\n\n他看到了另一个世界。",
-            anchorTimelinePointId: "beginning",
-            children: [],
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "vol2",
-    title: "第二卷：冲突",
-    body: "随着真相逐渐浮现，更大的危机正在逼近。\n\n林明必须做出选择。",
-    anchorTimelinePointId: "development",
-    children: [
-      {
-        id: "ch3",
-        title: "第三章：对峙",
-        body: "林明站在了黑影的面前。\n\n四周是扭曲的空间，仿佛连时间和光线都被吞噬了。\n\n「你终于来了。」黑影发出低沉的声音。",
-        anchorTimelinePointId: "development",
-        children: [
-          {
-            id: "s4",
-            title: "异空间决战",
-            body: "战斗在扭曲的空间中展开。\n\n林明运用新获得的力量，与黑影周旋。\n\n每一击都撕裂着周围的 reality。",
-            anchorTimelinePointId: "development",
-            children: [],
-          },
-        ],
-      },
-    ],
-  },
-];
+interface RawAuxTreeNode {
+  id: string;
+  nodeType: string;
+  name: string | null;
+  content: string | null;
+  path: string;
+  symlinkTargetPath: string | null;
+  children: RawAuxTreeNode[];
+}
 
-// —— Aux Tree state per timeline point ——
-
-const mockAuxTreeOrigin: MockAuxNode[] = [
-  {
-    id: "root-char",
-    nodeType: "dir",
-    name: "角色",
-    children: [
-      {
-        id: "char-ming",
-        nodeType: "file",
-        name: "林明",
-        content: "17岁，高中三年级。性格内向但观察力敏锐。",
-      },
-      { id: "char-mei", nodeType: "file", name: "小美", content: "林明的青梅竹马，开朗活泼。" },
-    ],
-  },
-  {
-    id: "root-area",
-    nodeType: "dir",
-    name: "区域",
-    children: [
-      {
-        id: "area-campus",
-        nodeType: "dir",
-        name: "校园",
-        children: [
-          {
-            id: "area-classroom",
-            nodeType: "file",
-            name: "教室",
-            content: "三年二班教室，位于教学楼三层。",
-          },
-          {
-            id: "area-library",
-            nodeType: "file",
-            name: "图书馆",
-            content: "学校图书馆，藏书丰富。",
-          },
-        ],
-      },
-      {
-        id: "area-home",
-        nodeType: "file",
-        name: "林明的家",
-        content: "普通的公寓，位于学校附近。",
-      },
-    ],
-  },
-  {
-    id: "root-lore",
-    nodeType: "dir",
-    name: "世界设定",
-    children: [
-      {
-        id: "lore-magic",
-        nodeType: "file",
-        name: "魔法体系",
-        content: "这个世界存在着古老的魔法体系，通过触碰特定古籍可以获得力量。",
-      },
-    ],
-  },
-  {
-    id: "root-current",
-    nodeType: "symlink",
-    name: "当前场景位置",
-    symlinkTargetPath: "/区域/校园/教室",
-  },
-];
-
-const mockAuxTreeBeginning: MockAuxNode[] = [
-  {
-    id: "root-char",
-    nodeType: "dir",
-    name: "角色",
-    children: [
-      {
-        id: "char-ming",
-        nodeType: "file",
-        name: "林明",
-        content: "17岁，高中三年级。性格内向但观察力敏锐。",
-      },
-      { id: "char-mei", nodeType: "file", name: "小美", content: "林明的青梅竹马，开朗活泼。" },
-    ],
-  },
-  {
-    id: "root-area",
-    nodeType: "dir",
-    name: "区域",
-    children: [
-      {
-        id: "area-campus",
-        nodeType: "dir",
-        name: "校园",
-        children: [
-          {
-            id: "area-classroom",
-            nodeType: "file",
-            name: "教室",
-            content: "三年二班教室，位于教学楼三层。",
-          },
-          {
-            id: "area-library",
-            nodeType: "file",
-            name: "图书馆",
-            content: "学校图书馆。一本古书正散发着微弱的蓝光。",
-          },
-        ],
-      },
-      {
-        id: "area-home",
-        nodeType: "file",
-        name: "林明的家",
-        content: "普通的公寓，位于学校附近。",
-      },
-    ],
-  },
-  {
-    id: "root-lore",
-    nodeType: "dir",
-    name: "世界设定",
-    children: [
-      {
-        id: "lore-magic",
-        nodeType: "file",
-        name: "魔法体系",
-        content: "这个世界存在着古老的魔法体系，通过触碰特定古籍可以获得力量。",
-      },
-    ],
-  },
-  {
-    id: "root-current",
-    nodeType: "symlink",
-    name: "当前场景位置",
-    symlinkTargetPath: "/区域/校园/图书馆",
-  },
-];
-
-const mockAuxTreeDevelopment: MockAuxNode[] = [
-  {
-    id: "root-char",
-    nodeType: "dir",
-    name: "角色",
-    children: [
-      {
-        id: "char-ming",
-        nodeType: "file",
-        name: "林明",
-        content: "已觉醒力量，正在学习控制新获得的能力。",
-      },
-      {
-        id: "char-mei",
-        nodeType: "file",
-        name: "小美",
-        content: "林明的青梅竹马，隐约察觉到了异变。",
-      },
-      {
-        id: "char-shadow",
-        nodeType: "file",
-        name: "黑影",
-        content: "神秘的黑影，似乎与远古的封印有关。",
-      },
-    ],
-  },
-  {
-    id: "root-area",
-    nodeType: "dir",
-    name: "区域",
-    children: [
-      {
-        id: "area-home",
-        nodeType: "file",
-        name: "林明的家",
-        content: "普通的公寓，现在成了临时避难所。",
-      },
-      {
-        id: "area-void",
-        nodeType: "dir",
-        name: "异空间",
-        children: [
-          {
-            id: "area-void-1",
-            nodeType: "file",
-            name: "扭曲回廊",
-            content: "连接现实与异界的扭曲空间。",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "root-lore",
-    nodeType: "dir",
-    name: "世界设定",
-    children: [
-      {
-        id: "lore-magic",
-        nodeType: "file",
-        name: "魔法体系",
-        content: "这个世界存在着古老的魔法体系。黑影似乎是某种古老封印的产物。",
-      },
-      {
-        id: "lore-seal",
-        nodeType: "file",
-        name: "远古封印",
-        content: "远古时期留下的封印，似乎封印着某种强大的存在。",
-      },
-    ],
-  },
-  {
-    id: "root-current",
-    nodeType: "symlink",
-    name: "当前场景位置",
-    symlinkTargetPath: "/区域/异空间/扭曲回廊",
-  },
-];
-
-const mockAuxTreeClimax: MockAuxNode[] = [
-  {
-    id: "root-char",
-    nodeType: "dir",
-    name: "角色",
-    children: [
-      {
-        id: "char-ming",
-        nodeType: "file",
-        name: "林明",
-        content: "已经完全掌握了力量，正在与黑影进行最终决战。",
-      },
-      {
-        id: "char-shadow",
-        nodeType: "file",
-        name: "黑影",
-        content: "远古封印的解封者，拥有强大的力量。",
-      },
-    ],
-  },
-  {
-    id: "root-area",
-    nodeType: "dir",
-    name: "区域",
-    children: [
-      {
-        id: "area-void",
-        nodeType: "dir",
-        name: "异空间",
-        children: [
-          {
-            id: "area-void-core",
-            nodeType: "file",
-            name: "核心领域",
-            content: "异空间的最深处，也是封印的核心所在。",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "root-lore",
-    nodeType: "dir",
-    name: "世界设定",
-    children: [
-      {
-        id: "lore-seal",
-        nodeType: "file",
-        name: "远古封印",
-        content: "封印正在被彻底打破，世界的命运悬于一线。",
-      },
-    ],
-  },
-  {
-    id: "root-current",
-    nodeType: "symlink",
-    name: "当前场景位置",
-    symlinkTargetPath: "/区域/异空间/核心领域",
-  },
-];
-
-const mockAuxTreeEnding: MockAuxNode[] = [
-  {
-    id: "root-char",
-    nodeType: "dir",
-    name: "角色",
-    children: [
-      {
-        id: "char-ming",
-        nodeType: "file",
-        name: "林明",
-        content: "经历了这一切后，他变得更加成熟。",
-      },
-      { id: "char-mei", nodeType: "file", name: "小美", content: "依然陪在林明身边。" },
-    ],
-  },
-  {
-    id: "root-area",
-    nodeType: "dir",
-    name: "区域",
-    children: [
-      {
-        id: "area-campus",
-        nodeType: "dir",
-        name: "校园",
-        children: [
-          { id: "area-classroom", nodeType: "file", name: "教室", content: "恢复了往日的平静。" },
-        ],
-      },
-      { id: "area-home", nodeType: "file", name: "林明的家", content: "回到了平凡的日常。" },
-    ],
-  },
-  {
-    id: "root-current",
-    nodeType: "symlink",
-    name: "当前场景位置",
-    symlinkTargetPath: "/区域/校园/教室",
-  },
-];
-
-const auxTreeMap: Record<string, MockAuxNode[] | undefined> = {
-  origin: mockAuxTreeOrigin,
-  beginning: mockAuxTreeBeginning,
-  development: mockAuxTreeDevelopment,
-  climax: mockAuxTreeClimax,
-  ending: mockAuxTreeEnding,
-};
-
-// ============================================================
-// Helper: flatten content tree for full-text search / lookup
-// ============================================================
-
-function flattenContentNodes(nodes: MockContentNode[]): MockContentNode[] {
-  const result: MockContentNode[] = [];
-  for (const n of nodes) {
-    result.push(n);
-    result.push(...flattenContentNodes(n.children));
+function omitRecordKey<TValue>(record: Record<string, TValue>, key: string) {
+  if (!(key in record)) {
+    return record;
   }
-  return result;
+
+  const next = { ...record };
+  delete next[key];
+  return next;
 }
 
-// ============================================================
-// Icon helpers
-// ============================================================
+function normalizeContentNodes(nodes: RawContentTreeNode[]): ContentTreeNodeVM[] {
+  return nodes.map((node) => ({
+    id: node.id,
+    title: node.title?.trim() || "未命名节点",
+    body: node.body ?? "",
+    anchorTimelinePointId: node.anchorTimelinePointId,
+    children: normalizeContentNodes(node.children),
+  }));
+}
+
+function normalizeTimelinePoints(points: RawTimelinePoint[]): TimelinePointVM[] {
+  return points.map((point) => ({
+    id: point.id,
+    key: point.key,
+    label: point.isImplicitOrigin ? "原点" : point.label,
+    description: point.isImplicitOrigin ? "故事初始状态" : (point.description ?? ""),
+    isImplicitOrigin: point.isImplicitOrigin,
+  }));
+}
+
+function normalizeAuxNodes(nodes: RawAuxTreeNode[]): AuxTreeNodeVM[] {
+  return nodes
+    .filter(
+      (node): node is RawAuxTreeNode & { nodeType: "dir" | "file" | "symlink" } =>
+        node.nodeType === "dir" || node.nodeType === "file" || node.nodeType === "symlink",
+    )
+    .map((node) => ({
+      id: node.id,
+      nodeType: node.nodeType,
+      name: node.name?.trim() || "(未命名)",
+      content: node.content ?? "",
+      path: node.path,
+      symlinkTargetPath: node.symlinkTargetPath,
+      children: normalizeAuxNodes(node.children),
+    }));
+}
+
+function flattenContentNodes(nodes: ContentTreeNodeVM[]): ContentTreeNodeVM[] {
+  return nodes.flatMap((node) => [node, ...flattenContentNodes(node.children)]);
+}
+
+function flattenAuxNodes(nodes: AuxTreeNodeVM[]): AuxTreeNodeVM[] {
+  return nodes.flatMap((node) => [node, ...flattenAuxNodes(node.children)]);
+}
+
+function buildContentParentMap(nodes: ContentTreeNodeVM[], parentId: string | null = null) {
+  const map = new Map<string, string | null>();
+
+  for (const node of nodes) {
+    map.set(node.id, parentId);
+    for (const [childId, childParentId] of buildContentParentMap(node.children, node.id)) {
+      map.set(childId, childParentId);
+    }
+  }
+
+  return map;
+}
+
+function collectAncestorIds(parentMap: Map<string, string | null>, nodeId: string) {
+  const ancestors: string[] = [];
+  let currentId = parentMap.get(nodeId) ?? null;
+
+  while (currentId) {
+    ancestors.push(currentId);
+    currentId = parentMap.get(currentId) ?? null;
+  }
+
+  return ancestors;
+}
+
+function findPreferredContentNode(nodes: ContentTreeNodeVM[]): ContentTreeNodeVM | null {
+  for (const node of nodes) {
+    const childPreferred = findPreferredContentNode(node.children);
+    if (childPreferred) {
+      return childPreferred;
+    }
+    if (node.body.trim()) {
+      return node;
+    }
+  }
+
+  return nodes[0] ?? null;
+}
 
 function ContentNodeIcon({ hasBody, hasChildren }: { hasBody: boolean; hasChildren: boolean }) {
-  // 仅有内容的叶子节点 / 仅有子树的结构节点 / 混合节点 / 空节点
   const icon =
     !hasBody && !hasChildren
       ? "icon-[material-symbols--circle] text-icon-empty"
@@ -463,7 +161,8 @@ function ContentNodeIcon({ hasBody, hasChildren }: { hasBody: boolean; hasChildr
         : !hasBody && hasChildren
           ? "icon-[material-symbols--account-tree] text-icon-folder"
           : "icon-[material-symbols--overview] text-icon-mixed";
-  return <span className={`${icon} text-base shrink-0`} />;
+
+  return <span className={`${icon} shrink-0 text-base`} />;
 }
 
 function AuxNodeIcon({ nodeType }: { nodeType: string }) {
@@ -473,16 +172,13 @@ function AuxNodeIcon({ nodeType }: { nodeType: string }) {
     file: "icon-[material-symbols--description] text-foreground-muted",
     symlink: "icon-[material-symbols--link] text-accent-foreground",
   };
+
   return (
     <span
-      className={`${iconMap[nodeType] ?? "icon-[material-symbols--description] text-foreground-muted"} text-base shrink-0`}
+      className={`${iconMap[nodeType] ?? "icon-[material-symbols--description] text-foreground-muted"} shrink-0 text-base`}
     />
   );
 }
-
-// ============================================================
-// SidebarSection – collapsible stacked panel
-// ============================================================
 
 function SidebarSection({
   title,
@@ -491,42 +187,46 @@ function SidebarSection({
   children,
 }: {
   title: string;
-  actions?: React.ReactNode;
+  actions?: ReactNode;
   defaultExpanded?: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+
   return (
-    <div className="flex flex-col shrink-0">
+    <div className="flex shrink-0 flex-col">
       <div
-        className="flex items-center gap-1 pl-2 pr-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted hover:text-foreground shrink-0 cursor-pointer"
-        onClick={() => setExpanded((v) => !v)}
+        className="flex shrink-0 cursor-pointer items-center gap-1 px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted hover:text-foreground"
+        onClick={() => setExpanded((value) => !value)}
         role="button"
         tabIndex={0}
       >
         <span
           className={`w-4 shrink-0 text-base ${expanded ? "icon-[material-symbols--keyboard-arrow-down]" : "icon-[material-symbols--keyboard-arrow-right]"}`}
         />
-
         <span className="truncate">{title}</span>
-        {actions && (
-          <span className="ml-auto flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        {actions ? (
+          <span
+            className="ml-auto flex items-center gap-1"
+            onClick={(event) => event.stopPropagation()}
+          >
             {actions}
           </span>
-        )}
+        ) : null}
       </div>
-      {expanded && <div className="overflow-auto">{children}</div>}
+      {expanded ? <div className="overflow-auto">{children}</div> : null}
     </div>
   );
 }
 
-// ============================================================
-// ContentTreePanel
-// ============================================================
-
-const timelineLabelMap: Record<string, string> = Object.fromEntries(
-  mockTimelinePoints.map((p) => [p.id, p.label]),
-);
+function PanelPlaceholder({ icon, label }: { icon: string; label: string }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-3 text-sm text-foreground-muted">
+      <span className={`${icon} shrink-0 text-base`} />
+      <span>{label}</span>
+    </div>
+  );
+}
 
 function ContentTreeNodeRow({
   node,
@@ -535,24 +235,26 @@ function ContentTreeNodeRow({
   onToggle,
   onSelect,
   activeId,
-  timelinePointLabel,
+  timelineLabelMap,
 }: {
-  node: MockContentNode;
+  node: ContentTreeNodeVM;
   depth: number;
   expandedIds: Set<string>;
   onToggle: (_id: string) => void;
-  onSelect: (_node: MockContentNode) => void;
+  onSelect: (_node: ContentTreeNodeVM) => void;
   activeId: string | null;
-  timelinePointLabel: string;
+  timelineLabelMap: ReadonlyMap<string, string>;
 }) {
   const hasChildren = node.children.length > 0;
+  const hasBody = node.body.trim().length > 0;
   const isExpanded = expandedIds.has(node.id);
   const isActive = activeId === node.id;
 
   return (
     <div>
       <button
-        className={`flex w-full items-center gap-1 pr-2 py-0.75 text-[13px] ${
+        type="button"
+        className={`flex w-full items-center gap-1 py-0.75 pr-2 text-[13px] ${
           isActive
             ? "bg-list-active-background text-foreground"
             : "text-foreground hover:bg-list-hover-background"
@@ -560,7 +262,9 @@ function ContentTreeNodeRow({
         style={{ paddingLeft: `${8 + depth * 16}px` }}
         onClick={() => {
           onSelect(node);
-          if (hasChildren && !isExpanded) onToggle(node.id);
+          if (hasChildren && !isExpanded) {
+            onToggle(node.id);
+          }
         }}
       >
         {hasChildren ? (
@@ -570,21 +274,21 @@ function ContentTreeNodeRow({
                 ? "icon-[material-symbols--keyboard-arrow-down]"
                 : "icon-[material-symbols--keyboard-arrow-right]"
             }`}
-            onClick={(e) => {
-              e.stopPropagation();
+            onClick={(event) => {
+              event.stopPropagation();
               onToggle(node.id);
             }}
           />
         ) : (
           <span className="w-4 shrink-0" />
         )}
-        <ContentNodeIcon hasBody={node.body.length > 0} hasChildren={node.children.length > 0} />
+        <ContentNodeIcon hasBody={hasBody} hasChildren={hasChildren} />
         <span className="truncate">{node.title}</span>
-        <span className="ml-auto text-[10px] text-accent-foreground opacity-70 shrink-0">
-          {timelinePointLabel}
+        <span className="ml-auto shrink-0 text-[10px] text-accent-foreground opacity-70">
+          {timelineLabelMap.get(node.anchorTimelinePointId) ?? node.anchorTimelinePointId}
         </span>
       </button>
-      {hasChildren && isExpanded && (
+      {hasChildren && isExpanded ? (
         <div>
           {node.children.map((child) => (
             <ContentTreeNodeRow
@@ -595,11 +299,11 @@ function ContentTreeNodeRow({
               onToggle={onToggle}
               onSelect={onSelect}
               activeId={activeId}
-              timelinePointLabel={timelineLabelMap[child.anchorTimelinePointId] ?? ""}
+              timelineLabelMap={timelineLabelMap}
             />
           ))}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -610,13 +314,19 @@ function ContentTreePanel({
   onToggle,
   onSelect,
   activeId,
+  timelineLabelMap,
 }: {
-  tree: MockContentNode[];
+  tree: ContentTreeNodeVM[];
   expandedIds: Set<string>;
   onToggle: (_id: string) => void;
-  onSelect: (_node: MockContentNode) => void;
+  onSelect: (_node: ContentTreeNodeVM) => void;
   activeId: string | null;
+  timelineLabelMap: ReadonlyMap<string, string>;
 }) {
+  if (tree.length === 0) {
+    return <PanelPlaceholder icon="icon-[material-symbols--edit-note]" label="还没有正文节点。" />;
+  }
+
   return (
     <div className="pb-2">
       {tree.map((node) => (
@@ -628,16 +338,12 @@ function ContentTreePanel({
           onToggle={onToggle}
           onSelect={onSelect}
           activeId={activeId}
-          timelinePointLabel={timelineLabelMap[node.anchorTimelinePointId] ?? ""}
+          timelineLabelMap={timelineLabelMap}
         />
       ))}
     </div>
   );
 }
-
-// ============================================================
-// AuxTreePanel
-// ============================================================
 
 function AuxTreeNodeRow({
   node,
@@ -647,11 +353,11 @@ function AuxTreeNodeRow({
   activeId,
   onSelect,
 }: {
-  node: MockAuxNode;
+  node: AuxTreeNodeVM;
   depth: number;
   expandedIds: Set<string>;
   onToggle: (_id: string) => void;
-  onSelect: (_node: MockAuxNode) => void;
+  onSelect: (_node: AuxTreeNodeVM) => void;
   activeId: string | null;
 }) {
   const isDir = node.nodeType === "dir";
@@ -662,7 +368,12 @@ function AuxTreeNodeRow({
     return (
       <div>
         <button
-          className="flex w-full items-center gap-1 pr-2 py-0.75 text-[13px] text-foreground hover:bg-list-hover-background"
+          type="button"
+          className={`flex w-full items-center gap-1 py-0.75 pr-2 text-[13px] ${
+            isActive
+              ? "bg-list-active-background text-foreground"
+              : "text-foreground hover:bg-list-hover-background"
+          }`}
           style={{ paddingLeft: `${8 + depth * 16}px` }}
           onClick={() => {
             onSelect(node);
@@ -679,7 +390,7 @@ function AuxTreeNodeRow({
           <AuxNodeIcon nodeType={isExpanded ? "dir-open" : "dir"} />
           <span className="truncate">{node.name}</span>
         </button>
-        {isExpanded && node.children && (
+        {isExpanded ? (
           <div>
             {node.children.map((child) => (
               <AuxTreeNodeRow
@@ -693,29 +404,31 @@ function AuxTreeNodeRow({
               />
             ))}
           </div>
-        )}
+        ) : null}
       </div>
     );
   }
 
   return (
     <button
-      className={`flex w-full items-center gap-1 pr-2 py-0.75 text-[13px] ${
+      type="button"
+      className={`flex w-full items-center gap-1 py-0.75 pr-2 text-[13px] ${
         isActive
           ? "bg-list-active-background text-foreground"
           : "text-foreground hover:bg-list-hover-background"
       }`}
       style={{ paddingLeft: `${8 + depth * 16 + 16}px` }}
       onClick={() => onSelect(node)}
+      title={node.path}
     >
       <span className="w-4 shrink-0" />
       <AuxNodeIcon nodeType={node.nodeType} />
       <span className="truncate">{node.name}</span>
-      {node.nodeType === "symlink" && node.symlinkTargetPath && (
-        <span className="truncate text-[11px] text-accent-foreground ml-1">
+      {node.nodeType === "symlink" && node.symlinkTargetPath ? (
+        <span className="ml-1 truncate text-[11px] text-accent-foreground">
           → {node.symlinkTargetPath}
         </span>
-      )}
+      ) : null}
     </button>
   );
 }
@@ -727,12 +440,21 @@ function AuxTreePanel({
   activeId,
   onSelect,
 }: {
-  tree: MockAuxNode[];
+  tree: AuxTreeNodeVM[];
   expandedIds: Set<string>;
   onToggle: (_id: string) => void;
   activeId: string | null;
-  onSelect: (_node: MockAuxNode) => void;
+  onSelect: (_node: AuxTreeNodeVM) => void;
 }) {
+  if (tree.length === 0) {
+    return (
+      <PanelPlaceholder
+        icon="icon-[material-symbols--folder-off]"
+        label="该时间点下暂无辅助信息。"
+      />
+    );
+  }
+
   return (
     <div className="pb-2">
       {tree.map((node) => (
@@ -750,19 +472,17 @@ function AuxTreePanel({
   );
 }
 
-// ============================================================
-// TimelinePanel – drag & drop, add, delete
-// ============================================================
-
 function TimelinePanel({
   points,
   activeId,
+  isBusy,
   onSelect,
   onReorder,
   onDelete,
 }: {
-  points: MockTimelinePoint[];
-  activeId: string;
+  points: TimelinePointVM[];
+  activeId: string | null;
+  isBusy: boolean;
   onSelect: (_id: string) => void;
   onReorder: (_fromIndex: number, _toIndex: number) => void;
   onDelete: (_id: string) => void;
@@ -770,81 +490,80 @@ function TimelinePanel({
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
-    setDragIndex(index);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", String(index));
-  }, []);
-
-  const handleDragOver = useCallback(
-    (e: React.DragEvent, index: number) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      if (index !== dragIndex) {
-        setDragOverIndex(index);
-      }
-    },
-    [dragIndex],
-  );
-
-  const handleDragLeave = useCallback(() => {
-    setDragOverIndex(null);
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent, toIndex: number) => {
-      e.preventDefault();
-      if (dragIndex !== null && dragIndex !== toIndex) {
-        onReorder(dragIndex, toIndex);
-      }
-      setDragIndex(null);
-      setDragOverIndex(null);
-    },
-    [dragIndex, onReorder],
-  );
-
-  const handleDragEnd = useCallback(() => {
-    setDragIndex(null);
-    setDragOverIndex(null);
-  }, []);
-
   return (
     <div className="pb-2">
-      {points.map((pt, index) => {
-        const isActive = pt.id === activeId;
+      {points.map((point, index) => {
+        const isActive = point.id === activeId;
         const isDragging = dragIndex === index;
         const isDragOver = dragOverIndex === index;
+
         return (
           <div
-            key={pt.id}
-            className={`flex items-center gap-1 pr-1 py-0.75 text-[13px] cursor-pointer ${
+            key={point.id}
+            className={`flex cursor-pointer items-center gap-1 py-0.75 pr-1 text-[13px] ${
               isDragging ? "opacity-40" : ""
             } ${isDragOver ? "border-t border-t-drag-border" : ""} ${
               isActive
                 ? "bg-list-active-background text-foreground"
                 : "text-foreground hover:bg-list-hover-background"
-            }`}
+            } ${point.isImplicitOrigin ? "opacity-90" : ""}`}
             style={{ paddingLeft: "8px" }}
-            draggable
-            onDragStart={(e) => handleDragStart(e, index)}
-            onDragOver={(e) => handleDragOver(e, index)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, index)}
-            onDragEnd={handleDragEnd}
-            onClick={() => onSelect(pt.id)}
+            draggable={!point.isImplicitOrigin && !isBusy}
+            onDragStart={(event) => {
+              if (point.isImplicitOrigin || isBusy) {
+                event.preventDefault();
+                return;
+              }
+
+              setDragIndex(index);
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", String(index));
+            }}
+            onDragOver={(event) => {
+              if (dragIndex === null || isBusy || dragIndex === index) {
+                return;
+              }
+
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              setDragOverIndex(index);
+            }}
+            onDragLeave={() => setDragOverIndex(null)}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (dragIndex !== null && dragIndex !== index) {
+                onReorder(dragIndex, index);
+              }
+              setDragIndex(null);
+              setDragOverIndex(null);
+            }}
+            onDragEnd={() => {
+              setDragIndex(null);
+              setDragOverIndex(null);
+            }}
+            onClick={() => onSelect(point.id)}
           >
-            <span className="icon-[material-symbols--radio-button-checked] text-sm text-foreground-muted shrink-0" />
-            <span className="truncate">{pt.label}</span>
-            <button
-              className="ml-auto rounded p-px text-foreground-muted opacity-0 hover:opacity-100 hover:bg-button-hover-background"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(pt.id);
-              }}
-              title="删除时间点"
-            >
-              <span className="icon-[material-symbols--close] text-sm leading-none" />
-            </button>
+            <span className="icon-[material-symbols--radio-button-checked] shrink-0 text-sm text-foreground-muted" />
+            <span className="truncate">{point.label}</span>
+            {point.description ? (
+              <span className="truncate text-[11px] text-foreground-muted">
+                {point.description}
+              </span>
+            ) : null}
+            {!point.isImplicitOrigin ? (
+              <button
+                type="button"
+                className="ml-auto rounded p-px text-foreground-muted opacity-0 hover:bg-button-hover-background hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete(point.id);
+                }}
+                disabled={isBusy}
+                title="删除时间点"
+              >
+                <span className="icon-[material-symbols--close] text-sm leading-none" />
+              </button>
+            ) : null}
           </div>
         );
       })}
@@ -852,22 +571,22 @@ function TimelinePanel({
   );
 }
 
-// ============================================================
-// EditorArea
-// ============================================================
-
 function EditorArea({
   node,
   body,
+  timelineLabel,
+  saveState,
   onBodyChange,
 }: {
-  node: MockContentNode | null;
+  node: ContentTreeNodeVM | null;
   body: string;
-  onBodyChange: (_v: string) => void;
+  timelineLabel: string;
+  saveState: { isSaving: boolean; isDirty: boolean; error: string | null };
+  onBodyChange: (_value: string) => void;
 }) {
   if (!node) {
     return (
-      <div className="flex h-full items-center justify-center text-foreground-muted text-sm">
+      <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
         选择一个正文节点开始编辑
       </div>
     );
@@ -875,149 +594,495 @@ function EditorArea({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Title bar */}
-      <div className="flex items-center gap-2 px-4 py-2 shrink-0 bg-title-bar-background border-b border-border">
-        <ContentNodeIcon hasBody={node.body.length > 0} hasChildren={node.children.length > 0} />
+      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-title-bar-background px-4 py-2">
+        <ContentNodeIcon
+          hasBody={node.body.trim().length > 0}
+          hasChildren={node.children.length > 0}
+        />
         <span className="text-[14px] text-foreground">{node.title}</span>
-        <span className="ml-auto text-[11px] text-accent-foreground">
-          时间锚点:{" "}
-          {mockTimelinePoints.find((p) => p.id === node.anchorTimelinePointId)?.label ??
-            node.anchorTimelinePointId}
+        {saveState.error ? (
+          <span className="ml-auto text-[11px] text-red-300">{saveState.error}</span>
+        ) : saveState.isSaving ? (
+          <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-accent-foreground">
+            <span className="icon-[material-symbols--sync] animate-spin text-sm" />
+            保存中...
+          </span>
+        ) : saveState.isDirty ? (
+          <span className="ml-auto text-[11px] text-foreground-muted">待保存</span>
+        ) : (
+          <span className="ml-auto text-[11px] text-foreground-muted">已同步</span>
+        )}
+        <span className="shrink-0 text-[11px] text-accent-foreground">
+          时间锚点: {timelineLabel}
         </span>
       </div>
-      {/* Body */}
       <textarea
-        className="flex-1 bg-editor-background text-[14px] text-editor-foreground font-mono leading-7 p-4 resize-none outline-none border-none"
+        className="flex-1 resize-none border-none bg-editor-background p-4 font-mono text-[14px] leading-7 text-editor-foreground outline-none"
         value={body}
-        onChange={(e) => onBodyChange(e.target.value)}
+        onChange={(event) => onBodyChange(event.target.value)}
         placeholder="开始写作..."
       />
     </div>
   );
 }
 
-// ============================================================
-// Main Layout
-// ============================================================
-
-export function ProjectLayout(_: { id: string }) {
-  // --- Content tree state ---
-  const [expandedContentIds, setExpandedContentIds] = useState<Set<string>>(
-    () => new Set(["vol1", "ch1", "ch2"]),
+function FullPageMessage({
+  icon,
+  title,
+  description,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex h-dvh items-center justify-center bg-editor-background px-6 text-foreground">
+      <div className="flex max-w-md flex-col items-center gap-3 rounded-lg border border-border bg-sidebar-background px-6 py-8 text-center">
+        <span className={`${icon} text-3xl text-foreground-muted`} />
+        <h1 className="text-base font-semibold">{title}</h1>
+        <p className="text-sm text-foreground-muted">{description}</p>
+      </div>
+    </div>
   );
-  const [activeContentNodeId, setActiveContentNodeId] = useState<string | null>("s1");
+}
 
-  // --- Aux tree state ---
-  const [expandedAuxIds, setExpandedAuxIds] = useState<Set<string>>(
-    () => new Set(["root-char", "root-area"]),
-  );
+export function ProjectLayout({ id: projectId }: { id: string }) {
+  const [expandedContentIds, setExpandedContentIds] = useState<Set<string>>(() => new Set());
+  const [activeContentNodeId, setActiveContentNodeId] = useState<string | null>(null);
+  const [expandedAuxIds, setExpandedAuxIds] = useState<Set<string>>(() => new Set());
   const [activeAuxNodeId, setActiveAuxNodeId] = useState<string | null>(null);
+  const [activeTimelinePointId, setActiveTimelinePointId] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [committedBodies, setCommittedBodies] = useState<Record<string, string>>({});
+  const [pendingSaveCounts, setPendingSaveCounts] = useState<Record<string, number>>({});
+  const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
+  const [timelineError, setTimelineError] = useState<string | null>(null);
 
-  // --- Timeline state ---
-  const [timelinePoints, setTimelinePoints] = useState<MockTimelinePoint[]>(mockTimelinePoints);
-  const [activeTimelinePointId, setActiveTimelinePointId] = useState<string>("origin");
+  const workspaceQuery = rpc.useQuery("workspaces.default", { projectId });
+  const workspaceId = workspaceQuery.data?.id;
 
-  // --- Editor state ---
-  const [editorBody, setEditorBody] = useState<string>("");
-  const [bodyOverrides, setBodyOverrides] = useState<Record<string, string>>({});
+  const timelineQuery = rpc.useQuery("timeline.list", workspaceId ? { workspaceId } : skipToken);
+  const contentQuery = rpc.useQuery(
+    "content.exportSubtree",
+    workspaceId ? { workspaceId } : skipToken,
+  );
+  const auxQuery = rpc.useQuery(
+    "aux.snapshotTree",
+    workspaceId && activeTimelinePointId
+      ? { workspaceId, pointId: activeTimelinePointId }
+      : skipToken,
+  );
 
-  // Derived: all flat content nodes
-  const allContentNodes = flattenContentNodes(mockContentTree);
+  const updateContent = rpc.useMutation("content.update");
+  const createTimeline = rpc.useMutation("timeline.create");
+  const moveTimeline = rpc.useMutation("timeline.move");
+  const deleteTimeline = rpc.useMutation("timeline.delete");
 
-  // Derived: active content node
+  const workspaceIdRef = useRef<string | null>(workspaceId ?? null);
+  const draftsRef = useRef(drafts);
+  const committedBodiesRef = useRef(committedBodies);
+  const updateContentRef = useRef(updateContent);
+
+  useEffect(() => {
+    workspaceIdRef.current = workspaceId ?? null;
+  }, [workspaceId]);
+
+  useEffect(() => {
+    draftsRef.current = drafts;
+  }, [drafts]);
+
+  useEffect(() => {
+    committedBodiesRef.current = committedBodies;
+  }, [committedBodies]);
+
+  useEffect(() => {
+    updateContentRef.current = updateContent;
+  }, [updateContent]);
+
+  const contentTree = useMemo(
+    () => normalizeContentNodes(contentQuery.data?.nodes ?? []),
+    [contentQuery.data],
+  );
+  const timelinePoints = useMemo(
+    () => normalizeTimelinePoints(timelineQuery.data ?? []),
+    [timelineQuery.data],
+  );
+  const auxTree = useMemo(() => normalizeAuxNodes(auxQuery.data?.nodes ?? []), [auxQuery.data]);
+
+  const flatContentNodes = useMemo(() => flattenContentNodes(contentTree), [contentTree]);
+  const contentNodeMap = useMemo(
+    () => new Map(flatContentNodes.map((node) => [node.id, node])),
+    [flatContentNodes],
+  );
+  const contentParentMap = useMemo(() => buildContentParentMap(contentTree), [contentTree]);
+  const timelineLabelMap = useMemo(
+    () => new Map(timelinePoints.map((point) => [point.id, point.label])),
+    [timelinePoints],
+  );
+  const timelinePointIdSet = useMemo(
+    () => new Set(timelinePoints.map((point) => point.id)),
+    [timelinePoints],
+  );
+  const auxNodeIdSet = useMemo(
+    () => new Set(flattenAuxNodes(auxTree).map((node) => node.id)),
+    [auxTree],
+  );
+
   const activeContentNode = activeContentNodeId
-    ? (allContentNodes.find((n) => n.id === activeContentNodeId) ?? null)
+    ? (contentNodeMap.get(activeContentNodeId) ?? null)
     : null;
+  const editorBody = activeContentNode
+    ? (drafts[activeContentNode.id] ?? activeContentNode.body)
+    : "";
+  const activeTimelineLabel =
+    (activeContentNode && timelineLabelMap.get(activeContentNode.anchorTimelinePointId)) ||
+    (activeTimelinePointId ? timelineLabelMap.get(activeTimelinePointId) : undefined) ||
+    "原点";
+  const activeSaveBaseline = activeContentNode
+    ? (committedBodies[activeContentNode.id] ?? activeContentNode.body)
+    : "";
+  const activeSaveState = {
+    isSaving: activeContentNode ? (pendingSaveCounts[activeContentNode.id] ?? 0) > 0 : false,
+    isDirty: activeContentNode ? editorBody !== activeSaveBaseline : false,
+    error: activeContentNode ? (saveErrors[activeContentNode.id] ?? null) : null,
+  };
 
-  // Derived: editor body with overrides applied
-  const effectiveBody =
-    activeContentNodeId && bodyOverrides[activeContentNodeId] != null
-      ? bodyOverrides[activeContentNodeId]
-      : editorBody;
+  useEffect(() => {
+    if (flatContentNodes.length === 0) {
+      setActiveContentNodeId(null);
+      return;
+    }
 
-  // Derived: aux tree for the active timeline point
-  const currentAuxTree: MockAuxNode[] = auxTreeMap[activeTimelinePointId] ?? mockAuxTreeOrigin;
+    if (activeContentNodeId && contentNodeMap.has(activeContentNodeId)) {
+      return;
+    }
 
-  // --- Handlers ---
+    const preferredNode = findPreferredContentNode(contentTree) ?? flatContentNodes[0] ?? null;
+    if (preferredNode) {
+      setActiveContentNodeId(preferredNode.id);
+    }
+  }, [activeContentNodeId, contentNodeMap, contentTree, flatContentNodes]);
 
-  const toggleContentExpanded = (id: string) => {
-    setExpandedContentIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  useEffect(() => {
+    if (!activeContentNodeId) {
+      return;
+    }
+
+    setExpandedContentIds((previous) => {
+      const next = new Set(previous);
+      let changed = false;
+
+      for (const ancestorId of collectAncestorIds(contentParentMap, activeContentNodeId)) {
+        if (!next.has(ancestorId)) {
+          next.add(ancestorId);
+          changed = true;
+        }
+      }
+
+      return changed ? next : previous;
+    });
+  }, [activeContentNodeId, contentParentMap]);
+
+  useEffect(() => {
+    if (timelinePoints.length === 0) {
+      setActiveTimelinePointId(null);
+      return;
+    }
+
+    setActiveTimelinePointId((previous) => {
+      if (previous && timelinePointIdSet.has(previous)) {
+        return previous;
+      }
+
+      const preferredId = activeContentNode?.anchorTimelinePointId;
+      if (preferredId && timelinePointIdSet.has(preferredId)) {
+        return preferredId;
+      }
+
+      return timelinePoints[0]?.id ?? null;
+    });
+  }, [activeContentNode, timelinePointIdSet, timelinePoints]);
+
+  useEffect(() => {
+    if (auxTree.length === 0) {
+      setActiveAuxNodeId(null);
+      return;
+    }
+
+    if (activeAuxNodeId && auxNodeIdSet.has(activeAuxNodeId)) {
+      return;
+    }
+
+    setActiveAuxNodeId(null);
+  }, [activeAuxNodeId, auxNodeIdSet, auxTree]);
+
+  useEffect(() => {
+    if (auxTree.length === 0) {
+      return;
+    }
+
+    const hasVisibleExpandedNode = [...expandedAuxIds].some((id) => auxNodeIdSet.has(id));
+    if (hasVisibleExpandedNode) {
+      return;
+    }
+
+    const nextExpandedIds = auxTree
+      .filter((node) => node.nodeType === "dir")
+      .slice(0, 2)
+      .map((node) => node.id);
+    if (nextExpandedIds.length > 0) {
+      setExpandedAuxIds(new Set(nextExpandedIds));
+    }
+  }, [auxNodeIdSet, auxTree, expandedAuxIds]);
+
+  useEffect(() => {
+    setCommittedBodies((previous) => {
+      let changed = false;
+      const next = { ...previous };
+
+      for (const [nodeId, committedBody] of Object.entries(previous)) {
+        const node = contentNodeMap.get(nodeId);
+        if (node?.body === committedBody) {
+          delete next[nodeId];
+          changed = true;
+        }
+      }
+
+      return changed ? next : previous;
+    });
+  }, [contentNodeMap]);
+
+  const flushBodySave = useCallback(async (nodeId: string, body: string) => {
+    const currentWorkspaceId = workspaceIdRef.current;
+    if (!currentWorkspaceId) {
+      return;
+    }
+
+    setPendingSaveCounts((previous) => ({
+      ...previous,
+      [nodeId]: (previous[nodeId] ?? 0) + 1,
+    }));
+    setSaveErrors((previous) => omitRecordKey(previous, nodeId));
+
+    try {
+      await updateContentRef.current.mutate({
+        workspaceId: currentWorkspaceId,
+        nodeId,
+        body,
+      });
+      setCommittedBodies((previous) => ({
+        ...previous,
+        [nodeId]: body,
+      }));
+    } catch (error) {
+      setSaveErrors((previous) => ({
+        ...previous,
+        [nodeId]: error instanceof Error ? error.message : "保存失败，请稍后重试。",
+      }));
+    } finally {
+      setPendingSaveCounts((previous) => {
+        const nextCount = (previous[nodeId] ?? 1) - 1;
+        if (nextCount <= 0) {
+          return omitRecordKey(previous, nodeId);
+        }
+
+        return {
+          ...previous,
+          [nodeId]: nextCount,
+        };
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceId || !activeContentNode) {
+      return;
+    }
+
+    const draft = drafts[activeContentNode.id];
+    if (draft === undefined) {
+      return;
+    }
+
+    const baseline = committedBodies[activeContentNode.id] ?? activeContentNode.body;
+    if (draft === baseline) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      void flushBodySave(activeContentNode.id, draft);
+    }, AUTOSAVE_DELAY_MS);
+
+    return () => clearTimeout(timeout);
+  }, [activeContentNode, committedBodies, drafts, flushBodySave, workspaceId]);
+
+  const toggleContentExpanded = (nodeId: string) => {
+    setExpandedContentIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
       return next;
     });
   };
 
-  const toggleAuxExpanded = (id: string) => {
-    setExpandedAuxIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  const toggleAuxExpanded = (nodeId: string) => {
+    setExpandedAuxIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
       return next;
     });
   };
 
-  const handleContentSelect = (node: MockContentNode) => {
+  const handleContentSelect = (node: ContentTreeNodeVM) => {
+    if (activeContentNode && activeContentNode.id !== node.id) {
+      const currentBody = draftsRef.current[activeContentNode.id] ?? activeContentNode.body;
+      const currentBaseline =
+        committedBodiesRef.current[activeContentNode.id] ?? activeContentNode.body;
+      if (currentBody !== currentBaseline) {
+        void flushBodySave(activeContentNode.id, currentBody);
+      }
+    }
+
     setActiveContentNodeId(node.id);
-    setEditorBody(bodyOverrides[node.id] ?? node.body);
-    // Also select the associated timeline point (which updates aux tree)
     setActiveTimelinePointId(node.anchorTimelinePointId);
   };
 
-  const handleTimelineSelect = (pointId: string) => {
-    setActiveTimelinePointId(pointId);
-    // Don't change content node
+  const handleBodyChange = (nextBody: string) => {
+    if (!activeContentNode) {
+      return;
+    }
+
+    setDrafts((previous) => ({
+      ...previous,
+      [activeContentNode.id]: nextBody,
+    }));
+    setSaveErrors((previous) => omitRecordKey(previous, activeContentNode.id));
   };
 
-  const handleTimelineReorder = (fromIndex: number, toIndex: number) => {
-    setTimelinePoints((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      if (moved) next.splice(toIndex, 0, moved);
-      return next;
-    });
-  };
+  const handleTimelineAdd = async () => {
+    if (!workspaceId || !activeTimelinePointId) {
+      return;
+    }
 
-  const handleTimelineAdd = () => {
-    const count = timelinePoints.length + 1;
-    const newPoint: MockTimelinePoint = {
-      id: `point_${crypto.randomUUID().slice(0, 8)}`,
-      key: `new-point-${count}`,
-      label: `新时间点 ${count}`,
-      description: "",
-    };
-    setTimelinePoints((prev) => [...prev, newPoint]);
-  };
+    const newIndex = timelinePoints.filter((point) => !point.isImplicitOrigin).length + 1;
+    setTimelineError(null);
 
-  const handleTimelineDelete = (pointId: string) => {
-    if (pointId === "origin") return; // cannot delete origin
-    setTimelinePoints((prev) => prev.filter((p) => p.id !== pointId));
-    if (activeTimelinePointId === pointId) {
-      setActiveTimelinePointId("origin");
+    try {
+      const point = await createTimeline.mutate({
+        workspaceId,
+        afterPointId: activeTimelinePointId,
+        key: `timeline_${crypto.randomUUID().replaceAll("-", "").slice(0, 10)}`,
+        label: `新时间点 ${newIndex}`,
+        description: "",
+      });
+      setActiveTimelinePointId(point.id);
+    } catch (error) {
+      setTimelineError(error instanceof Error ? error.message : "创建时间点失败，请稍后重试。");
     }
   };
 
-  // When body changes in editor, update the mock data
-  const handleBodyChange = (newBody: string) => {
-    setEditorBody(newBody);
-    if (activeContentNodeId) {
-      setBodyOverrides((prev) => ({ ...prev, [activeContentNodeId]: newBody }));
+  const handleTimelineReorder = async (fromIndex: number, toIndex: number) => {
+    if (!workspaceId) {
+      return;
+    }
+
+    const movedPoint = timelinePoints[fromIndex];
+    if (!movedPoint || movedPoint.isImplicitOrigin) {
+      return;
+    }
+
+    const reorderedPoints = [...timelinePoints];
+    reorderedPoints.splice(fromIndex, 1);
+    reorderedPoints.splice(toIndex, 0, movedPoint);
+
+    const orderedMovablePoints = reorderedPoints.filter((point) => !point.isImplicitOrigin);
+    const newIndex = orderedMovablePoints.findIndex((point) => point.id === movedPoint.id);
+    const afterPointId =
+      newIndex <= 0
+        ? ORIGIN_TIMELINE_POINT_ID
+        : (orderedMovablePoints[newIndex - 1]?.id ?? ORIGIN_TIMELINE_POINT_ID);
+
+    setTimelineError(null);
+
+    try {
+      await moveTimeline.mutate({
+        workspaceId,
+        pointId: movedPoint.id,
+        afterPointId,
+      });
+    } catch (error) {
+      setTimelineError(error instanceof Error ? error.message : "调整时间轴顺序失败，请稍后重试。");
     }
   };
 
-  const handleAuxSelect = (node: MockAuxNode) => {
-    setActiveAuxNodeId(node.id);
+  const handleTimelineDelete = async (pointId: string) => {
+    if (!workspaceId || pointId === ORIGIN_TIMELINE_POINT_ID) {
+      return;
+    }
+
+    setTimelineError(null);
+
+    try {
+      await deleteTimeline.mutate({
+        workspaceId,
+        pointId,
+      });
+      if (activeTimelinePointId === pointId) {
+        setActiveTimelinePointId(ORIGIN_TIMELINE_POINT_ID);
+      }
+    } catch (error) {
+      setTimelineError(error instanceof Error ? error.message : "删除时间点失败，请稍后重试。");
+    }
   };
 
-  // Derive the initial editor body from the first content node (s1)
-  useState(function initBody() {
-    setEditorBody(allContentNodes.find((n) => n.id === "s1")?.body ?? "");
-  });
+  const timelineBusy =
+    createTimeline.isPending || moveTimeline.isPending || deleteTimeline.isPending;
+  const pageError =
+    workspaceQuery.error?.message ??
+    contentQuery.error?.message ??
+    timelineQuery.error?.message ??
+    auxQuery.error?.message ??
+    null;
+
+  if (workspaceQuery.isLoading) {
+    return (
+      <FullPageMessage
+        icon="icon-[material-symbols--sync]"
+        title="正在加载项目"
+        description="正在解析默认工作区并准备编辑数据。"
+      />
+    );
+  }
+
+  if (workspaceQuery.error) {
+    return (
+      <FullPageMessage
+        icon="icon-[material-symbols--warning]"
+        title="项目加载失败"
+        description={workspaceQuery.error.message}
+      />
+    );
+  }
+
+  if (!workspaceId) {
+    return (
+      <FullPageMessage
+        icon="icon-[material-symbols--folder-off]"
+        title="未找到默认工作区"
+        description="这个项目暂时没有可用的默认工作区，因此无法进入编辑页。"
+      />
+    );
+  }
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-editor-background text-foreground select-none">
-      {/* Activity Bar */}
+    <div className="flex h-dvh w-full select-none overflow-hidden bg-editor-background text-foreground">
       <div className="flex w-12 shrink-0 flex-col items-center gap-1 bg-activity-bar-background pt-2">
         <div className="flex w-full items-center justify-center border-l-2 border-l-activity-bar-active-foreground py-1">
           <span className="icon-[material-symbols--description] text-2xl text-activity-bar-active-foreground" />
@@ -1026,63 +1091,96 @@ export function ProjectLayout(_: { id: string }) {
           <span className="icon-[material-symbols--search] text-2xl text-activity-bar-foreground" />
         </div>
         <div className="flex w-full items-center justify-center py-1">
-          <span className="icon-[material-symbols--source-control] text-2xl text-activity-bar-foreground" />
+          <span className="icon-[material-symbols--account-tree] text-2xl text-activity-bar-foreground" />
         </div>
         <div className="mt-auto flex w-full items-center justify-center py-2">
           <span className="icon-[material-symbols--settings] text-2xl text-activity-bar-foreground" />
         </div>
       </div>
 
-      {/* Left Sidebar – three stacked panels */}
-      <div className="flex w-72 shrink-0 flex-col bg-sidebar-background border-r border-border overflow-hidden">
-        {/* 正文 */}
+      <div className="flex w-72 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar-background">
+        {pageError ? (
+          <div className="m-2 flex items-start gap-2 rounded-md border border-border bg-editor-background px-3 py-2 text-sm text-accent-foreground">
+            <span className="icon-[material-symbols--warning] mt-0.5 shrink-0 text-base" />
+            <span>{pageError}</span>
+          </div>
+        ) : null}
+
         <SidebarSection title="正文">
-          <ContentTreePanel
-            tree={mockContentTree}
-            expandedIds={expandedContentIds}
-            onToggle={toggleContentExpanded}
-            onSelect={handleContentSelect}
-            activeId={activeContentNodeId}
-          />
+          {contentQuery.isLoading && contentTree.length === 0 ? (
+            <PanelPlaceholder icon="icon-[material-symbols--sync]" label="正在加载正文..." />
+          ) : (
+            <ContentTreePanel
+              tree={contentTree}
+              expandedIds={expandedContentIds}
+              onToggle={toggleContentExpanded}
+              onSelect={handleContentSelect}
+              activeId={activeContentNodeId}
+              timelineLabelMap={timelineLabelMap}
+            />
+          )}
         </SidebarSection>
 
-        {/* 辅助信息 */}
         <div className="border-t border-border" />
         <SidebarSection title="辅助信息">
-          <AuxTreePanel
-            tree={currentAuxTree}
-            expandedIds={expandedAuxIds}
-            onToggle={toggleAuxExpanded}
-            activeId={activeAuxNodeId}
-            onSelect={handleAuxSelect}
-          />
+          {auxQuery.isLoading && auxTree.length === 0 ? (
+            <PanelPlaceholder
+              icon="icon-[material-symbols--sync]"
+              label="正在根据当前时间点加载辅助信息..."
+            />
+          ) : (
+            <AuxTreePanel
+              tree={auxTree}
+              expandedIds={expandedAuxIds}
+              onToggle={toggleAuxExpanded}
+              activeId={activeAuxNodeId}
+              onSelect={(node) => setActiveAuxNodeId(node.id)}
+            />
+          )}
         </SidebarSection>
 
-        {/* 时间轴 */}
         <div className="border-t border-border" />
         <SidebarSection
           title="时间轴"
           actions={
             <button
+              type="button"
               onClick={handleTimelineAdd}
-              className="icon-[material-symbols--add] text-base hover:text-foreground"
+              disabled={timelineBusy || !activeTimelinePointId}
+              className="icon-[material-symbols--add] text-base hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
               title="添加时间点"
             />
           }
         >
-          <TimelinePanel
-            points={timelinePoints}
-            activeId={activeTimelinePointId}
-            onSelect={handleTimelineSelect}
-            onReorder={handleTimelineReorder}
-            onDelete={handleTimelineDelete}
-          />
+          {timelineError ? (
+            <div className="mx-2 mb-2 flex items-start gap-2 rounded-md border border-border bg-editor-background px-3 py-2 text-xs text-accent-foreground">
+              <span className="icon-[material-symbols--warning] mt-0.5 shrink-0 text-sm" />
+              <span>{timelineError}</span>
+            </div>
+          ) : null}
+          {timelineQuery.isLoading && timelinePoints.length === 0 ? (
+            <PanelPlaceholder icon="icon-[material-symbols--sync]" label="正在加载时间轴..." />
+          ) : (
+            <TimelinePanel
+              points={timelinePoints}
+              activeId={activeTimelinePointId}
+              isBusy={timelineBusy}
+              onSelect={setActiveTimelinePointId}
+              onReorder={handleTimelineReorder}
+              onDelete={handleTimelineDelete}
+            />
+          )}
         </SidebarSection>
       </div>
 
-      {/* Main Editor Area */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <EditorArea node={activeContentNode} body={effectiveBody} onBodyChange={handleBodyChange} />
+        <EditorArea
+          node={activeContentNode}
+          body={editorBody}
+          timelineLabel={activeTimelineLabel}
+          saveState={activeSaveState}
+          onBodyChange={handleBodyChange}
+        />
       </div>
     </div>
   );

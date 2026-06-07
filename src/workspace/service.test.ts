@@ -179,6 +179,12 @@ test("symlink keeps following the same aux node after rename and move", () => {
   const resolved = service.readAuxByPathAt(workspace.id, point.id, "/current_location");
   expect(resolved?.id).toBe(bathroom.id);
   expect(resolved?.path).toBe("/places/villa/main_bathroom");
+
+  const exported = service.exportAuxSnapshotTree(workspace.id, point.id);
+  expect(exported.timelinePointId).toBe(point.id);
+  expect(exported.nodes.map((node) => node.name)).toEqual(["current_location", "places"]);
+  expect(exported.nodes[0]?.symlinkTargetPath).toBe("/places/villa/main_bathroom");
+  expect(exported.nodes[1]?.children.map((node) => node.name)).toEqual(["home", "villa"]);
 });
 
 test("timeline point deletion is blocked when content still anchors to it", () => {
