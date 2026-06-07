@@ -342,32 +342,38 @@ export function useProjectActions(workspace: ProjectWorkspace) {
     ],
   );
 
+  const activateContentNode = useCallback(
+    (nodeId: string, anchorTimelinePointId: string) => {
+      setActiveAuxNodeId(null);
+      setActiveContentNodeId(nodeId);
+      setActiveTimelinePointId(anchorTimelinePointId);
+    },
+    [setActiveAuxNodeId, setActiveContentNodeId, setActiveTimelinePointId],
+  );
+
+  const flushDirtyContentBeforeSwitch = useCallback(() => {
+    flushDirtyAux();
+
+    if (!activeContentNode) {
+      return;
+    }
+
+    const currentBody = drafts[activeContentNode.id] ?? activeContentNode.body;
+    const currentBaseline = committedBodies[activeContentNode.id] ?? activeContentNode.body;
+    if (currentBody !== currentBaseline) {
+      void flushBodySave(activeContentNode.id, currentBody);
+    }
+  }, [activeContentNode, committedBodies, drafts, flushBodySave, flushDirtyAux]);
+
   const handleContentSelect = useCallback(
     (node: ContentTreeNodeVM) => {
-      flushDirtyAux();
-
-      if (activeContentNode && activeContentNode.id !== node.id) {
-        const currentBody = drafts[activeContentNode.id] ?? activeContentNode.body;
-        const currentBaseline = committedBodies[activeContentNode.id] ?? activeContentNode.body;
-        if (currentBody !== currentBaseline) {
-          void flushBodySave(activeContentNode.id, currentBody);
-        }
+      if (activeContentNode?.id !== node.id) {
+        flushDirtyContentBeforeSwitch();
       }
 
-      setActiveAuxNodeId(null);
-      setActiveContentNodeId(node.id);
-      setActiveTimelinePointId(node.anchorTimelinePointId);
+      activateContentNode(node.id, node.anchorTimelinePointId);
     },
-    [
-      activeContentNode,
-      committedBodies,
-      drafts,
-      flushBodySave,
-      flushDirtyAux,
-      setActiveAuxNodeId,
-      setActiveContentNodeId,
-      setActiveTimelinePointId,
-    ],
+    [activateContentNode, activeContentNode, flushDirtyContentBeforeSwitch],
   );
 
   const handleAuxSelect = useCallback(
@@ -545,13 +551,14 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         anchorPointId,
         title,
       });
-      setActiveContentNodeId(node.id);
-      setActiveTimelinePointId(node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID);
+      flushDirtyContentBeforeSwitch();
+      activateContentNode(node.id, node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID);
       expandContentParent(parentId);
     } catch (error) {
       setContentError(error instanceof Error ? error.message : "创建正文节点失败，请稍后重试。");
     }
   }, [
+    activateContentNode,
     activeContentNode,
     activeTimelinePointId,
     contentParentMap,
@@ -559,8 +566,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
     createContent,
     expandContentParent,
     flatContentNodes.length,
-    setActiveContentNodeId,
-    setActiveTimelinePointId,
+    flushDirtyContentBeforeSwitch,
     setContentError,
     workspaceId,
   ]);
@@ -582,20 +588,20 @@ export function useProjectActions(workspace: ProjectWorkspace) {
           anchorPointId: activeTimelinePointId,
           title,
         });
-        setActiveContentNodeId(node.id);
-        setActiveTimelinePointId(node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID);
+        flushDirtyContentBeforeSwitch();
+        activateContentNode(node.id, node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID);
         expandContentParent(parentNode.id);
       } catch (error) {
         setContentError(error instanceof Error ? error.message : "创建正文节点失败，请稍后重试。");
       }
     },
     [
+      activateContentNode,
       activeTimelinePointId,
       createContent,
       expandContentParent,
       flatContentNodes.length,
-      setActiveContentNodeId,
-      setActiveTimelinePointId,
+      flushDirtyContentBeforeSwitch,
       setContentError,
       workspaceId,
     ],

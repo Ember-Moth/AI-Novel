@@ -42,16 +42,15 @@ export function useProjectWorkspaceEffects(
   } = workspace;
 
   useEffect(() => {
-    if (flatContentNodes.length === 0) {
-      setActiveContentNodeId(null);
-      return;
-    }
-
     if (activeAuxNodeId) {
       return;
     }
 
-    if (activeContentNodeId && contentNodeMap.has(activeContentNodeId)) {
+    if (activeContentNodeId) {
+      return;
+    }
+
+    if (flatContentNodes.length === 0) {
       return;
     }
 
@@ -59,14 +58,7 @@ export function useProjectWorkspaceEffects(
     if (preferredNode) {
       setActiveContentNodeId(preferredNode.id);
     }
-  }, [
-    activeAuxNodeId,
-    activeContentNodeId,
-    contentNodeMap,
-    contentTree,
-    flatContentNodes,
-    setActiveContentNodeId,
-  ]);
+  }, [activeAuxNodeId, activeContentNodeId, contentTree, flatContentNodes, setActiveContentNodeId]);
 
   useEffect(() => {
     if (!activeContentNodeId) {
