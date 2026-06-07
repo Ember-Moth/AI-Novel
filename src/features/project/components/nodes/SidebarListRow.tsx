@@ -1,6 +1,5 @@
 import { type DragEvent, type ReactNode } from "react";
 
-import { RowHoverSlot } from "./RowHoverSlot";
 import type { DragRowProps } from "./useDragReorder";
 
 export const ROW_BASE = "flex w-full items-center gap-1 h-7 pr-2 text-[13px]";
@@ -85,6 +84,29 @@ export function SidebarListRow({
       {icon}
       <div className="flex min-w-0 flex-1 items-center gap-1">{label}</div>
       <RowHoverSlot badge={trailing} actions={actions} />
+    </div>
+  );
+}
+
+function RowHoverSlot({ actions, badge }: { actions?: ReactNode; badge?: ReactNode }) {
+  if (!actions && !badge) {
+    return null;
+  }
+
+  return (
+    <div className="grid h-5 shrink-0 items-center">
+      {actions ? (
+        <div className="pointer-events-none col-start-1 row-start-1 flex items-center justify-end gap-1 justify-self-end opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100">
+          {actions}
+        </div>
+      ) : null}
+      {badge ? (
+        <span
+          className={`col-start-1 row-start-1 justify-self-end self-center max-w-20 truncate text-[10px] leading-none text-accent-foreground opacity-70 transition${actions ? " group-hover:pointer-events-none group-hover:opacity-0" : ""}`}
+        >
+          {badge}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 export { ExpandToggle } from "./ExpandToggle";
 export { FlatListPanel, type FlatRowContext } from "./FlatListPanel";
-export { RowActionButton, RowHoverSlot } from "./RowHoverSlot";
+export { RowActionButton } from "./RowActionButton";
 export {
   ROW_ACTIVE,
   ROW_BASE,

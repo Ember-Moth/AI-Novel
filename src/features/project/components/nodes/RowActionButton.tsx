@@ -1,0 +1,26 @@
+export function RowActionButton({
+  onClick,
+  disabled,
+  title,
+  icon,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  title: string;
+  icon: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      disabled={disabled}
+      className="flex h-5 w-5 items-center justify-center rounded text-foreground-muted transition hover:bg-button-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+      title={title}
+    >
+      <span className={`${icon} text-sm leading-none`} />
+    </button>
+  );
+}
