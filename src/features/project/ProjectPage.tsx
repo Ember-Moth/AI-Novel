@@ -46,7 +46,6 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
     editorBody,
     editorContent,
     activeTimelineLabel,
-    browsingTimelineLabel,
     activeSaveState,
     auxSaveState,
     editorTarget,
@@ -187,13 +186,6 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                       <div className="mx-2 mb-2 flex items-start gap-2 rounded-md border border-border bg-editor-background px-3 py-2 text-xs text-accent-foreground">
                         <span className="icon-[material-symbols--warning] mt-0.5 shrink-0 text-sm" />
                         <span>{auxError}</span>
-                      </div>
-                    ) : null}
-                    {editorTarget === "content" &&
-                    activeContentNode &&
-                    activeTimelinePointId !== activeContentNode.anchorTimelinePointId ? (
-                      <div className="mx-2 mb-2 text-[11px] text-foreground-muted">
-                        浏览：{browsingTimelineLabel}
                       </div>
                     ) : null}
                     <AuxTreePanel
