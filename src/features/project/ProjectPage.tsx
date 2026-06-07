@@ -231,6 +231,11 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                     <TimelinePanel
                       points={timelinePoints}
                       activeId={activeTimelinePointId}
+                      anchoredPointId={
+                        editorTarget === "content"
+                          ? (activeContentNode?.anchorTimelinePointId ?? null)
+                          : null
+                      }
                       isBusy={timelineBusy}
                       onSelect={actions.handleTimelineSelect}
                       onReorder={actions.handleTimelineReorder}
