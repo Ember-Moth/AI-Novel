@@ -1,5 +1,7 @@
 import { type ReactNode } from "react";
 
+import { PanelScrollArea } from "@/features/project/components/PanelScrollArea";
+
 export function SidebarSection({
   title,
   actions,
@@ -39,7 +41,7 @@ export function SidebarSection({
           </span>
         ) : null}
       </div>
-      {!collapsed ? <div className="flex-1 overflow-auto">{children}</div> : null}
+      {!collapsed ? <PanelScrollArea>{children}</PanelScrollArea> : null}
     </div>
   );
 }

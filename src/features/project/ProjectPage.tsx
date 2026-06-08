@@ -110,7 +110,10 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="flex h-dvh w-full select-none overflow-hidden bg-editor-background text-foreground">
+    <div
+      className="flex h-dvh w-full select-none overflow-hidden bg-editor-background text-foreground"
+      data-project-editor
+    >
       <ActionErrorBubble error={contentError} onDismiss={() => clearActionError(setContentError)} />
       <ActionErrorBubble error={auxError} onDismiss={() => clearActionError(setAuxError)} />
       <ActionErrorBubble

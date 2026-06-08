@@ -49,9 +49,74 @@
   /* Accent */
   --color-accent-foreground: #6db3d1;
 
+  /* Scrollbar */
+  --color-scrollbar-thumb: rgb(121 121 121 / 0.55);
+  --color-scrollbar-thumb-hover: rgb(146 146 146 / 0.78);
+  --color-scrollbar-thumb-dragging: rgb(176 176 176 / 0.92);
+
   /* Icon node colors */
   --color-icon-empty: #4a4a4a;
   --color-icon-leaf: #7ec97e;
   --color-icon-folder: #dcb67a;
   --color-icon-mixed: #c99b4b;
+}
+
+@custom-variant fine-pointer {
+  @media (pointer: fine) {
+    @slot;
+  }
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+@utility scrollbar-overlay {
+  display: block;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 0.75rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+@utility scrollbar-overlay-thumb {
+  position: absolute;
+  right: 0;
+  width: 0.75rem;
+  pointer-events: auto;
+  touch-action: none;
+
+  &::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 2px;
+    width: 6px;
+    height: 100%;
+    border-radius: 1px;
+    background: var(--color-scrollbar-thumb);
+    transition: background-color 140ms ease;
+  }
+}
+
+@utility scrollbar-overlay-thumb-hover {
+  &::before {
+    background: var(--color-scrollbar-thumb-hover);
+  }
+}
+
+@utility scrollbar-overlay-thumb-dragging {
+  &::before {
+    background: var(--color-scrollbar-thumb-dragging);
+  }
 }
