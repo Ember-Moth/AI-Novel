@@ -227,7 +227,7 @@ export function HomePage() {
             <button
               type="submit"
               disabled={createProject.isPending}
-              className="rounded-md bg-accent-foreground px-3 py-1.5 text-sm font-medium text-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-accent-background px-3 py-1.5 text-sm font-medium text-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {createProject.isPending ? (
                 <span className="inline-flex items-center gap-1.5">

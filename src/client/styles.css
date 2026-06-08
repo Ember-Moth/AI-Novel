@@ -56,7 +56,8 @@
   --color-foreground-muted: #858585;
 
   /* Accent */
-  --color-accent-foreground: #6db3d1;
+  --color-accent-foreground: #f2a2c2;
+  --color-accent-background: #902345;
 
   /* Scrollbar */
   --color-scrollbar-thumb: rgb(121 121 121 / 0.55);

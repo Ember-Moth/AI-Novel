@@ -546,7 +546,7 @@ function ConnectionDialogForm({
                 }}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                   kind === value
-                    ? "bg-accent-foreground text-foreground"
+                    ? "bg-accent-background text-foreground"
                     : "bg-editor-background text-foreground-muted hover:text-foreground"
                 }`}
               >
@@ -673,7 +673,7 @@ function ConnectionDialogForm({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-accent-foreground px-3 py-1.5 text-sm font-medium text-foreground transition hover:brightness-110 disabled:opacity-50"
+          className="rounded-md bg-accent-background px-3 py-1.5 text-sm font-medium text-foreground transition hover:brightness-110 disabled:opacity-50"
         >
           {isPending ? "保存中..." : "保存连接"}
         </button>
@@ -928,7 +928,7 @@ function CustomModelDialogForm({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-accent-foreground px-3 py-1.5 text-sm font-medium text-foreground transition hover:brightness-110 disabled:opacity-50"
+          className="rounded-md bg-accent-background px-3 py-1.5 text-sm font-medium text-foreground transition hover:brightness-110 disabled:opacity-50"
         >
           {isPending ? "保存中..." : "保存模型"}
         </button>
@@ -1066,7 +1066,7 @@ export function AiSettingsPage() {
               type="button"
               onClick={() => void refreshCatalog.mutate({ force: true })}
               disabled={refreshCatalog.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md bg-accent-foreground px-3 py-1.5 text-sm font-medium text-foreground transition hover:brightness-110 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-md bg-accent-background px-3 py-1.5 text-sm font-medium text-foreground transition hover:brightness-110 disabled:opacity-50"
             >
               <span
                 className={`text-base ${refreshCatalog.isPending ? "icon-[material-symbols--sync] animate-spin" : "icon-[material-symbols--cloud-sync]"}`}
