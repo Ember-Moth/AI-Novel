@@ -3,6 +3,14 @@
 @plugin "@iconify/tailwind4";
 
 @layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    background-color: var(--color-editor-background);
+    color: var(--color-foreground);
+  }
+
   dialog:modal {
     position: fixed;
     inset: 0;
@@ -105,5 +113,24 @@
 @media (pointer: coarse) {
   .os-theme-panel.os-scrollbar {
     display: none !important;
+  }
+}
+
+/* View Transitions API: synchronized root crossfade */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-group(root) {
+    overflow: clip;
+  }
+
+  ::view-transition-image-pair(root) {
+    isolation: isolate;
+  }
+
+  ::view-transition-old(root) {
+    animation-duration: 220ms;
+  }
+
+  ::view-transition-new(root) {
+    animation-duration: 220ms;
   }
 }

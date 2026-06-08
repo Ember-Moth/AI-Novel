@@ -22,6 +22,10 @@
       "prettier --write"
     ]
   },
+  "overrides": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
   "dependencies": {
     "@codehz/rpc": "^0.1.4",
     "@iconify/json": "^2.2.483",

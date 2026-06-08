@@ -1,3 +1,6 @@
+[install]
+# Keep a single React instance for hooks (rpc, jotai, wouter, etc.).
+dedupe = ["react", "react-dom"]
 
 [serve.static]
 plugins = ["bun-plugin-tailwind"]
