@@ -116,21 +116,8 @@
   }
 }
 
-/* View Transitions API: synchronized root crossfade */
 @media (prefers-reduced-motion: no-preference) {
-  ::view-transition-group(root) {
-    overflow: clip;
-  }
-
-  ::view-transition-image-pair(root) {
-    isolation: isolate;
-  }
-
-  ::view-transition-old(root) {
-    animation-duration: 220ms;
-  }
-
-  ::view-transition-new(root) {
+  ::view-transition-group(*) {
     animation-duration: 220ms;
   }
 }

@@ -26,12 +26,16 @@ function ActivityBarButton({
       title={label}
       aria-label={label}
       aria-current={active ? "page" : undefined}
-      className={`flex w-full items-center justify-center py-1 transition ${
-        active
-          ? "border-l-2 border-l-activity-bar-active-foreground"
-          : "border-l-2 border-l-transparent"
-      } ${interactive ? "cursor-pointer hover:text-activity-bar-active-foreground" : "cursor-default"}`}
+      className={`relative flex w-full items-center justify-center border-l-2 border-l-transparent py-1 transition ${
+        interactive ? "cursor-pointer hover:text-activity-bar-active-foreground" : "cursor-default"
+      }`}
     >
+      {active ? (
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-activity-bar-active-foreground [view-transition-name:activity-bar-indicator] motion-reduce:[view-transition-name:none]"
+          aria-hidden
+        />
+      ) : null}
       <span
         className={`${icon} text-2xl ${
           active ? "text-activity-bar-active-foreground" : "text-activity-bar-foreground"
