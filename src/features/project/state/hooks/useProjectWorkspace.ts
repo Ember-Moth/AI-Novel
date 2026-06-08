@@ -1,7 +1,7 @@
 import { skipToken } from "@codehz/rpc";
 import { useMolecule } from "bunshi/react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 
 import {
   buildAuxTreeState,
@@ -11,7 +11,6 @@ import {
 import { rpc } from "@/server/rpc/client";
 
 import { deriveProjectEditorState, deriveProjectSelectionState } from "../helpers/projectView";
-import { resolveVisibleSnapshot } from "../helpers/visibleSnapshot";
 import { EditorMolecule } from "../molecules/editor";
 import { ErrorsMolecule } from "../molecules/errors";
 import { SelectionMolecule } from "../molecules/selection";
@@ -19,40 +18,10 @@ import { SelectionMolecule } from "../molecules/selection";
 type AuxSnapshotData = NonNullable<ReturnType<typeof rpc.useQuery<"aux.snapshotTree">>["data"]>;
 
 function useVisibleAuxSnapshot(
-  workspaceId: string | undefined,
+  workspaceAuxRootId: string | null,
   snapshot: AuxSnapshotData | undefined,
 ) {
-  const [snapshotCache, setSnapshotCache] = useState(() => new Map<string, AuxSnapshotData>());
-
-  useEffect(() => {
-    if (!workspaceId || snapshot === undefined) {
-      return;
-    }
-
-    let cancelled = false;
-
-    queueMicrotask(() => {
-      if (cancelled) {
-        return;
-      }
-
-      setSnapshotCache((previous) => {
-        if (previous.get(workspaceId) === snapshot) {
-          return previous;
-        }
-
-        const next = new Map(previous);
-        resolveVisibleSnapshot(next, workspaceId, snapshot);
-        return next;
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [snapshot, workspaceId]);
-
-  return snapshot ?? (workspaceId ? snapshotCache.get(workspaceId) : undefined);
+  return snapshot?.rootNodeId === workspaceAuxRootId ? snapshot : undefined;
 }
 
 export function useProjectWorkspaceData(projectId: string) {
@@ -60,8 +29,10 @@ export function useProjectWorkspaceData(projectId: string) {
   const activeTimelinePointId = useAtomValue(selection.activeTimelinePointIdAtom);
 
   const workspaceQuery = rpc.useQuery("workspaces.default", { projectId });
-  const workspaceId = workspaceQuery.data?.id;
-  const contentRootId = workspaceQuery.data?.contentRootId ?? null;
+  const workspace = workspaceQuery.data?.projectId === projectId ? workspaceQuery.data : undefined;
+  const workspaceId = workspace?.id;
+  const contentRootId = workspace?.contentRootId ?? null;
+  const workspaceAuxRootId = workspace?.auxRootId ?? null;
   const timelineQuery = rpc.useQuery("timeline.list", workspaceId ? { workspaceId } : skipToken);
   const contentQuery = rpc.useQuery(
     "content.exportSubtree",
@@ -73,7 +44,7 @@ export function useProjectWorkspaceData(projectId: string) {
       ? { workspaceId, pointId: activeTimelinePointId }
       : skipToken,
   );
-  const visibleAuxSnapshot = useVisibleAuxSnapshot(workspaceId, auxQuery.data);
+  const visibleAuxSnapshot = useVisibleAuxSnapshot(workspaceAuxRootId, auxQuery.data);
 
   const createContent = rpc.useMutation("content.create");
   const deleteContent = rpc.useMutation("content.delete");

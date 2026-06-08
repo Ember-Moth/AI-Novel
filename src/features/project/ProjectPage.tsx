@@ -88,7 +88,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
   const pageErrorBubble =
     pageError && !pageErrorDismissed ? { message: pageError, anchorId: PAGE_ERROR_ANCHOR } : null;
 
-  if (workspaceQuery.isLoading) {
+  if (workspaceQuery.isLoading && !workspaceId) {
     return (
       <AppShell active="project">
         <FullPageMessage
