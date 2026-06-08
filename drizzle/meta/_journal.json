@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1780809298866,
-      "tag": "0000_past_gambit",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1780823126472,
-      "tag": "0001_curious_talkback",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1780883409479,
-      "tag": "0002_easy_adam_destine",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1780885480038,
-      "tag": "0003_ancient_texas_twister",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1780890530829,
-      "tag": "0004_steep_captain_america",
+      "when": 1780891993312,
+      "tag": "0000_curly_shooting_star",
       "breakpoints": true
     }
   ]

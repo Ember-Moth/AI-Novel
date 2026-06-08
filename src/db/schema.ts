@@ -313,11 +313,12 @@ export const auxNodeLayers = sqliteTable(
       "aux_node_layers_not_deleted_or_has_payload",
       sql`${table.isDeleted} = 1 OR ${table.parentAuxNodeId} IS NOT NULL OR ${table.name} IS NOT NULL OR ${table.content} IS NOT NULL OR ${table.symlinkTargetAuxNodeId} IS NOT NULL`,
     ),
-    uniqueIndex("aux_node_layers_workspace_timeline_aux_idx").on(
-      table.workspaceId,
-      sql`coalesce(${table.timelinePointId}, '__origin__')`,
-      table.auxNodeId,
-    ),
+    uniqueIndex("aux_node_layers_origin_aux_idx")
+      .on(table.workspaceId, table.auxNodeId)
+      .where(sql`${table.timelinePointId} IS NULL`),
+    uniqueIndex("aux_node_layers_timeline_aux_idx")
+      .on(table.workspaceId, table.timelinePointId, table.auxNodeId)
+      .where(sql`${table.timelinePointId} IS NOT NULL`),
     index("aux_node_layers_workspace_aux_idx").on(table.workspaceId, table.auxNodeId),
     index("aux_node_layers_timeline_point_idx").on(table.timelinePointId),
   ],

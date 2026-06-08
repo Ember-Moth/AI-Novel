@@ -25,3 +25,8 @@
 # Database
 
 - Use db.transaction() to wrap multi-step write operations (insert/update loops) to ensure atomicity and avoid partial updates. Confidence: 0.70
+- Do not manually edit drizzle-kit generated SQL migration files; fix the schema definition instead when migrations have issues. Confidence: 0.80
+
+# AI / LLM Architecture
+
+- Use sdkPackage as the core routing identifier for AI providers instead of abstract concepts like family or providerType. Confidence: 0.65
