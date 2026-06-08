@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   real,
@@ -62,9 +63,7 @@ export const timelinePoints = sqliteTable(
     key: text("key").notNull(),
     label: text("label").notNull(),
     description: text("description"),
-    prevPointId: text("prev_point_id").references((): any => timelinePoints.id, {
-      onDelete: "set null",
-    }),
+    prevPointId: text("prev_point_id"),
     ...timestampColumns,
   },
   (table) => [
@@ -74,8 +73,17 @@ export const timelinePoints = sqliteTable(
       "timeline_points_prev_not_self",
       sql`${table.prevPointId} IS NULL OR ${table.prevPointId} <> ${table.id}`,
     ),
+    foreignKey({
+      columns: [table.workspaceId, table.prevPointId],
+      foreignColumns: [table.workspaceId, table.id],
+      name: "timeline_points_prev_same_workspace_fk",
+    }),
     uniqueIndex("timeline_points_workspace_key_idx").on(table.workspaceId, table.key),
+    uniqueIndex("timeline_points_workspace_id_idx").on(table.workspaceId, table.id),
     uniqueIndex("timeline_points_prev_point_idx").on(table.prevPointId),
+    uniqueIndex("timeline_points_single_origin_successor_per_workspace_idx")
+      .on(table.workspaceId)
+      .where(sql`${table.prevPointId} IS NULL`),
     index("timeline_points_workspace_idx").on(table.workspaceId),
   ],
 );

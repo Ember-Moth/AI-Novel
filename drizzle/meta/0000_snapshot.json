@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "145d75bd-9ae5-4b23-be45-24f874a2ec51",
+  "id": "28a30d87-6915-42b2-9400-563214a2eae8",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "ai_catalog_models": {
@@ -1245,10 +1245,21 @@
           "columns": ["workspace_id", "key"],
           "isUnique": true
         },
+        "timeline_points_workspace_id_idx": {
+          "name": "timeline_points_workspace_id_idx",
+          "columns": ["workspace_id", "id"],
+          "isUnique": true
+        },
         "timeline_points_prev_point_idx": {
           "name": "timeline_points_prev_point_idx",
           "columns": ["prev_point_id"],
           "isUnique": true
+        },
+        "timeline_points_single_origin_successor_per_workspace_idx": {
+          "name": "timeline_points_single_origin_successor_per_workspace_idx",
+          "columns": ["workspace_id"],
+          "isUnique": true,
+          "where": "\"timeline_points\".\"prev_point_id\" IS NULL"
         },
         "timeline_points_workspace_idx": {
           "name": "timeline_points_workspace_idx",
@@ -1266,13 +1277,13 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "timeline_points_prev_point_id_timeline_points_id_fk": {
-          "name": "timeline_points_prev_point_id_timeline_points_id_fk",
+        "timeline_points_prev_same_workspace_fk": {
+          "name": "timeline_points_prev_same_workspace_fk",
           "tableFrom": "timeline_points",
           "tableTo": "timeline_points",
-          "columnsFrom": ["prev_point_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
+          "columnsFrom": ["workspace_id", "prev_point_id"],
+          "columnsTo": ["workspace_id", "id"],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },

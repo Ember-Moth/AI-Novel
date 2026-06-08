@@ -190,14 +190,16 @@ CREATE TABLE `timeline_points` (
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`prev_point_id`) REFERENCES `timeline_points`(`id`) ON UPDATE no action ON DELETE set null,
+	FOREIGN KEY (`workspace_id`,`prev_point_id`) REFERENCES `timeline_points`(`workspace_id`,`id`) ON UPDATE no action ON DELETE no action,
 	CONSTRAINT "timeline_points_key_nonempty" CHECK(length("timeline_points"."key") > 0),
 	CONSTRAINT "timeline_points_label_nonempty" CHECK(length("timeline_points"."label") > 0),
 	CONSTRAINT "timeline_points_prev_not_self" CHECK("timeline_points"."prev_point_id" IS NULL OR "timeline_points"."prev_point_id" <> "timeline_points"."id")
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `timeline_points_workspace_key_idx` ON `timeline_points` (`workspace_id`,`key`);--> statement-breakpoint
+CREATE UNIQUE INDEX `timeline_points_workspace_id_idx` ON `timeline_points` (`workspace_id`,`id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `timeline_points_prev_point_idx` ON `timeline_points` (`prev_point_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `timeline_points_single_origin_successor_per_workspace_idx` ON `timeline_points` (`workspace_id`) WHERE "timeline_points"."prev_point_id" IS NULL;--> statement-breakpoint
 CREATE INDEX `timeline_points_workspace_idx` ON `timeline_points` (`workspace_id`);--> statement-breakpoint
 CREATE TABLE `workspaces` (
 	`id` text PRIMARY KEY NOT NULL,
