@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { type DatabaseExecutor, db, schema } from "@/db";
 import { ORIGIN_TIMELINE_POINT_ID } from "@/shared/constants";
@@ -24,6 +24,22 @@ import {
 } from "../internal/timeline-point";
 import type { TimelinePointView } from "../types";
 
+function enableDeferredForeignKeys(tx: DatabaseExecutor) {
+  tx.run(sql.raw("PRAGMA defer_foreign_keys = ON;"));
+}
+
+function setTimelinePrevPoint(
+  tx: DatabaseExecutor,
+  pointId: string,
+  prevPointId: string | null,
+  updatedAt: number,
+) {
+  tx.update(schema.timelinePoints)
+    .set({ prevPointId, updatedAt })
+    .where(eq(schema.timelinePoints.id, pointId))
+    .run();
+}
+
 export function listTimelinePoints(workspaceId: string): TimelinePointView[] {
   getWorkspaceOrThrow(db, workspaceId);
   const ordered = orderTimelineRows(listTimelineRows(db, workspaceId));
@@ -48,11 +64,17 @@ export function createTimelinePoint(input: {
   description?: string | null;
 }) {
   return db.transaction((tx) => {
+    enableDeferredForeignKeys(tx);
+
     const workspace = getWorkspaceOrThrow(tx, input.workspaceId);
     const afterPointId = validateTimelinePointRef(tx, workspace.id, input.afterPointId);
     const successor = getTimelineSuccessor(tx, workspace.id, afterPointId);
     const pointId = createId("timeline");
     const timestamp = now();
+
+    if (successor) {
+      setTimelinePrevPoint(tx, successor.id, pointId, timestamp);
+    }
 
     tx.insert(schema.timelinePoints)
       .values({
@@ -61,22 +83,10 @@ export function createTimelinePoint(input: {
         key: input.key,
         label: input.label,
         description: input.description ?? null,
-        prevPointId: null,
+        prevPointId: afterPointId,
         createdAt: timestamp,
         updatedAt: timestamp,
       })
-      .run();
-
-    if (successor) {
-      tx.update(schema.timelinePoints)
-        .set({ prevPointId: pointId, updatedAt: timestamp })
-        .where(eq(schema.timelinePoints.id, successor.id))
-        .run();
-    }
-
-    tx.update(schema.timelinePoints)
-      .set({ prevPointId: afterPointId, updatedAt: timestamp })
-      .where(eq(schema.timelinePoints.id, pointId))
       .run();
 
     touchWorkspace(tx, workspace.id);
@@ -90,6 +100,8 @@ export function moveTimelinePoint(input: {
   afterPointId?: string | typeof ORIGIN_TIMELINE_POINT_ID;
 }) {
   return db.transaction((tx) => {
+    enableDeferredForeignKeys(tx);
+
     const workspace = getWorkspaceOrThrow(tx, input.workspaceId);
     const point = getTimelinePointOrThrow(tx, workspace.id, input.pointId);
     const afterPointId = validateTimelinePointRef(tx, workspace.id, input.afterPointId);
@@ -100,31 +112,26 @@ export function moveTimelinePoint(input: {
 
     const successor = getTimelineSuccessor(tx, workspace.id, point.id);
     const timestamp = now();
+    const targetSuccessor = getTimelineSuccessor(tx, workspace.id, afterPointId);
+    const targetSuccessorNeedsRewire = targetSuccessor && targetSuccessor.id !== point.id;
 
-    tx.update(schema.timelinePoints)
-      .set({ prevPointId: null, updatedAt: timestamp })
-      .where(eq(schema.timelinePoints.id, point.id))
-      .run();
+    if (targetSuccessorNeedsRewire) {
+      setTimelinePrevPoint(tx, targetSuccessor.id, createId("timeline_prev"), timestamp);
+    }
 
     if (successor) {
-      tx.update(schema.timelinePoints)
-        .set({ prevPointId: point.prevPointId, updatedAt: timestamp })
-        .where(eq(schema.timelinePoints.id, successor.id))
-        .run();
+      setTimelinePrevPoint(tx, successor.id, createId("timeline_prev"), timestamp);
     }
 
-    const targetSuccessor = getTimelineSuccessor(tx, workspace.id, afterPointId);
-    if (targetSuccessor && targetSuccessor.id !== point.id) {
-      tx.update(schema.timelinePoints)
-        .set({ prevPointId: point.id, updatedAt: timestamp })
-        .where(eq(schema.timelinePoints.id, targetSuccessor.id))
-        .run();
+    setTimelinePrevPoint(tx, point.id, afterPointId, timestamp);
+
+    if (successor) {
+      setTimelinePrevPoint(tx, successor.id, point.prevPointId, timestamp);
     }
 
-    tx.update(schema.timelinePoints)
-      .set({ prevPointId: afterPointId, updatedAt: timestamp })
-      .where(eq(schema.timelinePoints.id, point.id))
-      .run();
+    if (targetSuccessorNeedsRewire) {
+      setTimelinePrevPoint(tx, targetSuccessor.id, point.id, timestamp);
+    }
 
     touchWorkspace(tx, workspace.id);
     return getTimelinePointOrThrow(tx, workspace.id, point.id);
@@ -183,6 +190,8 @@ export function deleteTimelinePoint(
   options?: { purgeAuxLayers?: boolean },
 ) {
   return db.transaction((tx) => {
+    enableDeferredForeignKeys(tx);
+
     const workspace = getWorkspaceOrThrow(tx, workspaceId);
     const contentRootId = assertContentRoot(workspace);
     const point = getTimelinePointOrThrow(tx, workspace.id, pointId);
@@ -213,20 +222,12 @@ export function deleteTimelinePoint(
 
     const successor = getTimelineSuccessor(tx, workspace.id, point.id);
     const timestamp = now();
-
-    tx.update(schema.timelinePoints)
-      .set({ prevPointId: null, updatedAt: timestamp })
-      .where(eq(schema.timelinePoints.id, point.id))
-      .run();
+    tx.delete(schema.timelinePoints).where(eq(schema.timelinePoints.id, point.id)).run();
 
     if (successor) {
-      tx.update(schema.timelinePoints)
-        .set({ prevPointId: point.prevPointId, updatedAt: timestamp })
-        .where(eq(schema.timelinePoints.id, successor.id))
-        .run();
+      setTimelinePrevPoint(tx, successor.id, point.prevPointId, timestamp);
     }
 
-    tx.delete(schema.timelinePoints).where(eq(schema.timelinePoints.id, point.id)).run();
     touchWorkspace(tx, workspace.id);
   });
 }

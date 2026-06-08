@@ -403,6 +403,88 @@ test("timeline point deletion purges auxiliary layers when requested", () => {
   );
 });
 
+test("timeline point insertion at origin rewires the previous head", () => {
+  const workspace = seedProject("project_timeline_insert_origin");
+  const pointA = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    key: "point_a",
+    label: "Point A",
+  });
+
+  const pointB = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    key: "point_b",
+    label: "Point B",
+  });
+
+  const ordered = service.listTimelinePoints(workspace.id);
+  expect(ordered.map((point) => point.id)).toEqual([
+    service.ORIGIN_TIMELINE_POINT_ID,
+    pointB.id,
+    pointA.id,
+  ]);
+});
+
+test("timeline point move rewires both source and target segments", () => {
+  const workspace = seedProject("project_timeline_move");
+  const pointA = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    key: "point_a",
+    label: "Point A",
+  });
+  const pointB = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: pointA.id,
+    key: "point_b",
+    label: "Point B",
+  });
+  const pointC = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: pointB.id,
+    key: "point_c",
+    label: "Point C",
+  });
+  const pointD = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: pointC.id,
+    key: "point_d",
+    label: "Point D",
+  });
+
+  service.moveTimelinePoint({
+    workspaceId: workspace.id,
+    pointId: pointC.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+  });
+
+  let ordered = service.listTimelinePoints(workspace.id);
+  expect(ordered.map((point) => point.id)).toEqual([
+    service.ORIGIN_TIMELINE_POINT_ID,
+    pointC.id,
+    pointA.id,
+    pointB.id,
+    pointD.id,
+  ]);
+
+  service.moveTimelinePoint({
+    workspaceId: workspace.id,
+    pointId: pointA.id,
+    afterPointId: pointD.id,
+  });
+
+  ordered = service.listTimelinePoints(workspace.id);
+  expect(ordered.map((point) => point.id)).toEqual([
+    service.ORIGIN_TIMELINE_POINT_ID,
+    pointC.id,
+    pointB.id,
+    pointD.id,
+    pointA.id,
+  ]);
+});
+
 test("deleteAuxNodeAt garbage-collects the aux node and tombstone layers", () => {
   const workspace = seedProject("project_aux_gc_delete");
   const auxRootId = workspace.auxRootId!;
