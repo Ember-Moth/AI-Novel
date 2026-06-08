@@ -41,6 +41,38 @@ export const SUPPORTED_AI_SDK_PACKAGES = [
     allowsCustomEndpoint: false,
     supportsRegistryProvider: true,
   },
+  {
+    sdkPackage: "@ai-sdk/xai",
+    label: "xAI",
+    providerFactoryId: "createXai",
+    requiresBaseUrl: false,
+    allowsCustomEndpoint: false,
+    supportsRegistryProvider: true,
+  },
+  {
+    sdkPackage: "@ai-sdk/gateway",
+    label: "AI Gateway",
+    providerFactoryId: "createGateway",
+    requiresBaseUrl: false,
+    allowsCustomEndpoint: false,
+    supportsRegistryProvider: true,
+  },
+  {
+    sdkPackage: "@ai-sdk/cerebras",
+    label: "Cerebras",
+    providerFactoryId: "createCerebras",
+    requiresBaseUrl: false,
+    allowsCustomEndpoint: false,
+    supportsRegistryProvider: true,
+  },
+  {
+    sdkPackage: "@ai-sdk/azure",
+    label: "Azure",
+    providerFactoryId: "createAzure",
+    requiresBaseUrl: false,
+    allowsCustomEndpoint: false,
+    supportsRegistryProvider: true,
+  },
 ] as const satisfies readonly AiSupportedSdkPackage[];
 
 const SUPPORTED_AI_SDK_PACKAGE_MAP = new Map<string, AiSupportedSdkPackage>(
