@@ -14,6 +14,7 @@ import type {
   AiResolvedModelView,
 } from "@/domain/types";
 import { OverlayScrollbar } from "@/features/project/components/OverlayScrollbar";
+import { RefreshOverlay } from "@/features/project/components/RefreshOverlay";
 import { SidebarListRow } from "@/features/project/components/nodes/SidebarListRow";
 import { rpc } from "@/server/rpc/client";
 import { LoadingBlock, LoadingInline } from "@/shared/components/Loading";
@@ -408,13 +409,13 @@ function ConnectionModelsList({
 
   return (
     <div className="relative" aria-busy={isRefreshing}>
-      {isRefreshing ? (
-        <div className="pointer-events-none absolute right-0 top-0 flex items-center gap-1 rounded-full bg-sidebar-background/90 px-2 py-0.5 text-[10px] text-foreground-muted">
-          <span className="icon-[material-symbols--sync] animate-spin text-[10px]" />
-          刷新中...
-        </div>
-      ) : null}
-      <div className={`space-y-2 transition-opacity ${isRefreshing ? "opacity-80" : ""}`}>
+      <RefreshOverlay active={isRefreshing} className="right-0 top-0" />
+      <div
+        inert={isRefreshing}
+        className={`space-y-2 transition-opacity ${
+          isRefreshing ? "pointer-events-none opacity-80 select-none" : ""
+        }`}
+      >
         {(models ?? []).map((model) => (
           <ConnectionModelRow
             key={model.id}
