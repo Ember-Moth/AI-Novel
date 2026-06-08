@@ -107,11 +107,11 @@ function CatalogProviderCard({ provider }: { provider: AiCatalogProviderView }) 
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-sidebar-background">
+    <div className="rounded-md border border-border bg-sidebar-background">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-list-hover-background"
+        className="sticky top-0 z-10 flex w-full items-center gap-3 rounded-md px-4 py-3 text-left transition hover:bg-list-hover-background bg-sidebar-background"
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
