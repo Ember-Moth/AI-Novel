@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { InlineEditableText } from "@/features/project/components/InlineEditableText";
 import { PanelPlaceholder } from "@/features/project/components/PanelPlaceholder";
+import { RefreshOverlay } from "@/features/project/components/RefreshOverlay";
 import { AuxNodeIcon } from "@/features/project/components/icons";
 import {
   ExpandToggle,
@@ -180,23 +181,23 @@ export function AuxTreePanel({
   );
 
   return (
-    <div className="relative pb-2">
-      {isRefreshing ? (
-        <div className="pointer-events-none absolute right-2 top-2 z-10">
-          <div className="inline-flex items-center gap-1 rounded-full border border-border bg-sidebar-background/92 px-2 py-1 text-[11px] text-foreground-muted shadow-sm backdrop-blur-sm">
-            <span className="icon-[material-symbols--sync] animate-spin text-xs" />
-            刷新中...
-          </div>
-        </div>
-      ) : null}
-      <TreeNodePanel
-        nodes={tree}
-        expandedIds={expandedIds}
-        activeId={activeId}
-        getId={(node) => node.id}
-        getChildren={(node) => node.children}
-        renderRow={renderRow}
-      />
+    <div className="relative pb-2" aria-busy={isRefreshing}>
+      <RefreshOverlay active={isRefreshing} />
+      <div
+        inert={isRefreshing}
+        className={`transition-opacity duration-150 ease-out motion-reduce:transition-none ${
+          isRefreshing ? "pointer-events-none opacity-70 select-none" : "opacity-100"
+        }`}
+      >
+        <TreeNodePanel
+          nodes={tree}
+          expandedIds={expandedIds}
+          activeId={activeId}
+          getId={(node) => node.id}
+          getChildren={(node) => node.children}
+          renderRow={renderRow}
+        />
+      </div>
     </div>
   );
 }
