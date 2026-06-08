@@ -1,5 +1,5 @@
 import { useMolecule } from "bunshi/react";
-import { useAtom, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useState } from "react";
 
 import {
@@ -10,9 +10,7 @@ import {
 import {
   buildContentNodePath,
   collectContentSubtreeIds,
-  findAuxNode,
   findContentDeleteFallback,
-  findContentNode,
   listAuxSiblings,
   nextAuxDirName,
   nextAuxFileName,
@@ -25,7 +23,7 @@ import { ORIGIN_TIMELINE_POINT_ID } from "@/shared/constants";
 import { EditorMolecule } from "../molecules/editor";
 import { ErrorsMolecule } from "../molecules/errors";
 import { SelectionMolecule } from "../molecules/selection";
-import type { ProjectWorkspace } from "./useProjectWorkspace";
+import type { ProjectWorkspaceState } from "./useProjectWorkspace";
 
 type TimelineDeleteDialogState = {
   pointId: string;
@@ -51,19 +49,22 @@ function formatTimelineContentAnchorError(
   return `无法删除：以下章节仍锚定在此时间点：${paths.map((path) => `「${path}」`).join("、")}。`;
 }
 
-export function useProjectActions(workspace: ProjectWorkspace) {
+export function useProjectActions(workspace: ProjectWorkspaceState) {
   const selection = useMolecule(SelectionMolecule);
   const editor = useMolecule(EditorMolecule);
   const errors = useMolecule(ErrorsMolecule);
 
-  const [, setActiveContentNodeId] = useAtom(selection.activeContentNodeIdAtom);
-  const [, setActiveAuxNodeId] = useAtom(selection.activeAuxNodeIdAtom);
-  const [, setActiveTimelinePointId] = useAtom(selection.activeTimelinePointIdAtom);
-  const [, setExpandedContentIds] = useAtom(selection.expandedContentIdsAtom);
-  const [, setExpandedAuxIds] = useAtom(selection.expandedAuxIdsAtom);
-  const [drafts] = useAtom(editor.draftsAtom);
+  const activeContentNodeId = useAtomValue(selection.activeContentNodeIdAtom);
+  const setActiveContentNodeId = useSetAtom(selection.activeContentNodeIdAtom);
+  const activeAuxNodeId = useAtomValue(selection.activeAuxNodeIdAtom);
+  const setActiveAuxNodeId = useSetAtom(selection.activeAuxNodeIdAtom);
+  const activeTimelinePointId = useAtomValue(selection.activeTimelinePointIdAtom);
+  const setActiveTimelinePointId = useSetAtom(selection.activeTimelinePointIdAtom);
+  const setExpandedContentIds = useSetAtom(selection.expandedContentIdsAtom);
+  const setExpandedAuxIds = useSetAtom(selection.expandedAuxIdsAtom);
+  const drafts = useAtomValue(editor.draftsAtom);
   const setDrafts = useSetAtom(editor.draftsAtom);
-  const [committedBodies] = useAtom(editor.committedBodiesAtom);
+  const committedBodies = useAtomValue(editor.committedBodiesAtom);
   const setCommittedBodies = useSetAtom(editor.committedBodiesAtom);
   const setPendingSaveCounts = useSetAtom(editor.pendingSaveCountsAtom);
   const setSaveErrors = useSetAtom(editor.saveErrorsAtom);
@@ -72,31 +73,31 @@ export function useProjectActions(workspace: ProjectWorkspace) {
   const setAuxError = useSetAtom(errors.auxErrorAtom);
 
   const {
-    workspaceId,
-    contentRootId,
-    contentTree,
-    auxTree,
-    auxRootId,
-    auxParentMap,
-    flatContentNodes,
-    contentNodeMap,
-    contentParentMap,
-    timelinePoints,
-    activeContentNode,
-    activeContentNodeId,
-    activeAuxNodeId,
-    activeTimelinePointId,
-    createContent,
-    deleteContent,
-    updateContent,
-    createTimeline,
-    moveTimeline,
-    deleteTimeline,
-    updateTimeline,
-    mkdirAux,
-    writeFileAux,
-    moveAux,
-    deleteAux,
+    data: {
+      workspaceId,
+      contentRootId,
+      contentTree,
+      auxTree,
+      auxRootId,
+      auxNodeMap,
+      auxParentMap,
+      flatContentNodes,
+      contentNodeMap,
+      contentParentMap,
+      timelinePoints,
+      createContent,
+      deleteContent,
+      updateContent,
+      createTimeline,
+      moveTimeline,
+      deleteTimeline,
+      updateTimeline,
+      mkdirAux,
+      writeFileAux,
+      moveAux,
+      deleteAux,
+    },
+    selection: { activeContentNode },
   } = workspace;
 
   const [timelineDeleteDialog, setTimelineDeleteDialog] =
@@ -226,7 +227,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         return;
       }
 
-      const auxNode = findAuxNode(auxTree, activeAuxNodeId);
+      const auxNode = auxNodeMap.get(activeAuxNodeId) ?? null;
       if (auxNode?.nodeType !== "file") {
         return;
       }
@@ -237,7 +238,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         void flushAuxSave(auxNode.id, currentContent, timelinePointId);
       }
     },
-    [activeAuxNodeId, activeTimelinePointId, auxTree, committedBodies, drafts, flushAuxSave],
+    [activeAuxNodeId, activeTimelinePointId, auxNodeMap, committedBodies, drafts, flushAuxSave],
   );
 
   const toggleContentExpanded = useCallback(
@@ -321,7 +322,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         return;
       }
 
-      const siblings = listAuxSiblings(auxTree, parentDirId, auxRootId);
+      const siblings = listAuxSiblings(auxTree, auxNodeMap, parentDirId, auxRootId);
       const name = nextAuxDirName(siblings);
 
       clearActionError(setAuxError);
@@ -345,6 +346,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
     },
     [
       activeTimelinePointId,
+      auxNodeMap,
       auxRootId,
       auxTree,
       expandAuxParent,
@@ -361,7 +363,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         return;
       }
 
-      const siblings = listAuxSiblings(auxTree, parentDirId, auxRootId);
+      const siblings = listAuxSiblings(auxTree, auxNodeMap, parentDirId, auxRootId);
       const name = nextAuxFileName(siblings);
 
       clearActionError(setAuxError);
@@ -386,6 +388,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
     },
     [
       activeTimelinePointId,
+      auxNodeMap,
       auxRootId,
       auxTree,
       expandAuxParent,
@@ -435,7 +438,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
       flushDirtyContent();
 
       if (activeAuxNodeId && activeAuxNodeId !== node.id) {
-        const previousNode = findAuxNode(auxTree, activeAuxNodeId);
+        const previousNode = auxNodeMap.get(activeAuxNodeId) ?? null;
         if (previousNode?.nodeType === "file") {
           const currentContent = drafts[previousNode.id] ?? previousNode.content;
           const baseline = committedBodies[previousNode.id] ?? previousNode.content;
@@ -450,7 +453,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
     },
     [
       activeAuxNodeId,
-      auxTree,
+      auxNodeMap,
       committedBodies,
       drafts,
       flushAuxSave,
@@ -466,7 +469,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         return;
       }
 
-      const auxNode = findAuxNode(auxTree, activeAuxNodeId);
+      const auxNode = auxNodeMap.get(activeAuxNodeId) ?? null;
       if (auxNode?.nodeType !== "file") {
         return;
       }
@@ -477,7 +480,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
       }));
       setSaveErrors((previous) => omitRecordKey(previous, auxNode.id));
     },
-    [activeAuxNodeId, auxTree, setDrafts, setSaveErrors],
+    [activeAuxNodeId, auxNodeMap, setDrafts, setSaveErrors],
   );
 
   const handleTimelineSelect = useCallback(
@@ -680,7 +683,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
         return;
       }
 
-      const targetNode = findContentNode(contentTree, nodeId);
+      const targetNode = contentNodeMap.get(nodeId) ?? null;
       if (!targetNode) {
         return;
       }
@@ -721,6 +724,7 @@ export function useProjectActions(workspace: ProjectWorkspace) {
       activateContentNode,
       activeContentNodeId,
       clearContentNodeLocalState,
+      contentNodeMap,
       contentParentMap,
       contentRootId,
       contentTree,

@@ -163,6 +163,7 @@ export function findAuxNode(nodes: AuxTreeNodeVM[], nodeId: string): AuxTreeNode
 
 export function listAuxSiblings(
   tree: AuxTreeNodeVM[],
+  nodeMap: ReadonlyMap<string, AuxTreeNodeVM>,
   parentId: string,
   auxRootId: string | null,
 ): AuxTreeNodeVM[] {
@@ -170,7 +171,7 @@ export function listAuxSiblings(
     return tree;
   }
 
-  const parent = findAuxNode(tree, parentId);
+  const parent = nodeMap.get(parentId);
   return parent?.children ?? [];
 }
 

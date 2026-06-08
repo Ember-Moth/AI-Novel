@@ -1,44 +1,51 @@
 import { useMolecule } from "bunshi/react";
-import { useAtom, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useEffect } from "react";
 
-import { flattenAuxNodes } from "@/features/project/model/normalize";
 import { collectAncestorIds, findPreferredContentNode } from "@/features/project/model/tree";
 
 import { AUTOSAVE_DELAY_MS } from "../constants";
 import { EditorMolecule } from "../molecules/editor";
 import { SelectionMolecule } from "../molecules/selection";
-import type { ProjectWorkspace } from "./useProjectWorkspace";
+import type { ProjectWorkspaceState } from "./useProjectWorkspace";
 
 export function useProjectWorkspaceEffects(
-  workspace: ProjectWorkspace,
+  workspace: ProjectWorkspaceState,
   flushBodySave: (_nodeId: string, _body: string) => Promise<void>,
   flushAuxSave: (_nodeId: string, _content: string) => Promise<void>,
 ) {
   const selection = useMolecule(SelectionMolecule);
   const editor = useMolecule(EditorMolecule);
 
-  const [activeContentNodeId, setActiveContentNodeId] = useAtom(selection.activeContentNodeIdAtom);
-  const [activeAuxNodeId, setActiveAuxNodeId] = useAtom(selection.activeAuxNodeIdAtom);
-  const [, setActiveTimelinePointId] = useAtom(selection.activeTimelinePointIdAtom);
-  const [, setExpandedContentIds] = useAtom(selection.expandedContentIdsAtom);
-  const [expandedAuxIds, setExpandedAuxIds] = useAtom(selection.expandedAuxIdsAtom);
-  const [drafts] = useAtom(editor.draftsAtom);
-  const [committedBodies] = useAtom(editor.committedBodiesAtom);
+  const setActiveContentNodeId = useSetAtom(selection.activeContentNodeIdAtom);
+  const setActiveAuxNodeId = useSetAtom(selection.activeAuxNodeIdAtom);
+  const setActiveTimelinePointId = useSetAtom(selection.activeTimelinePointIdAtom);
+  const setExpandedContentIds = useSetAtom(selection.expandedContentIdsAtom);
+  const setExpandedAuxIds = useSetAtom(selection.expandedAuxIdsAtom);
+  const drafts = useAtomValue(editor.draftsAtom);
+  const committedBodies = useAtomValue(editor.committedBodiesAtom);
   const setCommittedBodies = useSetAtom(editor.committedBodiesAtom);
 
   const {
-    workspaceId,
-    flatContentNodes,
-    contentNodeMap,
-    contentTree,
-    contentParentMap,
-    timelinePoints,
-    timelinePointIdSet,
-    auxTree,
-    auxNodeIdSet,
-    activeContentNode,
-    activeAuxNode,
+    data: {
+      workspaceId,
+      flatContentNodes,
+      contentNodeMap,
+      contentTree,
+      contentParentMap,
+      timelinePoints,
+      timelinePointIdSet,
+      auxTree,
+      auxNodeMap,
+      auxNodeIdSet,
+    },
+    selection: {
+      activeContentNodeId,
+      activeAuxNodeId,
+      expandedAuxIds,
+      activeContentNode,
+      activeAuxNode,
+    },
   } = workspace;
 
   useEffect(() => {
@@ -194,8 +201,6 @@ export function useProjectWorkspaceEffects(
   }, [activeAuxNode, committedBodies, drafts, flushAuxSave, workspaceId]);
 
   useEffect(() => {
-    const auxNodeMap = new Map(flattenAuxNodes(auxTree).map((node) => [node.id, node]));
-
     setCommittedBodies((previous) => {
       let changed = false;
       const next = { ...previous };
@@ -210,5 +215,5 @@ export function useProjectWorkspaceEffects(
 
       return changed ? next : previous;
     });
-  }, [auxTree, setCommittedBodies]);
+  }, [auxNodeMap, setCommittedBodies]);
 }

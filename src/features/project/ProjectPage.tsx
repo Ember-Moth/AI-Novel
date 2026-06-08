@@ -1,5 +1,5 @@
 import { ScopeProvider, useMolecule } from "bunshi/react";
-import { useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 
 import { AppShell, AppSidebar } from "@/client/components/AppShell";
 import { ActionErrorBubble } from "@/features/project/components/ActionErrorBubble";
@@ -14,7 +14,12 @@ import { ContentTreePanel } from "@/features/project/panels/ContentTreePanel";
 import { EditorArea } from "@/features/project/panels/EditorArea";
 import { TimelinePanel } from "@/features/project/panels/TimelinePanel";
 import { useProjectActions } from "@/features/project/state/hooks/useProjectActions";
-import { useProjectWorkspace } from "@/features/project/state/hooks/useProjectWorkspace";
+import {
+  useProjectEditorView,
+  useProjectPageErrorState,
+  useProjectSelectionView,
+  useProjectWorkspaceData,
+} from "@/features/project/state/hooks/useProjectWorkspace";
 import { useProjectWorkspaceEffects } from "@/features/project/state/hooks/useProjectWorkspaceEffects";
 import { ErrorsMolecule } from "@/features/project/state/molecules/errors";
 import { ProjectScope } from "@/features/project/state/scopes";
@@ -34,7 +39,11 @@ export function ProjectPage({ id: projectId }: { id: string }) {
 }
 
 function ProjectWorkspace({ projectId }: { projectId: string }) {
-  const workspace = useProjectWorkspace(projectId);
+  const data = useProjectWorkspaceData(projectId);
+  const selection = useProjectSelectionView(data);
+  const editorView = useProjectEditorView(selection);
+  const pageErrorState = useProjectPageErrorState(data.pageError);
+  const workspace = { data, selection, editor: editorView };
   const actions = useProjectActions(workspace);
   const errors = useMolecule(ErrorsMolecule);
   const setContentError = useSetAtom(errors.contentErrorAtom);
@@ -52,6 +61,15 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
     timelinePoints,
     auxTree,
     timelineLabelMap,
+    auxRootId,
+    contentBusy,
+    timelineBusy,
+    auxBusy,
+    auxInitialLoading,
+    auxRefreshing,
+    pageError,
+  } = data;
+  const {
     activeContentNodeId,
     activeAuxNodeId,
     activeTimelinePointId,
@@ -59,25 +77,13 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
     expandedAuxIds,
     activeContentNode,
     activeAuxNode,
-    editorBody,
-    editorContent,
     activeTimelineLabel,
-    activeSaveState,
-    auxSaveState,
-    editorTarget,
-    auxRootId,
-    contentError,
-    timelineError,
-    auxError,
-    contentBusy,
-    timelineBusy,
-    auxBusy,
-    auxInitialLoading,
-    auxRefreshing,
-    pageError,
-    pageErrorDismissed,
-    setPageErrorDismissed,
-  } = workspace;
+  } = selection;
+  const { editorBody, editorContent, activeSaveState, auxSaveState, editorTarget } = editorView;
+  const { pageErrorDismissed, setPageErrorDismissed } = pageErrorState;
+  const contentError = useAtomValue(errors.contentErrorAtom);
+  const timelineError = useAtomValue(errors.timelineErrorAtom);
+  const auxError = useAtomValue(errors.auxErrorAtom);
 
   const pageErrorBubble =
     pageError && !pageErrorDismissed ? { message: pageError, anchorId: PAGE_ERROR_ANCHOR } : null;
