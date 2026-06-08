@@ -5,6 +5,34 @@ import type { ORIGIN_TIMELINE_POINT_ID } from "@/shared/constants";
 
 type AuxNodeRow = InferSelectModel<typeof schema.auxNodes>;
 
+export type AiProviderRow = InferSelectModel<typeof schema.aiProviders>;
+export type AiModelRow = InferSelectModel<typeof schema.aiModels>;
+
+export interface AiProviderView {
+  id: string;
+  name: string;
+  providerType: string;
+  baseUrl: string | null;
+  apiKeyEncrpted: boolean;
+  isEnabled: boolean;
+  models: AiModelView[];
+}
+
+export interface AiModelView {
+  id: string;
+  providerId: string;
+  modelId: string;
+  displayName: string;
+  contextWindow: number | null;
+  maxOutputTokens: number | null;
+  supportsVision: boolean;
+  supportsToolUse: boolean;
+  inputPricePer1m: number | null;
+  outputPricePer1m: number | null;
+  isDefault: boolean;
+  isEnabled: boolean;
+}
+
 export type TimelinePointRef = string | null | undefined | typeof ORIGIN_TIMELINE_POINT_ID;
 export type AuxNodeType = AuxNodeRow["nodeType"];
 

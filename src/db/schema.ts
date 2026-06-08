@@ -1,5 +1,13 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  check,
+  index,
+  integer,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 const timestampColumns = {
   createdAt: integer("created_at", { mode: "number" })
@@ -125,6 +133,53 @@ export const auxNodes = sqliteTable(
       sql`${table.nodeType} IN ('root', 'dir', 'file', 'symlink')`,
     ),
     index("aux_nodes_workspace_idx").on(table.workspaceId),
+  ],
+);
+
+export const aiProviders = sqliteTable(
+  "ai_providers",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    providerType: text("provider_type").notNull(),
+    baseUrl: text("base_url"),
+    apiKey: text("api_key"),
+    isEnabled: integer("is_enabled", { mode: "boolean" }).notNull().default(true),
+    ...timestampColumns,
+  },
+  (table) => [
+    check("ai_providers_name_nonempty", sql`length(${table.name}) > 0`),
+    check(
+      "ai_providers_type_valid",
+      sql`${table.providerType} IN ('openai', 'anthropic', 'google', 'ollama', 'custom')`,
+    ),
+  ],
+);
+
+export const aiModels = sqliteTable(
+  "ai_models",
+  {
+    id: text("id").primaryKey(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => aiProviders.id, { onDelete: "cascade" }),
+    modelId: text("model_id").notNull(),
+    displayName: text("display_name").notNull(),
+    contextWindow: integer("context_window"),
+    maxOutputTokens: integer("max_output_tokens"),
+    supportsVision: integer("supports_vision", { mode: "boolean" }).notNull().default(false),
+    supportsToolUse: integer("supports_tool_use", { mode: "boolean" }).notNull().default(false),
+    inputPricePer1m: real("input_price_per_1m"),
+    outputPricePer1m: real("output_price_per_1m"),
+    isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+    isEnabled: integer("is_enabled", { mode: "boolean" }).notNull().default(true),
+    ...timestampColumns,
+  },
+  (table) => [
+    check("ai_models_display_name_nonempty", sql`length(${table.displayName}) > 0`),
+    check("ai_models_model_id_nonempty", sql`length(${table.modelId}) > 0`),
+    uniqueIndex("ai_models_provider_model_idx").on(table.providerId, table.modelId),
+    index("ai_models_provider_idx").on(table.providerId),
   ],
 );
 

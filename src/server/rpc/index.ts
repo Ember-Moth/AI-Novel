@@ -1,3 +1,4 @@
+import * as aiHandlers from "./ai";
 import * as auxHandlers from "./aux";
 import * as contentHandlers from "./content";
 import * as projectHandlers from "./projects";
@@ -5,6 +6,20 @@ import * as timelineHandlers from "./timeline";
 import * as workspaceHandlers from "./workspaces";
 
 export { healthcheck } from "./health";
+
+export const ai = {
+  listProviders: aiHandlers.listProviders,
+  getProvider: aiHandlers.getProvider,
+  createProvider: aiHandlers.createProvider,
+  updateProvider: aiHandlers.updateProvider,
+  deleteProvider: aiHandlers.deleteProvider,
+  listModels: aiHandlers.listModels,
+  listModelsForProvider: aiHandlers.listModelsForProvider,
+  createModel: aiHandlers.createModel,
+  updateModel: aiHandlers.updateModel,
+  deleteModel: aiHandlers.deleteModel,
+  setDefaultModel: aiHandlers.setDefaultModel,
+};
 
 export const projects = {
   list: projectHandlers.list,
