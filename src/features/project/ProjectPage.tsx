@@ -5,6 +5,7 @@ import { AppShell, AppSidebar } from "@/client/components/AppShell";
 import { ActionErrorBubble } from "@/features/project/components/ActionErrorBubble";
 import { ConfirmDialog } from "@/features/project/components/ConfirmDialog";
 import { FullPageMessage } from "@/features/project/components/FullPageMessage";
+import { IconButton } from "@/features/project/components/IconButton";
 import { PanelPlaceholder } from "@/features/project/components/PanelPlaceholder";
 import { SidebarPanels } from "@/features/project/components/SidebarPanels";
 import { actionAnchorId, clearActionError } from "@/features/project/model/action-error";
@@ -165,15 +166,14 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                 {
                   title: "正文",
                   actions: (
-                    <button
-                      type="button"
-                      data-action-anchor={CONTENT_CREATE_SIBLING_ANCHOR}
+                    <IconButton
+                      icon="icon-[material-symbols--add]"
+                      title="添加同级节点"
                       onClick={() =>
                         actions.handleContentCreateSibling(CONTENT_CREATE_SIBLING_ANCHOR)
                       }
                       disabled={contentBusy || !contentRootId || !activeTimelinePointId}
-                      className="icon-[material-symbols--add] text-base hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                      title="添加同级节点"
+                      anchorId={CONTENT_CREATE_SIBLING_ANCHOR}
                     />
                   ),
                   content:
@@ -202,21 +202,19 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                   title: "辅助信息",
                   actions: (
                     <>
-                      <button
-                        type="button"
-                        data-action-anchor={AUX_CREATE_DIR_ANCHOR}
+                      <IconButton
+                        icon="icon-[material-symbols--create-new-folder]"
+                        title="添加文件夹"
                         onClick={() => actions.handleAuxCreateSiblingDir(AUX_CREATE_DIR_ANCHOR)}
                         disabled={auxBusy || !auxRootId || !activeTimelinePointId}
-                        className="icon-[material-symbols--create-new-folder] text-base hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                        title="添加文件夹"
+                        anchorId={AUX_CREATE_DIR_ANCHOR}
                       />
-                      <button
-                        type="button"
-                        data-action-anchor={AUX_CREATE_FILE_ANCHOR}
+                      <IconButton
+                        icon="icon-[material-symbols--note-add]"
+                        title="添加文件"
                         onClick={() => actions.handleAuxCreateSiblingFile(AUX_CREATE_FILE_ANCHOR)}
                         disabled={auxBusy || !auxRootId || !activeTimelinePointId}
-                        className="icon-[material-symbols--note-add] text-base hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                        title="添加文件"
+                        anchorId={AUX_CREATE_FILE_ANCHOR}
                       />
                     </>
                   ),
@@ -244,13 +242,12 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                 {
                   title: "时间轴",
                   actions: (
-                    <button
-                      type="button"
-                      data-action-anchor={TIMELINE_ADD_ANCHOR}
+                    <IconButton
+                      icon="icon-[material-symbols--add]"
+                      title="添加时间点"
                       onClick={() => actions.handleTimelineAdd(TIMELINE_ADD_ANCHOR)}
                       disabled={timelineBusy || !activeTimelinePointId}
-                      className="icon-[material-symbols--add] text-base hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                      title="添加时间点"
+                      anchorId={TIMELINE_ADD_ANCHOR}
                     />
                   ),
                   content:
