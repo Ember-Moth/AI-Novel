@@ -28,7 +28,7 @@ import {
 import type { ContentTreeNodeVM } from "@/features/project/model/types";
 import { cn } from "@/shared/cn";
 
-const CONTENT_ROW_SELECTOR = "[data-content-tree-row-id]";
+const CONTENT_ROW_SELECTOR = "[data-row-id]";
 const DRAG_START_DISTANCE = 4;
 
 type ContentDropIntent = ContentMoveIntent;
@@ -189,73 +189,70 @@ function ContentTreeNodeRow({
   };
 
   return (
-    <motion.div
-      data-content-tree-row-id={node.id}
+    <SidebarListRow
+      layout="position"
+      dataRowId={node.id}
+      dataNodeId={node.id}
+      depth={depth}
+      isActive={isActive}
+      group
+      anchorId={rowAnchorId}
       className={cn(
         "relative list-none",
         isDragging ? "pointer-events-none z-10 opacity-75 shadow-sm" : "",
       )}
-      layout="position"
-    >
-      <SidebarListRow
-        dataNodeId={node.id}
-        depth={depth}
-        isActive={isActive}
-        group
-        anchorId={rowAnchorId}
-        onClick={() => {
-          onSelect(node);
-          if (hasChildren && !isExpanded) {
-            onToggle(node.id);
-          }
-        }}
-        leading={
-          <ExpandToggle
-            hasChildren={hasChildren}
-            expanded={isExpanded}
-            onToggle={() => onToggle(node.id)}
+      onClick={() => {
+        onSelect(node);
+        if (hasChildren && !isExpanded) {
+          onToggle(node.id);
+        }
+      }}
+      leading={
+        <ExpandToggle
+          hasChildren={hasChildren}
+          expanded={isExpanded}
+          onToggle={() => onToggle(node.id)}
+        />
+      }
+      icon={
+        <span className="grid size-4 shrink-0 touch-none place-items-center" {...dragStartProps}>
+          <ContentNodeIcon hasBody={hasBody} hasChildren={hasChildren} />
+        </span>
+      }
+      label={
+        <span className="min-w-0 flex-1 touch-none" {...dragStartProps}>
+          <InlineEditableText
+            value={node.title}
+            disabled={isBusy}
+            allowEmpty
+            onEditStart={() => onSelect(node)}
+            onEditingChange={setIsEditing}
+            onCommit={async (next) => onRename(node.id, next || null)}
+            placeholder="未命名节点"
+            className="truncate"
           />
-        }
-        icon={
-          <span className="grid size-4 shrink-0 touch-none place-items-center" {...dragStartProps}>
-            <ContentNodeIcon hasBody={hasBody} hasChildren={hasChildren} />
-          </span>
-        }
-        label={
-          <span className="min-w-0 flex-1 touch-none" {...dragStartProps}>
-            <InlineEditableText
-              value={node.title}
-              disabled={isBusy}
-              allowEmpty
-              onEditStart={() => onSelect(node)}
-              onEditingChange={setIsEditing}
-              onCommit={async (next) => onRename(node.id, next || null)}
-              placeholder="未命名节点"
-              className="truncate"
-            />
-          </span>
-        }
-        trailing={timelineLabelMap.get(node.anchorTimelinePointId) ?? node.anchorTimelinePointId}
-        actions={
-          <>
-            <RowActionButton
-              anchorId={addChildAnchorId}
-              onClick={() => onCreateChild(node, addChildAnchorId)}
-              disabled={isBusy || isEditing || !canCreate}
-              title="添加子节点"
-              icon="icon-[material-symbols--add]"
-            />
-            <RowActionButton
-              anchorId={deleteAnchorId}
-              onClick={() => onDelete(node.id, deleteAnchorId)}
-              disabled={isBusy || isEditing}
-              title="删除节点"
-              icon="icon-[material-symbols--close]"
-            />
-          </>
-        }
-      />
-    </motion.div>
+        </span>
+      }
+      trailing={timelineLabelMap.get(node.anchorTimelinePointId) ?? node.anchorTimelinePointId}
+      actions={
+        <>
+          <RowActionButton
+            anchorId={addChildAnchorId}
+            onClick={() => onCreateChild(node, addChildAnchorId)}
+            disabled={isBusy || isEditing || !canCreate}
+            title="添加子节点"
+            icon="icon-[material-symbols--add]"
+          />
+          <RowActionButton
+            anchorId={deleteAnchorId}
+            onClick={() => onDelete(node.id, deleteAnchorId)}
+            disabled={isBusy || isEditing}
+            title="删除节点"
+            icon="icon-[material-symbols--close]"
+          />
+        </>
+      }
+    />
   );
 }
 
@@ -378,12 +375,10 @@ export function ContentTreePanel({
     if (dropIntent?.position === "inside") {
       const panelElement = panelRef.current;
       const targetElement = panelElement?.querySelector(
-        `[data-content-tree-row-id="${CSS.escape(dropIntent.targetId)}"]`,
+        `[data-row-id="${CSS.escape(dropIntent.targetId)}"]`,
       );
       const tailId = visibleSubtreeTailMap.get(dropIntent.targetId) ?? dropIntent.targetId;
-      const tailElement = panelElement?.querySelector(
-        `[data-content-tree-row-id="${CSS.escape(tailId)}"]`,
-      );
+      const tailElement = panelElement?.querySelector(`[data-row-id="${CSS.escape(tailId)}"]`);
 
       if (
         !panelElement ||
@@ -414,7 +409,7 @@ export function ContentTreePanel({
 
     const panelElement = panelRef.current;
     const anchorElement = panelElement?.querySelector(
-      `[data-content-tree-row-id="${CSS.escape(boundaryDrop.anchorId)}"]`,
+      `[data-row-id="${CSS.escape(boundaryDrop.anchorId)}"]`,
     );
 
     if (!panelElement || !(anchorElement instanceof HTMLElement)) {
@@ -457,7 +452,7 @@ export function ContentTreePanel({
       return findBlankAreaDropIntent(nodeId, point);
     }
 
-    const targetId = row.dataset.contentTreeRowId;
+    const targetId = row.dataset.rowId;
     if (!targetId || targetId === nodeId || subtreeIdsRef.current.has(targetId)) {
       return null;
     }

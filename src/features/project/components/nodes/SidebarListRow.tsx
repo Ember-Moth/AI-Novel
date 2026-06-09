@@ -24,6 +24,8 @@ export function SidebarListRow({
   actions,
   anchorId,
   dataNodeId,
+  dataRowId,
+  layout,
 }: {
   depth?: number;
   isActive: boolean;
@@ -37,6 +39,8 @@ export function SidebarListRow({
   actions?: ReactNode;
   anchorId?: string;
   dataNodeId?: string;
+  dataRowId?: string;
+  layout?: boolean | "position";
 }) {
   const stateClass = isActive ? ROW_ACTIVE : ROW_INACTIVE;
   const hasHoverSlot = trailing != null || actions != null;
@@ -47,11 +51,13 @@ export function SidebarListRow({
     <motion.div
       data-action-anchor={anchorId}
       data-tree-node-id={dataNodeId}
+      data-row-id={dataRowId}
       className={cn(ROW_BASE, stateClass, groupClass, interactiveClass, className)}
       initial={false}
       animate={{ paddingLeft: rowPaddingLeft(depth) }}
       transition={{ duration: 0.14, ease: "easeOut" }}
       onClick={onClick}
+      layout={layout}
     >
       {leading}
       {icon}
