@@ -202,7 +202,7 @@ export function AuxTreePanel({
   onDelete,
   onRestore,
   isBusy,
-  isRefreshing,
+  isPending,
   showTimelineChanges,
 }: {
   tree: AuxTreeNodeVM[];
@@ -216,7 +216,7 @@ export function AuxTreePanel({
   onDelete: (_id: string, _anchorId: string) => void;
   onRestore: (_id: string, _anchorId: string) => void;
   isBusy: boolean;
-  isRefreshing: boolean;
+  isPending: boolean;
   showTimelineChanges: boolean;
 }) {
   if (tree.length === 0) {
@@ -248,12 +248,12 @@ export function AuxTreePanel({
   );
 
   return (
-    <div className="relative pb-2" aria-busy={isRefreshing}>
-      <RefreshOverlay active={isRefreshing} />
+    <div className="relative pb-2" aria-busy={isPending}>
+      <RefreshOverlay active={isPending} />
       <div
-        inert={isRefreshing}
+        inert={isPending}
         className={`transition-opacity duration-150 ease-out motion-reduce:transition-none ${
-          isRefreshing ? "pointer-events-none opacity-70 select-none" : "opacity-100"
+          isPending ? "pointer-events-none opacity-70 select-none" : "opacity-100"
         }`}
       >
         <TreeNodePanel

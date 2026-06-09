@@ -1,4 +1,5 @@
 import { AuxNodeIcon, ContentNodeIcon } from "@/features/project/components/icons";
+import { RefreshIndicator } from "@/features/project/components/RefreshIndicator";
 import type { AuxTreeNodeVM, ContentTreeNodeVM, SaveState } from "@/features/project/model/types";
 
 const EDITOR_HEADER_CLASS =
@@ -10,12 +11,7 @@ function SaveStatus({ saveState }: { saveState: SaveState }) {
   }
 
   if (saveState.isSaving) {
-    return (
-      <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-accent-foreground">
-        <span className="icon-[material-symbols--sync] animate-spin text-sm" />
-        保存中...
-      </span>
-    );
+    return <RefreshIndicator label="保存中..." size="xs" className="ml-auto" />;
   }
 
   if (saveState.isDirty) {
@@ -34,7 +30,7 @@ export function EditorArea({
   timelineLabel,
   contentSaveState,
   auxSaveState,
-  auxRefreshing,
+  auxPending,
   onBodyChange,
   onAuxContentChange,
 }: {
@@ -46,7 +42,7 @@ export function EditorArea({
   timelineLabel: string;
   contentSaveState: SaveState;
   auxSaveState: SaveState;
-  auxRefreshing: boolean;
+  auxPending: boolean;
   onBodyChange: (_value: string) => void;
   onAuxContentChange: (_value: string) => void;
 }) {
@@ -97,8 +93,8 @@ export function EditorArea({
             <span className="ml-auto shrink-0 text-[11px] text-accent-foreground">
               时间点: {timelineLabel}
             </span>
-            {auxRefreshing ? (
-              <span className="shrink-0 text-[11px] text-foreground-muted">刷新中...</span>
+            {auxPending ? (
+              <RefreshIndicator label="同步中..." size="xs" className="shrink-0" />
             ) : null}
           </div>
           <div className="flex flex-1 items-center justify-center px-4 text-sm text-foreground-muted">
@@ -118,8 +114,8 @@ export function EditorArea({
             <span className="shrink-0 text-[11px] text-accent-foreground">
               时间点: {timelineLabel}
             </span>
-            {auxRefreshing ? (
-              <span className="shrink-0 text-[11px] text-foreground-muted">刷新中...</span>
+            {auxPending ? (
+              <RefreshIndicator label="同步中..." size="xs" className="shrink-0" />
             ) : null}
           </div>
           <textarea
@@ -149,8 +145,8 @@ export function EditorArea({
           <span className="ml-auto shrink-0 text-[11px] text-accent-foreground">
             时间点: {timelineLabel}
           </span>
-          {auxRefreshing ? (
-            <span className="shrink-0 text-[11px] text-foreground-muted">刷新中...</span>
+          {auxPending ? (
+            <RefreshIndicator label="同步中..." size="xs" className="shrink-0" />
           ) : null}
         </div>
         <div className="flex flex-1 items-center justify-center px-4 text-sm text-foreground-muted">

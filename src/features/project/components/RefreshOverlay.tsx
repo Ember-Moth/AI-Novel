@@ -1,6 +1,8 @@
+import { RefreshIndicator } from "@/features/project/components/RefreshIndicator";
+
 export function RefreshOverlay({
   active,
-  label = "刷新中...",
+  label = "同步中...",
   className = "",
 }: {
   active: boolean;
@@ -16,10 +18,7 @@ export function RefreshOverlay({
           : "-translate-y-1 opacity-0 delay-0 duration-100"
       } ${className}`.trim()}
     >
-      <div className="inline-flex items-center gap-1 rounded-sm border border-border bg-sidebar-background/92 px-2 py-1 text-[11px] text-foreground-muted shadow-sm backdrop-blur-sm">
-        <span className="icon-[material-symbols--sync] animate-spin text-xs motion-reduce:animate-none" />
-        {label}
-      </div>
+      <RefreshIndicator label={label} size="xs" />
     </div>
   );
 }

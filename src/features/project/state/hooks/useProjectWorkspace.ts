@@ -17,12 +17,22 @@ import { ErrorsMolecule } from "../molecules/errors";
 import { SelectionMolecule } from "../molecules/selection";
 
 type AuxSnapshotData = NonNullable<ReturnType<typeof rpc.useQuery<"aux.snapshotTree">>["data"]>;
+type RefreshableQueryState = {
+  isSkipped: boolean;
+  isLoading: boolean;
+  isStale: boolean;
+  error: unknown;
+};
 
 function useVisibleAuxSnapshot(
   workspaceAuxRootId: string | null,
   snapshot: AuxSnapshotData | undefined,
 ) {
   return snapshot?.rootNodeId === workspaceAuxRootId ? snapshot : undefined;
+}
+
+function isQueryRefreshing(query: RefreshableQueryState, hasVisibleData: boolean) {
+  return !query.isSkipped && hasVisibleData && (query.isLoading || query.isStale) && !query.error;
 }
 
 function moveTimelinePointLocally(points: TimelinePointVM[], fromIndex: number, toIndex: number) {
@@ -138,16 +148,13 @@ export function useProjectWorkspaceData(projectId: string) {
     restoreAux.isPending;
   const auxInitialLoading =
     !auxQuery.isSkipped && !visibleAuxSnapshot && auxQuery.isLoading && !auxQuery.error;
-  const auxRefreshing =
-    !auxQuery.isSkipped &&
-    !!visibleAuxSnapshot &&
-    (auxQuery.isLoading || auxQuery.isStale) &&
-    !auxQuery.error;
-  const contentRefreshing =
-    !contentQuery.isSkipped &&
-    contentState.tree.length > 0 &&
-    (contentQuery.isLoading || contentQuery.isStale) &&
-    !contentQuery.error;
+  const auxRefreshing = isQueryRefreshing(auxQuery, !!visibleAuxSnapshot);
+  const contentRefreshing = isQueryRefreshing(contentQuery, contentState.tree.length > 0);
+  const timelineRefreshing = isQueryRefreshing(timelineQuery, timelineState.points.length > 0);
+  const contentPending = contentBusy || contentRefreshing;
+  const timelinePending = timelineBusy || timelineRefreshing;
+  const auxPending = auxBusy || auxRefreshing;
+  const workspaceInitialLoading = workspaceQuery.isLoading && !workspaceId;
   const pageError =
     workspaceQuery.error?.message ??
     contentQuery.error?.message ??
@@ -191,8 +198,13 @@ export function useProjectWorkspaceData(projectId: string) {
     auxParentMap: auxState.parentMap,
     auxNodeIdSet: auxState.idSet,
     contentBusy,
+    contentPending,
     timelineBusy,
+    timelineRefreshing,
+    timelinePending,
     auxBusy,
+    auxPending,
+    workspaceInitialLoading,
     auxInitialLoading,
     auxRefreshing,
     contentRefreshing,

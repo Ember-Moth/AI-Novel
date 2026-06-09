@@ -2,6 +2,7 @@ import { Reorder, useDragControls } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { InlineEditableText } from "@/features/project/components/InlineEditableText";
+import { RefreshOverlay } from "@/features/project/components/RefreshOverlay";
 import { RowActionButton, SidebarListRow } from "@/features/project/components/nodes";
 import { actionAnchorId } from "@/features/project/model/action-error";
 import { cn } from "@/shared/cn";
@@ -14,6 +15,7 @@ export function TimelinePanel({
   anchoredPointId = null,
   canSetAnchor = false,
   isBusy,
+  isPending = false,
   onSelect,
   onSetAnchor,
   onReorder,
@@ -25,6 +27,7 @@ export function TimelinePanel({
   anchoredPointId?: string | null;
   canSetAnchor?: boolean;
   isBusy: boolean;
+  isPending?: boolean;
   onSelect: (_id: string) => void;
   onSetAnchor?: (_id: string, _anchorId: string) => void;
   onReorder: (_fromIndex: number, _toIndex: number) => void;
@@ -137,37 +140,46 @@ export function TimelinePanel({
   };
 
   return (
-    <div className="pb-2">
-      {fixedPoints.map((point) => (
-        <div key={point.id}>{renderPointRow(point)}</div>
-      ))}
-      <Reorder.Group
-        as="div"
-        axis="y"
-        values={orderedIds}
-        onReorder={handleVisualReorder}
-        className="contents"
+    <div className="relative pb-2" aria-busy={isPending}>
+      <RefreshOverlay active={isPending} />
+      <div
+        inert={isPending}
+        className={cn(
+          "transition-opacity duration-150 ease-out motion-reduce:transition-none",
+          isPending ? "pointer-events-none opacity-70 select-none" : "opacity-100",
+        )}
       >
-        {orderedIds.map((pointId) => {
-          const point = pointById.get(pointId);
+        {fixedPoints.map((point) => (
+          <div key={point.id}>{renderPointRow(point)}</div>
+        ))}
+        <Reorder.Group
+          as="div"
+          axis="y"
+          values={orderedIds}
+          onReorder={handleVisualReorder}
+          className="contents"
+        >
+          {orderedIds.map((pointId) => {
+            const point = pointById.get(pointId);
 
-          if (!point) {
-            return null;
-          }
+            if (!point) {
+              return null;
+            }
 
-          return (
-            <TimelineReorderItem
-              key={point.id}
-              pointId={point.id}
-              disabled={isBusy}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-            >
-              {(icon) => renderPointRow(point, icon)}
-            </TimelineReorderItem>
-          );
-        })}
-      </Reorder.Group>
+            return (
+              <TimelineReorderItem
+                key={point.id}
+                pointId={point.id}
+                disabled={isBusy}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+              >
+                {(icon) => renderPointRow(point, icon)}
+              </TimelineReorderItem>
+            );
+          })}
+        </Reorder.Group>
+      </div>
     </div>
   );
 }

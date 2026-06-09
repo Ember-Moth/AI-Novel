@@ -55,11 +55,13 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
 
   const {
     workspaceQuery,
+    workspaceInitialLoading,
     workspaceId,
     contentRootId,
     contentQuery,
-    contentRefreshing,
+    contentPending,
     timelineQuery,
+    timelinePending,
     contentTree,
     timelinePoints,
     auxTree,
@@ -68,8 +70,8 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
     contentBusy,
     timelineBusy,
     auxBusy,
+    auxPending,
     auxInitialLoading,
-    auxRefreshing,
     pageError,
   } = data;
   const {
@@ -91,7 +93,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
   const pageErrorBubble =
     pageError && !pageErrorDismissed ? { message: pageError, anchorId: PAGE_ERROR_ANCHOR } : null;
 
-  if (workspaceQuery.isLoading && !workspaceId) {
+  if (workspaceInitialLoading) {
     return (
       <AppShell active="project">
         <FullPageMessage
@@ -182,16 +184,13 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                       onClick={() =>
                         actions.handleContentCreateSibling(CONTENT_CREATE_SIBLING_ANCHOR)
                       }
-                      disabled={contentBusy || !contentRootId || !activeTimelinePointId}
+                      disabled={contentPending || !contentRootId || !activeTimelinePointId}
                       anchorId={CONTENT_CREATE_SIBLING_ANCHOR}
                     />
                   ),
                   content:
                     contentQuery.isLoading && contentTree.length === 0 ? (
-                      <PanelPlaceholder
-                        icon="icon-[material-symbols--sync] animate-spin"
-                        label="正在加载正文..."
-                      />
+                      <PanelPlaceholder variant="refresh" label="正在加载正文..." />
                     ) : (
                       <ContentTreePanel
                         tree={contentTree}
@@ -205,7 +204,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                         onDelete={actions.handleContentDelete}
                         onMove={actions.handleContentMove}
                         isBusy={contentBusy}
-                        isRefreshing={contentRefreshing}
+                        isPending={contentPending}
                         canCreate={!!activeTimelinePointId}
                       />
                     ),
@@ -218,23 +217,20 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                         icon="icon-[material-symbols--create-new-folder]"
                         title="添加文件夹"
                         onClick={() => actions.handleAuxCreateSiblingDir(AUX_CREATE_DIR_ANCHOR)}
-                        disabled={auxBusy || !auxRootId || !activeTimelinePointId}
+                        disabled={auxPending || !auxRootId || !activeTimelinePointId}
                         anchorId={AUX_CREATE_DIR_ANCHOR}
                       />
                       <IconButton
                         icon="icon-[material-symbols--note-add]"
                         title="添加文件"
                         onClick={() => actions.handleAuxCreateSiblingFile(AUX_CREATE_FILE_ANCHOR)}
-                        disabled={auxBusy || !auxRootId || !activeTimelinePointId}
+                        disabled={auxPending || !auxRootId || !activeTimelinePointId}
                         anchorId={AUX_CREATE_FILE_ANCHOR}
                       />
                     </>
                   ),
                   content: auxInitialLoading ? (
-                    <PanelPlaceholder
-                      icon="icon-[material-symbols--sync] animate-spin"
-                      label="正在根据当前时间点加载辅助信息..."
-                    />
+                    <PanelPlaceholder variant="refresh" label="正在根据当前时间点加载辅助信息..." />
                   ) : (
                     <AuxTreePanel
                       tree={auxTree}
@@ -248,7 +244,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                       onDelete={actions.handleAuxDelete}
                       onRestore={actions.handleAuxRestore}
                       isBusy={auxBusy}
-                      isRefreshing={auxRefreshing}
+                      isPending={auxPending}
                       showTimelineChanges={activeTimelinePointId !== ORIGIN_TIMELINE_POINT_ID}
                     />
                   ),
@@ -260,16 +256,13 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                       icon="icon-[material-symbols--add]"
                       title="添加时间点"
                       onClick={() => actions.handleTimelineAdd(TIMELINE_ADD_ANCHOR)}
-                      disabled={timelineBusy || !activeTimelinePointId}
+                      disabled={timelinePending || contentBusy || !activeTimelinePointId}
                       anchorId={TIMELINE_ADD_ANCHOR}
                     />
                   ),
                   content:
                     timelineQuery.isLoading && timelinePoints.length === 0 ? (
-                      <PanelPlaceholder
-                        icon="icon-[material-symbols--sync] animate-spin"
-                        label="正在加载时间轴..."
-                      />
+                      <PanelPlaceholder variant="refresh" label="正在加载时间轴..." />
                     ) : (
                       <TimelinePanel
                         points={timelinePoints}
@@ -281,6 +274,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                         }
                         canSetAnchor={editorTarget === "content" && !!activeContentNode}
                         isBusy={timelineBusy || contentBusy}
+                        isPending={timelinePending || contentBusy}
                         onSelect={actions.handleTimelineSelect}
                         onSetAnchor={actions.handleContentAnchorSet}
                         onReorder={actions.handleTimelineReorder}
@@ -305,7 +299,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
               timelineLabel={activeTimelineLabel}
               contentSaveState={activeSaveState}
               auxSaveState={auxSaveState}
-              auxRefreshing={auxRefreshing}
+              auxPending={auxPending}
               onBodyChange={actions.handleBodyChange}
               onAuxContentChange={actions.handleAuxContentChange}
             />
