@@ -1,6 +1,9 @@
 import { AuxNodeIcon, ContentNodeIcon } from "@/features/project/components/icons";
 import type { AuxTreeNodeVM, ContentTreeNodeVM, SaveState } from "@/features/project/model/types";
 
+const EDITOR_HEADER_CLASS =
+  "flex h-10 shrink-0 items-center gap-2 border-b border-border bg-title-bar-background px-4";
+
 function SaveStatus({ saveState }: { saveState: SaveState }) {
   if (saveState.error) {
     return <span className="ml-auto text-[11px] text-red-300">{saveState.error}</span>;
@@ -58,7 +61,7 @@ export function EditorArea({
   if (target === "content" && contentNode) {
     return (
       <div className="flex h-full flex-col">
-        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-title-bar-background px-4 py-2">
+        <div className={EDITOR_HEADER_CLASS}>
           <ContentNodeIcon
             hasBody={contentNode.body.trim().length > 0}
             hasChildren={contentNode.children.length > 0}
@@ -88,7 +91,7 @@ export function EditorArea({
 
       return (
         <div className="flex h-full flex-col">
-          <div className="flex shrink-0 items-center gap-2 border-b border-border bg-title-bar-background px-4 py-2">
+          <div className={EDITOR_HEADER_CLASS}>
             <AuxNodeIcon nodeType={auxNode.nodeType} />
             <span className="truncate text-[14px] text-red-300">{title}</span>
             <span className="ml-auto shrink-0 text-[11px] text-accent-foreground">
@@ -108,7 +111,7 @@ export function EditorArea({
     if (auxNode.nodeType === "file") {
       return (
         <div className="flex h-full flex-col">
-          <div className="flex shrink-0 items-center gap-2 border-b border-border bg-title-bar-background px-4 py-2">
+          <div className={EDITOR_HEADER_CLASS}>
             <AuxNodeIcon nodeType="file" />
             <span className="truncate text-[14px] text-foreground">{auxNode.path}</span>
             <SaveStatus saveState={auxSaveState} />
@@ -136,7 +139,7 @@ export function EditorArea({
 
     return (
       <div className="flex h-full flex-col">
-        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-title-bar-background px-4 py-2">
+        <div className={EDITOR_HEADER_CLASS}>
           <AuxNodeIcon nodeType={auxNode.nodeType} />
           <span className="truncate text-[14px] text-foreground">
             {auxNode.nodeType === "symlink" && auxNode.symlinkTargetPath

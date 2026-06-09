@@ -3,6 +3,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 
 import { AppShell, AppSidebar } from "@/client/components/AppShell";
 import { ActionErrorBubble } from "@/features/project/components/ActionErrorBubble";
+import { AiSidebar } from "@/features/project/components/AiSidebar";
 import { ConfirmDialog } from "@/features/project/components/ConfirmDialog";
 import { FullPageMessage } from "@/features/project/components/FullPageMessage";
 import { IconButton } from "@/features/project/components/IconButton";
@@ -290,19 +291,24 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
           </AppSidebar>
         }
       >
-        <EditorArea
-          target={editorTarget}
-          contentNode={activeContentNode}
-          auxNode={activeAuxNode}
-          body={editorBody}
-          auxContent={editorContent}
-          timelineLabel={activeTimelineLabel}
-          contentSaveState={activeSaveState}
-          auxSaveState={auxSaveState}
-          auxRefreshing={auxRefreshing}
-          onBodyChange={actions.handleBodyChange}
-          onAuxContentChange={actions.handleAuxContentChange}
-        />
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="min-w-0 flex-1">
+            <EditorArea
+              target={editorTarget}
+              contentNode={activeContentNode}
+              auxNode={activeAuxNode}
+              body={editorBody}
+              auxContent={editorContent}
+              timelineLabel={activeTimelineLabel}
+              contentSaveState={activeSaveState}
+              auxSaveState={auxSaveState}
+              auxRefreshing={auxRefreshing}
+              onBodyChange={actions.handleBodyChange}
+              onAuxContentChange={actions.handleAuxContentChange}
+            />
+          </div>
+          <AiSidebar />
+        </div>
       </AppShell>
     </>
   );
