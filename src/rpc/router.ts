@@ -24,6 +24,16 @@ export const ai = {
   createCustomModel: aiHandlers.createCustomModel,
   updateCustomModel: aiHandlers.updateCustomModel,
   deleteCustomModel: aiHandlers.deleteCustomModel,
+  listProjectHeads: aiHandlers.listProjectHeads,
+  getHeadMessages: aiHandlers.getHeadMessages,
+  getMessageChildren: aiHandlers.getMessageChildren,
+  createHead: aiHandlers.createHead,
+  appendMessage: aiHandlers.appendMessage,
+  forkHeadFromMessage: aiHandlers.forkProjectHeadFromMessage,
+  archiveHead: aiHandlers.archiveProjectHead,
+  recordGenerationAttempt: aiHandlers.createGenerationAttempt,
+  finishGenerationAttemptSuccess: aiHandlers.finishGenerationAttemptSuccess,
+  finishGenerationAttemptError: aiHandlers.finishGenerationAttemptError,
 };
 
 export const config = {

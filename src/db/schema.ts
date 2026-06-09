@@ -19,6 +19,34 @@ const timestampColumns = {
     .default(sql`(unixepoch() * 1000)`),
 };
 
+function aiSelectionSnapshotColumns() {
+  return {
+    snapshotConnectionName: text("snapshot_connection_name"),
+    snapshotSdkPackage: text("snapshot_sdk_package"),
+    snapshotBaseUrl: text("snapshot_base_url"),
+    snapshotModelOrigin: text("snapshot_model_origin"),
+    snapshotModelId: text("snapshot_model_id"),
+    snapshotModelDisplayName: text("snapshot_model_display_name"),
+    snapshotModelFamily: text("snapshot_model_family"),
+    snapshotCapabilitiesJson: text("snapshot_capabilities_json"),
+    snapshotPricingJson: text("snapshot_pricing_json"),
+  };
+}
+
+function aiSelectionReferenceColumns() {
+  return {
+    connectionId: text("connection_id").references(() => aiConnections.id, {
+      onDelete: "set null",
+    }),
+    catalogModelId: text("catalog_model_id").references(() => aiCatalogModels.id, {
+      onDelete: "set null",
+    }),
+    customModelId: text("custom_model_id").references(() => aiConnectionCustomModels.id, {
+      onDelete: "set null",
+    }),
+  };
+}
+
 export const globalConfigOptions = sqliteTable(
   "global_config_options",
   {
@@ -300,6 +328,127 @@ export const aiRegistryState = sqliteTable(
     ...timestampColumns,
   },
   (table) => [check("ai_registry_state_id_nonempty", sql`length(${table.id}) > 0`)],
+);
+
+export const aiProjectMessages = sqliteTable(
+  "ai_project_messages",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    prevMessageId: text("prev_message_id").references((): any => aiProjectMessages.id, {
+      onDelete: "cascade",
+    }),
+    role: text("role").notNull(),
+    contentJson: text("content_json").notNull(),
+    summaryText: text("summary_text"),
+    ...aiSelectionSnapshotColumns(),
+    ...aiSelectionReferenceColumns(),
+    metadataJson: text("metadata_json"),
+    createdAt: integer("created_at", { mode: "number" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    check(
+      "ai_project_messages_prev_not_self",
+      sql`${table.prevMessageId} IS NULL OR ${table.prevMessageId} <> ${table.id}`,
+    ),
+    check(
+      "ai_project_messages_role_valid",
+      sql`${table.role} IN ('system', 'user', 'assistant', 'tool')`,
+    ),
+    check(
+      "ai_project_messages_model_origin_valid",
+      sql`${table.snapshotModelOrigin} IS NULL OR ${table.snapshotModelOrigin} IN ('catalog', 'custom')`,
+    ),
+    check(
+      "ai_project_messages_model_reference_exclusive",
+      sql`NOT (${table.catalogModelId} IS NOT NULL AND ${table.customModelId} IS NOT NULL)`,
+    ),
+    index("ai_project_messages_project_idx").on(table.projectId),
+    index("ai_project_messages_prev_idx").on(table.prevMessageId),
+    index("ai_project_messages_connection_idx").on(table.connectionId),
+    index("ai_project_messages_catalog_model_idx").on(table.catalogModelId),
+    index("ai_project_messages_custom_model_idx").on(table.customModelId),
+  ],
+);
+
+export const aiProjectHeads = sqliteTable(
+  "ai_project_heads",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    currentMessageId: text("current_message_id").references(() => aiProjectMessages.id, {
+      onDelete: "set null",
+    }),
+    forkedFromHeadId: text("forked_from_head_id").references((): any => aiProjectHeads.id, {
+      onDelete: "set null",
+    }),
+    forkedFromMessageId: text("forked_from_message_id").references(() => aiProjectMessages.id, {
+      onDelete: "set null",
+    }),
+    isArchived: integer("is_archived", { mode: "boolean" }).notNull().default(false),
+    ...timestampColumns,
+  },
+  (table) => [
+    check("ai_project_heads_name_nonempty", sql`length(${table.name}) > 0`),
+    index("ai_project_heads_project_idx").on(table.projectId),
+    index("ai_project_heads_project_archived_idx").on(table.projectId, table.isArchived),
+    index("ai_project_heads_current_message_idx").on(table.currentMessageId),
+  ],
+);
+
+export const aiProjectGenerationAttempts = sqliteTable(
+  "ai_project_generation_attempts",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    headId: text("head_id").references(() => aiProjectHeads.id, {
+      onDelete: "set null",
+    }),
+    triggerMessageId: text("trigger_message_id").references(() => aiProjectMessages.id, {
+      onDelete: "set null",
+    }),
+    assistantMessageId: text("assistant_message_id").references(() => aiProjectMessages.id, {
+      onDelete: "set null",
+    }),
+    status: text("status").notNull(),
+    requestJson: text("request_json").notNull(),
+    usageJson: text("usage_json"),
+    errorJson: text("error_json"),
+    ...aiSelectionSnapshotColumns(),
+    ...aiSelectionReferenceColumns(),
+    createdAt: integer("created_at", { mode: "number" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    completedAt: integer("completed_at", { mode: "number" }),
+  },
+  (table) => [
+    check(
+      "ai_project_generation_attempts_status_valid",
+      sql`${table.status} IN ('pending', 'success', 'error')`,
+    ),
+    check(
+      "ai_project_generation_attempts_model_origin_valid",
+      sql`${table.snapshotModelOrigin} IS NULL OR ${table.snapshotModelOrigin} IN ('catalog', 'custom')`,
+    ),
+    check(
+      "ai_project_generation_attempts_model_reference_exclusive",
+      sql`NOT (${table.catalogModelId} IS NOT NULL AND ${table.customModelId} IS NOT NULL)`,
+    ),
+    index("ai_project_generation_attempts_project_idx").on(table.projectId),
+    index("ai_project_generation_attempts_head_idx").on(table.headId),
+    index("ai_project_generation_attempts_trigger_message_idx").on(table.triggerMessageId),
+    index("ai_project_generation_attempts_assistant_message_idx").on(table.assistantMessageId),
+    index("ai_project_generation_attempts_connection_idx").on(table.connectionId),
+  ],
 );
 
 export const auxNodeLayers = sqliteTable(

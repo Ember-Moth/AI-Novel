@@ -10,6 +10,96 @@ export type AiConnectionCatalogOverrideRow = InferSelectModel<
 >;
 export type AiConnectionCustomModelRow = InferSelectModel<typeof schema.aiConnectionCustomModels>;
 export type AiRegistryStateRow = InferSelectModel<typeof schema.aiRegistryState>;
+export type AiProjectMessageRow = InferSelectModel<typeof schema.aiProjectMessages>;
+export type AiProjectHeadRow = InferSelectModel<typeof schema.aiProjectHeads>;
+export type AiProjectGenerationAttemptRow = InferSelectModel<
+  typeof schema.aiProjectGenerationAttempts
+>;
+
+export type AiProjectMessageRole = "system" | "user" | "assistant" | "tool";
+export type AiGenerationAttemptStatus = "pending" | "success" | "error";
+export type AiSelectionSnapshotOrigin = "catalog" | "custom";
+
+export interface AiSelectionCapabilitySnapshot {
+  supportsVision: boolean;
+  supportsToolUse: boolean;
+  supportsReasoning: boolean;
+  supportsTemperature: boolean;
+}
+
+export interface AiSelectionPricingSnapshot {
+  inputPricePer1m: number | null;
+  outputPricePer1m: number | null;
+}
+
+export interface AiSelectionSnapshotInput {
+  connectionId?: string | null;
+  catalogModelId?: string | null;
+  customModelId?: string | null;
+  connectionName?: string | null;
+  sdkPackage?: string | null;
+  baseUrl?: string | null;
+  modelOrigin?: AiSelectionSnapshotOrigin | null;
+  modelId?: string | null;
+  modelDisplayName?: string | null;
+  modelFamily?: string | null;
+  capabilities?: Partial<AiSelectionCapabilitySnapshot> | null;
+  pricing?: Partial<AiSelectionPricingSnapshot> | null;
+}
+
+export interface AiSelectionSnapshotView {
+  connectionId: string | null;
+  catalogModelId: string | null;
+  customModelId: string | null;
+  connectionName: string | null;
+  sdkPackage: string | null;
+  baseUrl: string | null;
+  modelOrigin: AiSelectionSnapshotOrigin | null;
+  modelId: string | null;
+  modelDisplayName: string | null;
+  modelFamily: string | null;
+  capabilities: AiSelectionCapabilitySnapshot | null;
+  pricing: AiSelectionPricingSnapshot | null;
+}
+
+export interface AiProjectMessageView {
+  id: string;
+  projectId: string;
+  prevMessageId: string | null;
+  role: AiProjectMessageRole;
+  content: unknown;
+  summaryText: string | null;
+  selection: AiSelectionSnapshotView;
+  metadata: unknown | null;
+  createdAt: number;
+}
+
+export interface AiProjectHeadView {
+  id: string;
+  projectId: string;
+  name: string;
+  currentMessageId: string | null;
+  forkedFromHeadId: string | null;
+  forkedFromMessageId: string | null;
+  isArchived: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AiProjectGenerationAttemptView {
+  id: string;
+  projectId: string;
+  headId: string | null;
+  triggerMessageId: string | null;
+  assistantMessageId: string | null;
+  status: AiGenerationAttemptStatus;
+  request: unknown;
+  usage: unknown | null;
+  error: unknown | null;
+  selection: AiSelectionSnapshotView;
+  createdAt: number;
+  completedAt: number | null;
+}
 
 export interface AiCatalogProviderView {
   id: string;

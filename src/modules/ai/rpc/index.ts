@@ -12,6 +12,18 @@ import {
   refreshAiCatalog,
 } from "@/modules/ai/domain/catalog";
 import {
+  appendMessage as appendProjectAiMessage,
+  archiveHead as archiveProjectAiHead,
+  completeGenerationAttemptError,
+  completeGenerationAttemptSuccess,
+  createHead as createProjectAiHead,
+  forkHeadFromMessage,
+  listHeadChildren,
+  listProjectHeads as listProjectAiHeads,
+  recordGenerationAttempt,
+  resolveHeadMessages,
+} from "@/modules/ai/domain/logs";
+import {
   type AiConnectionConfig,
   normalizeAiConnectionConfig,
   parseAiConnectionConfig,
@@ -28,7 +40,11 @@ import type {
   AiCatalogProviderView,
   AiCatalogStatusView,
   AiConnectionRow,
+  AiProjectGenerationAttemptView,
+  AiProjectHeadView,
+  AiProjectMessageView,
   AiResolvedModelView,
+  AiSelectionSnapshotInput,
 } from "@/modules/ai/domain/types";
 import { assertRpcFound } from "@/rpc/errors";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
@@ -85,6 +101,61 @@ type CustomModelMutationInput = Pick<
   | "isEnabled"
 >;
 
+interface CreateHeadInput {
+  projectId: string;
+  name?: string | null;
+  initialMessage?: {
+    role: "system" | "user" | "assistant" | "tool";
+    content: unknown;
+    summaryText?: string | null;
+    aiSelection?: AiSelectionSnapshotInput | null;
+    metadata?: unknown;
+  } | null;
+}
+
+interface AppendHeadMessageInput {
+  projectId: string;
+  headId: string;
+  prevMessageId: string | null;
+  role: "system" | "user" | "assistant" | "tool";
+  content: unknown;
+  summaryText?: string | null;
+  aiSelection?: AiSelectionSnapshotInput | null;
+  metadata?: unknown;
+}
+
+interface ForkHeadInput {
+  projectId: string;
+  sourceHeadId: string;
+  sourceMessageId: string;
+  name?: string | null;
+  replacementRole: "system" | "user" | "assistant" | "tool";
+  replacementContent: unknown;
+  replacementSummaryText?: string | null;
+  aiSelection?: AiSelectionSnapshotInput | null;
+  metadata?: unknown;
+}
+
+interface RecordGenerationAttemptInput {
+  projectId: string;
+  headId?: string | null;
+  triggerMessageId?: string | null;
+  request: unknown;
+  aiSelection?: AiSelectionSnapshotInput | null;
+}
+
+interface CompleteGenerationAttemptSuccessInput {
+  attemptId: string;
+  assistantMessageId?: string | null;
+  usage?: unknown;
+}
+
+interface CompleteGenerationAttemptErrorInput {
+  attemptId: string;
+  error: unknown;
+  usage?: unknown;
+}
+
 type RpcMutationCtx = MutationCtx<RpcTagList>;
 
 function invalidateConnection(ctx: RpcMutationCtx, connectionId: string) {
@@ -94,6 +165,23 @@ function invalidateConnection(ctx: RpcMutationCtx, connectionId: string) {
 function invalidateConnectionsList(ctx: RpcMutationCtx, connectionId: string) {
   ctx.invalidate(rpcTags.aiConnections());
   invalidateConnection(ctx, connectionId);
+}
+
+function invalidateProjectAiState(
+  ctx: RpcMutationCtx,
+  projectId: string,
+  options?: {
+    headId?: string | null;
+    messageParentId?: string | null;
+  },
+) {
+  ctx.invalidate(rpcTags.aiProjectHeads(projectId));
+  if (options?.headId) {
+    ctx.invalidate(rpcTags.aiHeadMessages(options.headId));
+  }
+  if (options?.messageParentId) {
+    ctx.invalidate(rpcTags.aiMessageChildren(projectId, options.messageParentId));
+  }
 }
 
 function sanitizeName(name: string): string {
@@ -564,6 +652,109 @@ export const deleteCustomModel = mutation<{ id: string }, void, RpcTagList>(({ i
     .where(eq(schema.aiConnectionCustomModels.id, id))
     .run();
   invalidateConnection(ctx, model.connectionId);
+});
+
+export const listProjectHeads = query<
+  { projectId: string; archived?: boolean },
+  AiProjectHeadView[],
+  RpcTagList
+>({
+  watch: ({ projectId }) => [rpcTags.aiProjectHeads(projectId)],
+  handler: ({ projectId, archived }) => listProjectAiHeads(projectId, { archived }),
+});
+
+export const getHeadMessages = query<{ headId: string }, AiProjectMessageView[], RpcTagList>({
+  watch: ({ headId }) => [rpcTags.aiHeadMessages(headId)],
+  handler: ({ headId }) => resolveHeadMessages(headId),
+});
+
+export const getMessageChildren = query<
+  { projectId: string; messageId: string },
+  AiProjectMessageView[],
+  RpcTagList
+>({
+  watch: ({ projectId, messageId }) => [rpcTags.aiMessageChildren(projectId, messageId)],
+  handler: ({ projectId, messageId }) => listHeadChildren(projectId, messageId),
+});
+
+export const createHead = mutation<CreateHeadInput, AiProjectHeadView, RpcTagList>((input, ctx) => {
+  const head = createProjectAiHead(input);
+  invalidateProjectAiState(ctx, input.projectId, {
+    headId: head.id,
+  });
+  return head;
+});
+
+export const appendMessage = mutation<AppendHeadMessageInput, AiProjectMessageView, RpcTagList>(
+  (input, ctx) => {
+    const message = appendProjectAiMessage(input);
+    invalidateProjectAiState(ctx, input.projectId, {
+      headId: input.headId,
+      messageParentId: input.prevMessageId,
+    });
+    return message;
+  },
+);
+
+export const forkProjectHeadFromMessage = mutation<ForkHeadInput, AiProjectHeadView, RpcTagList>(
+  (input, ctx) => {
+    const head = forkHeadFromMessage({
+      projectId: input.projectId,
+      sourceHeadId: input.sourceHeadId,
+      sourceMessageId: input.sourceMessageId,
+      name: input.name,
+      role: input.replacementRole,
+      content: input.replacementContent,
+      summaryText: input.replacementSummaryText,
+      aiSelection: input.aiSelection,
+      metadata: input.metadata,
+    });
+    invalidateProjectAiState(ctx, input.projectId, {
+      headId: head.id,
+      messageParentId: input.sourceMessageId,
+    });
+    return head;
+  },
+);
+
+export const archiveProjectHead = mutation<
+  { headId: string; archived: boolean },
+  AiProjectHeadView,
+  RpcTagList
+>(({ headId, archived }, ctx) => {
+  const head = archiveProjectAiHead(headId, archived);
+  invalidateProjectAiState(ctx, head.projectId, { headId: head.id });
+  return head;
+});
+
+export const createGenerationAttempt = mutation<
+  RecordGenerationAttemptInput,
+  AiProjectGenerationAttemptView,
+  RpcTagList
+>((input, ctx) => {
+  const attempt = recordGenerationAttempt(input);
+  ctx.invalidate(rpcTags.aiGenerationAttempts(input.projectId));
+  return attempt;
+});
+
+export const finishGenerationAttemptSuccess = mutation<
+  CompleteGenerationAttemptSuccessInput,
+  AiProjectGenerationAttemptView,
+  RpcTagList
+>((input, ctx) => {
+  const attempt = completeGenerationAttemptSuccess(input);
+  ctx.invalidate(rpcTags.aiGenerationAttempts(attempt.projectId));
+  return attempt;
+});
+
+export const finishGenerationAttemptError = mutation<
+  CompleteGenerationAttemptErrorInput,
+  AiProjectGenerationAttemptView,
+  RpcTagList
+>((input, ctx) => {
+  const attempt = completeGenerationAttemptError(input);
+  ctx.invalidate(rpcTags.aiGenerationAttempts(attempt.projectId));
+  return attempt;
 });
 
 // Warm the local catalog snapshot whenever the AI surface is touched.
