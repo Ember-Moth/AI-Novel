@@ -1,13 +1,14 @@
 import { skipToken } from "@codehz/rpc";
 import { useMolecule } from "bunshi/react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   buildAuxTreeState,
   buildContentTreeState,
   buildTimelineState,
 } from "@/features/project/model/normalize";
+import type { TimelinePointVM } from "@/features/project/model/types";
 import { rpc } from "@/server/rpc/client";
 
 import { deriveProjectEditorState, deriveProjectSelectionState } from "../helpers/projectView";
@@ -22,6 +23,22 @@ function useVisibleAuxSnapshot(
   snapshot: AuxSnapshotData | undefined,
 ) {
   return snapshot?.rootNodeId === workspaceAuxRootId ? snapshot : undefined;
+}
+
+function moveTimelinePointLocally(points: TimelinePointVM[], fromIndex: number, toIndex: number) {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) {
+    return points;
+  }
+
+  const nextPoints = [...points];
+  const [movedPoint] = nextPoints.splice(fromIndex, 1);
+
+  if (!movedPoint) {
+    return points;
+  }
+
+  nextPoints.splice(Math.min(toIndex, nextPoints.length), 0, movedPoint);
+  return nextPoints;
 }
 
 export function useProjectWorkspaceData(projectId: string) {
@@ -63,15 +80,44 @@ export function useProjectWorkspaceData(projectId: string) {
     () => buildContentTreeState(contentQuery.data?.nodes ?? []),
     [contentQuery.data],
   );
-  const timelineState = useMemo(
+  const serverTimelineState = useMemo(
     () => buildTimelineState(timelineQuery.data ?? []),
     [timelineQuery.data],
+  );
+  const [optimisticTimelinePoints, setOptimisticTimelinePoints] = useState<
+    TimelinePointVM[] | null
+  >(null);
+  const visibleTimelinePoints = optimisticTimelinePoints ?? serverTimelineState.points;
+  const timelineState = useMemo(
+    () => ({
+      points: visibleTimelinePoints,
+      labelMap: new Map(visibleTimelinePoints.map((point) => [point.id, point.label])),
+      idSet: new Set(visibleTimelinePoints.map((point) => point.id)),
+    }),
+    [visibleTimelinePoints],
   );
   const auxState = useMemo(
     () => buildAuxTreeState(visibleAuxSnapshot?.nodes ?? []),
     [visibleAuxSnapshot],
   );
   const auxRootId = visibleAuxSnapshot?.rootNodeId ?? null;
+
+  useEffect(() => {
+    setOptimisticTimelinePoints(null);
+  }, [timelineQuery.data]);
+
+  const reorderTimelineOptimistically = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      setOptimisticTimelinePoints((currentPoints) =>
+        moveTimelinePointLocally(currentPoints ?? serverTimelineState.points, fromIndex, toIndex),
+      );
+    },
+    [serverTimelineState.points],
+  );
+
+  const clearOptimisticTimelineReorder = useCallback(() => {
+    setOptimisticTimelinePoints(null);
+  }, []);
 
   const contentBusy = createContent.isPending || deleteContent.isPending || updateContent.isPending;
   const timelineBusy =
@@ -126,6 +172,8 @@ export function useProjectWorkspaceData(projectId: string) {
     timelinePoints: timelineState.points,
     timelineLabelMap: timelineState.labelMap,
     timelinePointIdSet: timelineState.idSet,
+    reorderTimelineOptimistically,
+    clearOptimisticTimelineReorder,
     auxTree: auxState.tree,
     auxRootId,
     auxNodeMap: auxState.nodeMap,

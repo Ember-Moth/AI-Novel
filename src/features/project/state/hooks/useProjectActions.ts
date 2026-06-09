@@ -94,6 +94,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       moveTimeline,
       deleteTimeline,
       updateTimeline,
+      reorderTimelineOptimistically,
+      clearOptimisticTimelineReorder,
       mkdirAux,
       writeFileAux,
       moveAux,
@@ -900,6 +902,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
           : (orderedMovablePoints[newIndex - 1]?.id ?? ORIGIN_TIMELINE_POINT_ID);
 
       clearActionError(setTimelineError);
+      reorderTimelineOptimistically(fromIndex, toIndex);
 
       try {
         await moveTimeline.mutate({
@@ -908,6 +911,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
           afterPointId,
         });
       } catch (error) {
+        clearOptimisticTimelineReorder();
         setActionError(
           setTimelineError,
           error instanceof Error ? error.message : "调整时间轴顺序失败，请稍后重试。",
@@ -915,7 +919,14 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         );
       }
     },
-    [moveTimeline, setTimelineError, timelinePoints, workspaceId],
+    [
+      clearOptimisticTimelineReorder,
+      moveTimeline,
+      reorderTimelineOptimistically,
+      setTimelineError,
+      timelinePoints,
+      workspaceId,
+    ],
   );
 
   const handleAuxCreateSiblingDir = useCallback(

@@ -1,8 +1,6 @@
-import { type DragEvent, type ReactNode } from "react";
+import { type ReactNode } from "react";
 
 import { cn } from "@/shared/cn";
-
-import type { DragRowProps } from "./useDragReorder";
 
 export const ROW_BASE = "flex w-full items-center gap-1 h-7 pr-4 text-[13px]";
 export const ROW_ACTIVE = "bg-list-active-background text-foreground";
@@ -18,8 +16,6 @@ export function SidebarListRow({
   group = false,
   className = "",
   onClick,
-  draggable = false,
-  dragProps,
   leading,
   icon,
   label,
@@ -32,8 +28,6 @@ export function SidebarListRow({
   group?: boolean;
   className?: string;
   onClick?: () => void;
-  draggable?: boolean;
-  dragProps?: DragRowProps;
   leading?: ReactNode;
   icon?: ReactNode;
   label: ReactNode;
@@ -46,44 +40,12 @@ export function SidebarListRow({
   const groupClass = group || hasHoverSlot ? "group" : "";
   const interactiveClass = onClick ? "cursor-pointer" : "";
 
-  const dragClass = dragProps?.isDragging
-    ? "opacity-40"
-    : dragProps?.isDragOver
-      ? "border-t border-t-drag-border"
-      : "";
-
-  const handleDragStart = (event: DragEvent<HTMLDivElement>) => {
-    dragProps?.onDragStart(event);
-  };
-
-  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
-    dragProps?.onDragOver(event);
-  };
-
-  const handleDragLeave = () => {
-    dragProps?.onDragLeave();
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    dragProps?.onDrop(event);
-  };
-
-  const handleDragEnd = () => {
-    dragProps?.onDragEnd();
-  };
-
   return (
     <div
       data-action-anchor={anchorId}
-      className={cn(ROW_BASE, stateClass, groupClass, interactiveClass, dragClass, className)}
+      className={cn(ROW_BASE, stateClass, groupClass, interactiveClass, className)}
       style={{ paddingLeft: `${rowPaddingLeft(depth)}px` }}
       onClick={onClick}
-      draggable={draggable}
-      onDragStart={dragProps ? handleDragStart : undefined}
-      onDragOver={dragProps ? handleDragOver : undefined}
-      onDragLeave={dragProps ? handleDragLeave : undefined}
-      onDrop={dragProps ? handleDrop : undefined}
-      onDragEnd={dragProps ? handleDragEnd : undefined}
     >
       {leading}
       {icon}
