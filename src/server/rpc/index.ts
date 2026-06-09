@@ -14,6 +14,7 @@ export const ai = {
   listCatalogProviders: aiHandlers.listCatalogProviders,
   listCatalogModels: aiHandlers.listCatalogModels,
   listConnections: aiHandlers.listConnections,
+  listEnabledConnectionModels: aiHandlers.listEnabledConnectionModels,
   createConnection: aiHandlers.createConnection,
   updateConnection: aiHandlers.updateConnection,
   deleteConnection: aiHandlers.deleteConnection,

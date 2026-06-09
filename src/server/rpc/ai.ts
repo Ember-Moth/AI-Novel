@@ -292,6 +292,26 @@ export const listConnections = query<void, AiConnectionRow[]>((_, ctx) => {
     .sort((a, b) => a.name.localeCompare(b.name));
 });
 
+export const listEnabledConnectionModels = query<
+  void,
+  Array<{ connection: AiConnectionRow; models: AiResolvedModelView[] }>
+>((_, ctx) => {
+  ctx.watch("ai.connections");
+  const connections = db.query.aiConnections
+    .findMany()
+    .sync()
+    .filter((connection) => connection.isEnabled)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return connections.map((connection) => {
+    ctx.watch(`ai.connections.models:${connection.id}`);
+    return {
+      connection,
+      models: listResolvedModelsForConnection({ connectionId: connection.id }),
+    };
+  });
+});
+
 export const createConnection = mutation<CreateConnectionInput, AiConnectionRow>((input, ctx) => {
   const values = buildConnectionInsert(input);
   db.insert(schema.aiConnections).values(values).run();

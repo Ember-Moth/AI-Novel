@@ -1,97 +1,359 @@
-import { skipToken } from "@codehz/rpc";
-import { useEffect, useMemo, useState } from "react";
+import {
+  FloatingFocusManager,
+  FloatingList,
+  FloatingPortal,
+  autoUpdate,
+  flip,
+  offset,
+  size,
+  useClick,
+  useDismiss,
+  useFloating,
+  useInteractions,
+  useListItem,
+  useListNavigation,
+  useRole,
+  useTypeahead,
+} from "@floating-ui/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { rpc } from "@/server/rpc/client";
 
-type ResolvedModel = NonNullable<
-  ReturnType<typeof rpc.useQuery<"ai.listResolvedModels">>["data"]
+type ConnectionModelGroup = NonNullable<
+  ReturnType<typeof rpc.useQuery<"ai.listEnabledConnectionModels">>["data"]
 >[number];
+type ResolvedModel = ConnectionModelGroup["models"][number];
+type AiConnection = ConnectionModelGroup["connection"];
 
-const SELECT_CLASS =
-  "h-8 w-full rounded border border-border bg-editor-background px-2 text-[12px] text-foreground outline-none transition focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-60";
-
-function ModelSelect({
-  connectionId,
+function ModelPicker({
+  selectedConnectionId,
   selectedModelId,
-  onModelChange,
+  onSelectionChange,
 }: {
-  connectionId: string | null;
+  selectedConnectionId: string;
   selectedModelId: string;
-  onModelChange: (_modelId: string) => void;
+  onSelectionChange: (_connectionId: string, _modelId: string) => void;
 }) {
-  const modelsQuery = rpc.useQuery(
-    "ai.listResolvedModels",
-    connectionId ? { connectionId } : skipToken,
-  );
-  const models = useMemo(
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const listRef = useRef<Array<HTMLElement | null>>([]);
+  const labelsRef = useRef<Array<string | null>>([]);
+  const groupsQuery = rpc.useQuery("ai.listEnabledConnectionModels");
+  const groups = useMemo(
     () =>
-      (modelsQuery.data ?? []).filter(
-        (model) => model.connectionId === connectionId && model.isEnabled,
-      ),
-    [connectionId, modelsQuery.data],
+      (groupsQuery.data ?? []).map((group) => ({
+        connection: group.connection,
+        models: group.models.filter((model) => model.isEnabled),
+      })),
+    [groupsQuery.data],
   );
-  const selectedModel = models.find((model) => model.id === selectedModelId) ?? null;
+  const groupedOptions = useMemo(() => {
+    let optionIndex = 0;
+    return groups.map((group) => ({
+      connection: group.connection,
+      models: group.models.map((model) => ({
+        model,
+        optionIndex: optionIndex++,
+      })),
+    }));
+  }, [groups]);
+  const selectableOptions = useMemo(
+    () =>
+      groupedOptions.flatMap((group) =>
+        group.models.map((option) => ({
+          connection: group.connection,
+          model: option.model,
+        })),
+      ),
+    [groupedOptions],
+  );
+  const selectedOption =
+    selectableOptions.find(
+      (option) =>
+        option.connection.id === selectedConnectionId && option.model.id === selectedModelId,
+    ) ?? null;
+  const selectedModel = selectedOption?.model ?? null;
+  const selectedConnection = selectedOption?.connection ?? null;
+  const selectedIndex = selectedOption ? selectableOptions.indexOf(selectedOption) : null;
+  const disabled = groupsQuery.isLoading || selectableOptions.length === 0;
+  const loadingEmpty = groupsQuery.isLoading && groups.length === 0;
+  const triggerLabel = loadingEmpty
+    ? "加载连接和模型中..."
+    : selectedOption
+      ? `${selectedConnection?.name ?? "连接"} / ${selectedModel?.displayName ?? "模型"}`
+      : selectableOptions.length === 0
+        ? "无可用连接模型"
+        : "选择连接和模型";
+  const effectiveOpen = open && !disabled;
+
+  const {
+    refs: { setReference, setFloating, domReference },
+    floatingStyles,
+    context,
+  } = useFloating<HTMLButtonElement>({
+    open: effectiveOpen,
+    onOpenChange(nextOpen) {
+      setOpen(disabled ? false : nextOpen);
+    },
+    placement: "top-start",
+    whileElementsMounted: autoUpdate,
+    middleware: [
+      offset(6),
+      flip({ padding: 8 }),
+      size({
+        padding: 8,
+        apply({ rects, availableHeight, elements }) {
+          Object.assign(elements.floating.style, {
+            minWidth: `${rects.reference.width}px`,
+            maxWidth: "min(420px, calc(100vw - 16px))",
+            maxHeight: `${Math.max(96, Math.min(260, availableHeight))}px`,
+          });
+        },
+      }),
+    ],
+  });
+
+  const click = useClick(context, { enabled: !disabled });
+  const dismiss = useDismiss(context);
+  const role = useRole(context, { role: "listbox" });
+  const listNavigation = useListNavigation(context, {
+    listRef,
+    activeIndex,
+    selectedIndex,
+    onNavigate: setActiveIndex,
+    loop: true,
+  });
+  const typeahead = useTypeahead(context, {
+    listRef: labelsRef,
+    activeIndex,
+    selectedIndex,
+    onMatch: setActiveIndex,
+    enabled: selectableOptions.length > 0,
+  });
+  const { getReferenceProps, getFloatingProps, getItemProps } = useInteractions([
+    click,
+    dismiss,
+    role,
+    listNavigation,
+    typeahead,
+  ]);
 
   useEffect(() => {
-    if (!connectionId) {
-      if (selectedModelId) onModelChange("");
+    if (groupsQuery.isLoading && selectableOptions.length === 0) {
       return;
     }
 
-    if (modelsQuery.isLoading && models.length === 0) {
+    if (selectableOptions.length === 0) {
+      if (selectedConnectionId || selectedModelId) onSelectionChange("", "");
       return;
     }
 
-    if (!models.some((model) => model.id === selectedModelId)) {
-      onModelChange(models[0]?.id ?? "");
+    if (selectedOption) {
+      return;
     }
-  }, [connectionId, models, modelsQuery.isLoading, onModelChange, selectedModelId]);
+
+    const firstOption = selectableOptions[0];
+    onSelectionChange(firstOption?.connection.id ?? "", firstOption?.model.id ?? "");
+  }, [
+    groupsQuery.isLoading,
+    onSelectionChange,
+    selectableOptions,
+    selectedConnectionId,
+    selectedModelId,
+    selectedOption,
+  ]);
+
+  function selectModel(connection: AiConnection, model: ResolvedModel) {
+    onSelectionChange(connection.id, model.id);
+    setOpen(false);
+    domReference.current?.focus();
+  }
 
   return (
-    <div className="space-y-1.5">
-      <label className="text-[11px] text-foreground-muted" htmlFor="ai-model-select">
-        模型
-      </label>
-      <select
-        id="ai-model-select"
-        value={selectedModelId}
-        onChange={(event) => onModelChange(event.target.value)}
-        disabled={!connectionId || modelsQuery.isLoading || models.length === 0}
-        className={SELECT_CLASS}
+    <>
+      <button
+        ref={setReference}
+        type="button"
+        disabled={disabled}
+        title={
+          selectedOption
+            ? `${selectedConnection?.name ?? ""} / ${selectedModel?.displayName ?? ""} (${selectedModel?.modelId ?? ""})`
+            : triggerLabel
+        }
+        aria-label="选择连接和模型"
+        className="flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded border border-transparent px-1.5 text-left text-[11px] text-foreground-muted outline-none transition hover:border-border hover:bg-list-hover-background hover:text-foreground focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        {...getReferenceProps()}
       >
-        {modelsQuery.isLoading && models.length === 0 ? (
-          <option value="">加载模型中...</option>
-        ) : models.length === 0 ? (
-          <option value="">没有可用模型</option>
-        ) : (
-          models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.displayName}
-            </option>
-          ))
-        )}
-      </select>
-      <ModelMeta model={selectedModel} isLoading={modelsQuery.isLoading} />
-    </div>
+        <span className="icon-[material-symbols--token] shrink-0 text-sm text-accent-foreground" />
+        <span className="min-w-0 truncate text-[12px] text-foreground">{triggerLabel}</span>
+        <CompactModelMeta model={selectedModel} />
+        <span
+          className={`shrink-0 text-base ${effectiveOpen ? "icon-[material-symbols--keyboard-arrow-up]" : "icon-[material-symbols--keyboard-arrow-down]"}`}
+        />
+      </button>
+
+      {effectiveOpen ? (
+        <FloatingPortal>
+          <FloatingFocusManager context={context} modal={false}>
+            <div
+              ref={setFloating}
+              style={floatingStyles}
+              className="z-50 overflow-y-auto border border-border bg-sidebar-background py-1 text-[12px] text-foreground shadow-[0_6px_18px_rgb(0_0_0_/_0.35)] outline-none"
+              {...getFloatingProps()}
+            >
+              <FloatingList elementsRef={listRef} labelsRef={labelsRef}>
+                {loadingEmpty ? (
+                  <div className="px-2 py-2 text-foreground-muted">加载连接和模型中...</div>
+                ) : selectableOptions.length === 0 ? (
+                  <div className="px-2 py-2 text-foreground-muted">没有可用连接模型</div>
+                ) : (
+                  groupedOptions.map((group) =>
+                    group.models.length > 0 ? (
+                      <div key={group.connection.id}>
+                        <div className="sticky top-0 z-10 border-y border-border bg-sidebar-background px-2 py-1 text-[11px] font-medium text-foreground-muted first:border-t-0">
+                          {group.connection.name}
+                        </div>
+                        {group.models.map(({ model, optionIndex }) => (
+                          <ModelOption
+                            key={`${group.connection.id}:${model.id}`}
+                            connection={group.connection}
+                            model={model}
+                            selected={
+                              group.connection.id === selectedConnectionId &&
+                              model.id === selectedModelId
+                            }
+                            active={activeIndex === optionIndex}
+                            getItemProps={getItemProps}
+                            onSelect={selectModel}
+                          />
+                        ))}
+                      </div>
+                    ) : null,
+                  )
+                )}
+              </FloatingList>
+            </div>
+          </FloatingFocusManager>
+        </FloatingPortal>
+      ) : null}
+    </>
   );
 }
 
-function ModelMeta({ model, isLoading }: { model: ResolvedModel | null; isLoading: boolean }) {
-  if (isLoading && !model) {
-    return <div className="text-[11px] text-foreground-muted">正在读取当前连接的模型...</div>;
+function CompactModelMeta({ model }: { model: ResolvedModel | null }) {
+  if (!model) {
+    return null;
   }
 
-  if (!model) {
-    return <div className="text-[11px] text-foreground-muted">请先在设置中启用模型。</div>;
+  const capabilities = getModelCapabilities(model);
+
+  return (
+    <span className="hidden min-w-0 items-center gap-1.5 text-[11px] text-foreground-muted min-[340px]:flex">
+      <span className="min-w-0 truncate font-mono">{model.modelId}</span>
+      {capabilities.map((capability) => (
+        <span key={capability}>{capability}</span>
+      ))}
+    </span>
+  );
+}
+
+function ModelOption({
+  connection,
+  model,
+  selected,
+  active,
+  getItemProps,
+  onSelect,
+}: {
+  connection: AiConnection;
+  model: ResolvedModel;
+  selected: boolean;
+  active: boolean;
+  getItemProps: ReturnType<typeof useInteractions>["getItemProps"];
+  onSelect: (_connection: AiConnection, _model: ResolvedModel) => void;
+}) {
+  const { ref } = useListItem({
+    label: `${connection.name} ${model.displayName} ${model.modelId}`,
+  });
+  const capabilities = getModelCapabilities(model);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      role="option"
+      aria-selected={selected}
+      tabIndex={active ? 0 : -1}
+      className={`flex w-full items-start gap-2 border-l-2 px-2 py-1.5 text-left outline-none ${
+        active ? "bg-list-hover-background" : "bg-transparent"
+      } ${
+        selected
+          ? "border-accent-foreground text-foreground"
+          : "border-transparent text-foreground-muted"
+      }`}
+      {...getItemProps({
+        onClick: () => onSelect(connection, model),
+        onKeyDown: (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onSelect(connection, model);
+          }
+        },
+      })}
+    >
+      <span
+        className={`mt-0.5 w-4 shrink-0 text-sm ${
+          selected ? "icon-[material-symbols--check] text-accent-foreground" : ""
+        }`}
+        aria-hidden
+      />
+      <span className="min-w-0 flex-1">
+        <span className={`block truncate text-[12px] ${selected ? "text-foreground" : ""}`}>
+          {model.displayName}
+        </span>
+        <span className="mt-0.5 flex min-w-0 flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-foreground-muted">
+          <span className="min-w-0 truncate font-mono">{model.modelId}</span>
+          {capabilities.map((capability) => (
+            <span key={capability}>{capability}</span>
+          ))}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function getModelCapabilities(model: ResolvedModel) {
+  return [
+    model.supportsReasoning ? "推理" : null,
+    model.supportsToolUse ? "工具" : null,
+    model.supportsVision ? "视觉" : null,
+  ].filter((capability): capability is string => capability !== null);
+}
+
+function ModelHint({ canType, selectedModelId }: { canType: boolean; selectedModelId: string }) {
+  if (canType) {
+    return (
+      <>
+        <span className="icon-[material-symbols--edit-note]" />
+        <span>草稿仅保存在当前页面。</span>
+      </>
+    );
+  }
+
+  if (!selectedModelId) {
+    return (
+      <>
+        <span className="icon-[material-symbols--info]" />
+        <span>需要可用连接和模型才能输入。</span>
+      </>
+    );
   }
 
   return (
-    <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-[11px] text-foreground-muted">
-      <span className="min-w-0 truncate font-mono">{model.modelId}</span>
-      {model.supportsReasoning ? <span>推理</span> : null}
-      {model.supportsToolUse ? <span>工具</span> : null}
-      {model.supportsVision ? <span>视觉</span> : null}
-    </div>
+    <>
+      <span className="icon-[material-symbols--info]" />
+      <span>需要可用连接才能输入。</span>
+    </>
   );
 }
 
@@ -99,19 +361,7 @@ export function AiSidebar() {
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [draft, setDraft] = useState("");
-  const connectionsQuery = rpc.useQuery("ai.listConnections");
-  const enabledConnections = useMemo(
-    () => (connectionsQuery.data ?? []).filter((connection) => connection.isEnabled),
-    [connectionsQuery.data],
-  );
-  const effectiveConnectionId = enabledConnections.some(
-    (connection) => connection.id === selectedConnectionId,
-  )
-    ? selectedConnectionId
-    : (enabledConnections[0]?.id ?? "");
-  const selectedConnection =
-    enabledConnections.find((connection) => connection.id === effectiveConnectionId) ?? null;
-  const canType = Boolean(selectedConnection && selectedModelId);
+  const canType = Boolean(selectedConnectionId && selectedModelId);
 
   return (
     <aside className="flex h-full w-80 max-w-[38vw] min-w-72 shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar-background">
@@ -135,58 +385,34 @@ export function AiSidebar() {
 
         <form className="shrink-0" aria-label="AI 对话输入">
           <div className="space-y-2">
-            <div className="space-y-1.5">
-              <label className="text-[11px] text-foreground-muted" htmlFor="ai-connection-select">
-                连接
-              </label>
-              <select
-                id="ai-connection-select"
-                value={effectiveConnectionId}
-                onChange={(event) => {
-                  setSelectedConnectionId(event.target.value);
-                  setSelectedModelId("");
-                }}
-                disabled={connectionsQuery.isLoading || enabledConnections.length === 0}
-                className={SELECT_CLASS}
-              >
-                {connectionsQuery.isLoading && enabledConnections.length === 0 ? (
-                  <option value="">加载连接中...</option>
-                ) : enabledConnections.length === 0 ? (
-                  <option value="">没有可用连接</option>
-                ) : (
-                  enabledConnections.map((connection) => (
-                    <option key={connection.id} value={connection.id}>
-                      {connection.name}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
-
-            <ModelSelect
-              connectionId={selectedConnection?.id ?? null}
-              selectedModelId={selectedModelId}
-              onModelChange={setSelectedModelId}
-            />
-
-            <div className="flex items-end gap-2 rounded-md border border-border bg-editor-background p-2">
+            <div className="rounded-md border border-border bg-editor-background focus-within:border-accent-foreground">
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 disabled={!canType}
                 rows={3}
-                className="min-h-16 flex-1 resize-none border-none bg-transparent text-[13px] leading-5 text-editor-foreground outline-none placeholder:text-foreground-muted/70 disabled:cursor-not-allowed disabled:opacity-70"
+                className="min-h-16 w-full resize-none border-none bg-transparent px-2.5 py-2 text-[13px] leading-5 text-editor-foreground outline-none placeholder:text-foreground-muted/70 disabled:cursor-not-allowed disabled:opacity-70"
                 placeholder={canType ? "输入消息..." : "选择可用模型后输入..."}
               />
-              <button
-                type="button"
-                disabled
-                title="发送功能尚未接入"
-                aria-label="发送"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-foreground-muted transition disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <span className="icon-[material-symbols--send] text-lg" />
-              </button>
+              <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border px-1.5 py-1">
+                <ModelPicker
+                  selectedConnectionId={selectedConnectionId}
+                  selectedModelId={selectedModelId}
+                  onSelectionChange={(connectionId, modelId) => {
+                    setSelectedConnectionId(connectionId);
+                    setSelectedModelId(modelId);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled
+                  title="发送功能尚未接入"
+                  aria-label="发送"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-foreground-muted transition disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <span className="icon-[material-symbols--send] text-lg" />
+                </button>
+              </div>
             </div>
 
             <div
@@ -194,12 +420,7 @@ export function AiSidebar() {
                 canType ? "text-foreground-muted" : "text-accent-foreground"
               }`}
             >
-              <span
-                className={
-                  canType ? "icon-[material-symbols--edit-note]" : "icon-[material-symbols--info]"
-                }
-              />
-              <span>{canType ? "草稿仅保存在当前页面。" : "需要可用连接和模型才能输入。"}</span>
+              <ModelHint canType={canType} selectedModelId={selectedModelId} />
             </div>
           </div>
         </form>
