@@ -15,7 +15,7 @@ import {
   useRole,
   useTypeahead,
 } from "@floating-ui/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
 import { rpc } from "@/rpc/client";
@@ -29,11 +29,15 @@ type AiConnection = ConnectionModelGroup["connection"];
 function ModelPicker({
   selectedConnectionId,
   selectedModelId,
+  selectionHydrated,
   onSelectionChange,
+  onSelectionCommit,
 }: {
   selectedConnectionId: string;
   selectedModelId: string;
+  selectionHydrated: boolean;
   onSelectionChange: (_connectionId: string, _modelId: string) => void;
+  onSelectionCommit: (_connectionId: string, _modelId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -140,32 +144,28 @@ function ModelPicker({
   ]);
 
   useEffect(() => {
-    if (groupsQuery.isInitialLoading && selectableOptions.length === 0) {
+    if (!selectionHydrated) {
       return;
     }
 
-    if (selectableOptions.length === 0) {
-      if (selectedConnectionId || selectedModelId) onSelectionChange("", "");
+    if (groupsQuery.data === undefined) {
       return;
     }
 
-    if (selectedOption) {
-      return;
+    if ((selectedConnectionId || selectedModelId) && !selectedOption) {
+      onSelectionChange("", "");
     }
-
-    const firstOption = selectableOptions[0];
-    onSelectionChange(firstOption?.connection.id ?? "", firstOption?.model.id ?? "");
   }, [
-    groupsQuery.isInitialLoading,
+    groupsQuery.data,
     onSelectionChange,
-    selectableOptions,
+    selectionHydrated,
     selectedConnectionId,
     selectedModelId,
     selectedOption,
   ]);
 
   function selectModel(connection: AiConnection, model: ResolvedModel) {
-    onSelectionChange(connection.id, model.id);
+    onSelectionCommit(connection.id, model.id);
     setOpen(false);
     domReference.current?.focus();
   }
@@ -320,7 +320,24 @@ function getModelCapabilities(model: ResolvedModel) {
   ].filter((capability): capability is string => capability !== null);
 }
 
-function ModelHint({ canType, selectedModelId }: { canType: boolean; selectedModelId: string }) {
+function ModelHint({
+  canType,
+  selectedModelId,
+  isLoadingSelection,
+}: {
+  canType: boolean;
+  selectedModelId: string;
+  isLoadingSelection: boolean;
+}) {
+  if (isLoadingSelection) {
+    return (
+      <>
+        <span className="icon-[material-symbols--progress-activity]" />
+        <span>正在加载模型选择...</span>
+      </>
+    );
+  }
+
   if (canType) {
     return (
       <>
@@ -351,7 +368,51 @@ export function AiSidebar() {
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [draft, setDraft] = useState("");
+  const [selectionHydrated, setSelectionHydrated] = useState(false);
+  const storedSelectionQuery = rpc.useQuery("config.getAiAssistantModelSelection");
+  const saveSelection = rpc.useMutation("config.setAiAssistantModelSelection", {
+    onSuccess: (selection) => {
+      rpc.setQueryData("config.getAiAssistantModelSelection", undefined, selection);
+    },
+  });
+  const isLoadingSelection = !selectionHydrated;
   const canType = Boolean(selectedConnectionId && selectedModelId);
+
+  useEffect(() => {
+    if (selectionHydrated) {
+      return;
+    }
+
+    const hasResolvedStoredSelection =
+      storedSelectionQuery.data !== undefined || storedSelectionQuery.error !== null;
+    if (!hasResolvedStoredSelection) {
+      return;
+    }
+
+    setSelectedConnectionId(storedSelectionQuery.data?.connectionId ?? "");
+    setSelectedModelId(storedSelectionQuery.data?.modelId ?? "");
+    setSelectionHydrated(true);
+  }, [selectionHydrated, storedSelectionQuery.data, storedSelectionQuery.error]);
+
+  const handleSelectionChange = useCallback((connectionId: string, modelId: string) => {
+    setSelectedConnectionId(connectionId);
+    setSelectedModelId(modelId);
+  }, []);
+
+  const handleSelectionCommit = useCallback(
+    (connectionId: string, modelId: string) => {
+      handleSelectionChange(connectionId, modelId);
+      void saveSelection.mutate(
+        connectionId && modelId
+          ? {
+              connectionId,
+              modelId,
+            }
+          : null,
+      );
+    },
+    [handleSelectionChange, saveSelection],
+  );
 
   return (
     <aside className="flex h-full w-80 max-w-[38vw] min-w-72 shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar-background">
@@ -379,19 +440,24 @@ export function AiSidebar() {
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                disabled={!canType}
+                disabled={isLoadingSelection || !canType}
                 rows={3}
                 className="min-h-16 w-full resize-none border-none bg-transparent px-2.5 py-2 text-[13px] leading-5 text-editor-foreground outline-none placeholder:text-foreground-muted/70 disabled:cursor-not-allowed disabled:opacity-70"
-                placeholder={canType ? "输入消息..." : "选择可用模型后输入..."}
+                placeholder={
+                  isLoadingSelection
+                    ? "加载模型选择中..."
+                    : canType
+                      ? "输入消息..."
+                      : "选择可用模型后输入..."
+                }
               />
               <div className="flex min-w-0 items-center gap-2 border-t border-border p-1.5">
                 <ModelPicker
                   selectedConnectionId={selectedConnectionId}
                   selectedModelId={selectedModelId}
-                  onSelectionChange={(connectionId, modelId) => {
-                    setSelectedConnectionId(connectionId);
-                    setSelectedModelId(modelId);
-                  }}
+                  selectionHydrated={selectionHydrated}
+                  onSelectionChange={handleSelectionChange}
+                  onSelectionCommit={handleSelectionCommit}
                 />
                 <button
                   type="button"
@@ -410,7 +476,11 @@ export function AiSidebar() {
                 canType ? "text-foreground-muted" : "text-accent-foreground"
               }`}
             >
-              <ModelHint canType={canType} selectedModelId={selectedModelId} />
+              <ModelHint
+                canType={canType}
+                selectedModelId={selectedModelId}
+                isLoadingSelection={isLoadingSelection}
+              />
             </div>
           </div>
         </form>

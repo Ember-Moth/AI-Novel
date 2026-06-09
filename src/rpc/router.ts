@@ -1,4 +1,5 @@
 import * as aiHandlers from "@/modules/ai/rpc";
+import * as configHandlers from "@/modules/config/rpc";
 import * as projectHandlers from "@/modules/projects/rpc";
 import * as auxHandlers from "@/modules/workspace/rpc/aux";
 import * as contentHandlers from "@/modules/workspace/rpc/content";
@@ -23,6 +24,11 @@ export const ai = {
   createCustomModel: aiHandlers.createCustomModel,
   updateCustomModel: aiHandlers.updateCustomModel,
   deleteCustomModel: aiHandlers.deleteCustomModel,
+};
+
+export const config = {
+  getAiAssistantModelSelection: configHandlers.getAiAssistantModelSelection,
+  setAiAssistantModelSelection: configHandlers.setAiAssistantModelSelection,
 };
 
 export const projects = {

@@ -1,6 +1,8 @@
 import { defineTags, type TagValue } from "@codehz/rpc/core";
 
 export const rpcTags = defineTags({
+  aiAssistantModelSelection: () => ["config", "ai", "assistant", "model-selection"] as const,
+
   projectsList: () => ["projects", "list"] as const,
   project: (projectId: string) => ["projects", "detail", projectId] as const,
 
