@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 
 import { buildContentTreeState } from "./normalize";
-import { resolveContentMove, type ContentDropPosition } from "./tree";
+import {
+  resolveContentCreateSiblingPlacement,
+  resolveContentMove,
+  type ContentDropPosition,
+} from "./tree";
 import type { RawContentTreeNode } from "./types";
 
 const ROOT_ID = "content_root";
@@ -95,4 +99,34 @@ test("resolveContentMove rejects moving into itself or its subtree", () => {
   expect(resolve(tree, "a", "a", "inside")).toBeNull();
   expect(resolve(tree, "a", "a1", "inside")).toBeNull();
   expect(resolve(tree, "a", "a2", "after")).toBeNull();
+});
+
+test("resolveContentCreateSiblingPlacement inserts after the active sibling", () => {
+  const state = buildContentTreeState([node("a"), node("b"), node("c")]);
+  const placement = resolveContentCreateSiblingPlacement({
+    activeNode: state.nodeMap.get("b") ?? null,
+    tree: state.tree,
+    parentMap: state.parentMap,
+    contentRootId: ROOT_ID,
+  });
+
+  expect(placement).toEqual({
+    parentId: ROOT_ID,
+    afterSiblingId: "b",
+  });
+});
+
+test("resolveContentCreateSiblingPlacement appends to the top level when nothing is selected", () => {
+  const state = buildContentTreeState([node("a"), node("b"), node("c")]);
+  const placement = resolveContentCreateSiblingPlacement({
+    activeNode: null,
+    tree: state.tree,
+    parentMap: state.parentMap,
+    contentRootId: ROOT_ID,
+  });
+
+  expect(placement).toEqual({
+    parentId: ROOT_ID,
+    afterSiblingId: "c",
+  });
 });

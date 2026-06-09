@@ -64,6 +64,25 @@ export function listContentSiblings(
   return parent?.children ?? [];
 }
 
+export function resolveContentCreateSiblingPlacement(input: {
+  activeNode: ContentTreeNodeVM | null;
+  tree: ContentTreeNodeVM[];
+  parentMap: ReadonlyMap<string, string | null>;
+  contentRootId: string;
+}) {
+  if (input.activeNode) {
+    return {
+      parentId: input.parentMap.get(input.activeNode.id) ?? input.contentRootId,
+      afterSiblingId: input.activeNode.id,
+    };
+  }
+
+  return {
+    parentId: input.contentRootId,
+    afterSiblingId: input.tree.at(-1)?.id ?? null,
+  };
+}
+
 export function findContentDeleteFallback(
   tree: ContentTreeNodeVM[],
   parentMap: Map<string, string | null>,

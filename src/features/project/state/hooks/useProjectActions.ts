@@ -16,6 +16,7 @@ import {
   nextAuxDirName,
   nextAuxFileName,
   omitRecordKey,
+  resolveContentCreateSiblingPlacement,
   resolveContentMove,
   type ContentMoveIntent,
 } from "@/features/project/model/tree";
@@ -634,9 +635,12 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       }
 
       const anchorPointId = activeTimelinePointId;
-      const parentId = activeContentNode
-        ? (contentParentMap.get(activeContentNode.id) ?? contentRootId)
-        : contentRootId;
+      const { parentId, afterSiblingId } = resolveContentCreateSiblingPlacement({
+        activeNode: activeContentNode,
+        tree: contentTree,
+        parentMap: contentParentMap,
+        contentRootId,
+      });
       const title = `新节点 ${flatContentNodes.length + 1}`;
 
       clearActionError(setContentError);
@@ -645,7 +649,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         const node = await createContent.mutate({
           workspaceId,
           parentId,
-          afterSiblingId: activeContentNode?.id,
+          afterSiblingId,
           anchorPointId,
           title,
         });
@@ -664,6 +668,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       activateContentNode,
       activeContentNode,
       activeTimelinePointId,
+      contentTree,
       contentParentMap,
       contentRootId,
       createContent,
