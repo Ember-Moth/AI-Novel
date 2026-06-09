@@ -61,6 +61,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
   const setActiveContentNodeId = useSetAtom(selection.activeContentNodeIdAtom);
   const activeAuxNodeId = useAtomValue(selection.activeAuxNodeIdAtom);
   const setActiveAuxNodeId = useSetAtom(selection.activeAuxNodeIdAtom);
+  const setPendingContentNodeId = useSetAtom(selection.pendingContentNodeIdAtom);
+  const setPendingAuxNodeId = useSetAtom(selection.pendingAuxNodeIdAtom);
   const setShouldAutoSelectContent = useSetAtom(selection.shouldAutoSelectContentAtom);
   const activeTimelinePointId = useAtomValue(selection.activeTimelinePointIdAtom);
   const setActiveTimelinePointId = useSetAtom(selection.activeTimelinePointIdAtom);
@@ -115,10 +117,11 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
     (pointId: string) => {
       if (activeTimelinePointId === pointId) {
         setActiveTimelinePointId(ORIGIN_TIMELINE_POINT_ID);
+        setPendingAuxNodeId(null);
         setActiveAuxNodeId(null);
       }
     },
-    [activeTimelinePointId, setActiveAuxNodeId, setActiveTimelinePointId],
+    [activeTimelinePointId, setActiveAuxNodeId, setActiveTimelinePointId, setPendingAuxNodeId],
   );
 
   const flushBodySave = useCallback(
@@ -343,6 +346,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
           name,
         });
         setShouldAutoSelectContent(false);
+        setPendingContentNodeId(null);
+        setPendingAuxNodeId(auxNodeMap.has(node.id) ? null : node.id);
         setActiveAuxNodeId(node.id);
         expandAuxParent(parentDirId);
       } catch (error) {
@@ -362,6 +367,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       mkdirAux,
       setActiveAuxNodeId,
       setAuxError,
+      setPendingAuxNodeId,
+      setPendingContentNodeId,
       setShouldAutoSelectContent,
       workspaceId,
     ],
@@ -387,6 +394,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
           content: "",
         });
         setShouldAutoSelectContent(false);
+        setPendingContentNodeId(null);
+        setPendingAuxNodeId(auxNodeMap.has(node.id) ? null : node.id);
         setActiveAuxNodeId(node.id);
         expandAuxParent(parentDirId);
       } catch (error) {
@@ -405,6 +414,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       expandAuxParent,
       setActiveAuxNodeId,
       setAuxError,
+      setPendingAuxNodeId,
+      setPendingContentNodeId,
       setShouldAutoSelectContent,
       workspaceId,
       writeFileAux,
@@ -414,14 +425,19 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
   const activateContentNode = useCallback(
     (nodeId: string, anchorTimelinePointId: string) => {
       setShouldAutoSelectContent(true);
+      setPendingAuxNodeId(null);
       setActiveAuxNodeId(null);
+      setPendingContentNodeId(contentNodeMap.has(nodeId) ? null : nodeId);
       setActiveContentNodeId(nodeId);
       setActiveTimelinePointId(anchorTimelinePointId);
     },
     [
+      contentNodeMap,
       setActiveAuxNodeId,
       setActiveContentNodeId,
       setActiveTimelinePointId,
+      setPendingAuxNodeId,
+      setPendingContentNodeId,
       setShouldAutoSelectContent,
     ],
   );
@@ -467,7 +483,9 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       }
 
       setShouldAutoSelectContent(false);
+      setPendingContentNodeId(null);
       setActiveContentNodeId(null);
+      setPendingAuxNodeId(auxNodeMap.has(node.id) ? null : node.id);
       setActiveAuxNodeId(node.id);
     },
     [
@@ -479,6 +497,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       flushDirtyContent,
       setActiveAuxNodeId,
       setActiveContentNodeId,
+      setPendingAuxNodeId,
+      setPendingContentNodeId,
       setShouldAutoSelectContent,
     ],
   );
@@ -730,6 +750,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
             activateContentNode(fallbackNode.id, fallbackNode.anchorTimelinePointId);
           } else {
             setShouldAutoSelectContent(false);
+            setPendingContentNodeId(null);
             setActiveContentNodeId(null);
           }
         }
@@ -752,6 +773,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       deleteContent,
       setActiveContentNodeId,
       setContentError,
+      setPendingContentNodeId,
       setShouldAutoSelectContent,
       workspaceId,
     ],
@@ -1104,8 +1126,10 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         clearAuxNodeLocalState(new Set([nodeId]));
         if (activeAuxNodeId === nodeId) {
           setShouldAutoSelectContent(false);
+          setPendingContentNodeId(null);
           setActiveContentNodeId(null);
           if (activeTimelinePointId === ORIGIN_TIMELINE_POINT_ID) {
+            setPendingAuxNodeId(null);
             setActiveAuxNodeId(null);
           }
         }
@@ -1125,6 +1149,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       setActiveContentNodeId,
       setActiveAuxNodeId,
       setAuxError,
+      setPendingAuxNodeId,
+      setPendingContentNodeId,
       setShouldAutoSelectContent,
       workspaceId,
     ],

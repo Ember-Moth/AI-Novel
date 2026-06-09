@@ -19,6 +19,10 @@ export function useProjectWorkspaceEffects(
 
   const setActiveContentNodeId = useSetAtom(selection.activeContentNodeIdAtom);
   const setActiveAuxNodeId = useSetAtom(selection.activeAuxNodeIdAtom);
+  const pendingContentNodeId = useAtomValue(selection.pendingContentNodeIdAtom);
+  const setPendingContentNodeId = useSetAtom(selection.pendingContentNodeIdAtom);
+  const pendingAuxNodeId = useAtomValue(selection.pendingAuxNodeIdAtom);
+  const setPendingAuxNodeId = useSetAtom(selection.pendingAuxNodeIdAtom);
   const shouldAutoSelectContent = useAtomValue(selection.shouldAutoSelectContentAtom);
   const setActiveTimelinePointId = useSetAtom(selection.activeTimelinePointIdAtom);
   const setExpandedContentIds = useSetAtom(selection.expandedContentIdsAtom);
@@ -50,7 +54,39 @@ export function useProjectWorkspaceEffects(
   } = workspace;
 
   useEffect(() => {
+    if (!activeContentNodeId) {
+      if (pendingContentNodeId) {
+        setPendingContentNodeId(null);
+      }
+      return;
+    }
+
+    if (contentNodeMap.has(activeContentNodeId)) {
+      if (pendingContentNodeId === activeContentNodeId) {
+        setPendingContentNodeId(null);
+      }
+      return;
+    }
+
+    if (pendingContentNodeId === activeContentNodeId) {
+      return;
+    }
+
+    setActiveContentNodeId(null);
+  }, [
+    activeContentNodeId,
+    contentNodeMap,
+    pendingContentNodeId,
+    setActiveContentNodeId,
+    setPendingContentNodeId,
+  ]);
+
+  useEffect(() => {
     if (!shouldAutoSelectContent) {
+      return;
+    }
+
+    if (pendingContentNodeId) {
       return;
     }
 
@@ -75,6 +111,7 @@ export function useProjectWorkspaceEffects(
     activeContentNodeId,
     contentTree,
     flatContentNodes,
+    pendingContentNodeId,
     setActiveContentNodeId,
     shouldAutoSelectContent,
   ]);
@@ -121,16 +158,33 @@ export function useProjectWorkspaceEffects(
 
   useEffect(() => {
     if (auxTree.length === 0) {
+      if (pendingAuxNodeId) {
+        setPendingAuxNodeId(null);
+      }
       setActiveAuxNodeId(null);
       return;
     }
 
     if (activeAuxNodeId && auxNodeIdSet.has(activeAuxNodeId)) {
+      if (pendingAuxNodeId === activeAuxNodeId) {
+        setPendingAuxNodeId(null);
+      }
+      return;
+    }
+
+    if (activeAuxNodeId && pendingAuxNodeId === activeAuxNodeId) {
       return;
     }
 
     setActiveAuxNodeId(null);
-  }, [activeAuxNodeId, auxNodeIdSet, auxTree, setActiveAuxNodeId]);
+  }, [
+    activeAuxNodeId,
+    auxNodeIdSet,
+    auxTree,
+    pendingAuxNodeId,
+    setActiveAuxNodeId,
+    setPendingAuxNodeId,
+  ]);
 
   useEffect(() => {
     if (auxTree.length === 0) {
