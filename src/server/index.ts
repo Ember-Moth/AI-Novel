@@ -2,9 +2,10 @@ import { createRpcHandler } from "@codehz/rpc";
 import { serve } from "bun";
 
 import index from "@/client/index.html";
-import "@/db";
 import { ensureAiCatalogFresh } from "@/domain/ai-catalog";
 import * as api from "@/server/rpc";
+
+import "@/db";
 
 const server = serve({
   routes: {

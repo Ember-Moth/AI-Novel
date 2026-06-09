@@ -1,9 +1,7 @@
 import { useState } from "react";
 
-import { InlineEditableText } from "@/features/project/components/InlineEditableText";
-import { PanelPlaceholder } from "@/features/project/components/PanelPlaceholder";
-import { RefreshOverlay } from "@/features/project/components/RefreshOverlay";
 import { AuxNodeIcon } from "@/features/project/components/icons";
+import { InlineEditableText } from "@/features/project/components/InlineEditableText";
 import {
   ExpandToggle,
   RowActionButton,
@@ -11,6 +9,8 @@ import {
   TreeNodePanel,
   type TreeRowContext,
 } from "@/features/project/components/nodes";
+import { PanelPlaceholder } from "@/features/project/components/PanelPlaceholder";
+import { RefreshOverlay } from "@/features/project/components/RefreshOverlay";
 import { actionAnchorId } from "@/features/project/model/action-error";
 import type { AuxTreeNodeVM } from "@/features/project/model/types";
 

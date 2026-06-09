@@ -16,7 +16,7 @@ export function RefreshOverlay({
           : "-translate-y-1 opacity-0 delay-0 duration-100"
       } ${className}`.trim()}
     >
-      <div className="border-border bg-sidebar-background/92 text-foreground-muted inline-flex items-center gap-1 rounded-sm border px-2 py-1 text-[11px] shadow-sm backdrop-blur-sm">
+      <div className="inline-flex items-center gap-1 rounded-sm border border-border bg-sidebar-background/92 px-2 py-1 text-[11px] text-foreground-muted shadow-sm backdrop-blur-sm">
         <span className="icon-[material-symbols--sync] animate-spin text-xs motion-reduce:animate-none" />
         {label}
       </div>

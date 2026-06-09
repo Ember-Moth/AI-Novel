@@ -58,7 +58,7 @@ export function TimelinePanel({
               draggable={draggable}
               dragProps={dragProps}
               icon={
-                <span className="icon-[material-symbols--radio-button-checked] text-foreground-muted shrink-0 text-sm" />
+                <span className="icon-[material-symbols--radio-button-checked] shrink-0 text-sm text-foreground-muted" />
               }
               label={
                 <InlineEditableText
@@ -67,7 +67,7 @@ export function TimelinePanel({
                   disabled={isBusy}
                   onEditStart={() => onSelect(point.id)}
                   onCommit={(label) => onRename(point.id, label)}
-                  className={`min-w-0 flex-1 truncate leading-5.5${isAnchored ? "text-accent-foreground font-bold" : ""}`}
+                  className={`min-w-0 flex-1 truncate leading-5.5${isAnchored ? "font-bold text-accent-foreground" : ""}`}
                 />
               }
               trailing={point.description || undefined}

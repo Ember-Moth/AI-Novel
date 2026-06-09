@@ -5,9 +5,9 @@ import { SUPPORTED_AI_SDK_PACKAGES } from "@/domain/ai-packages";
 import type { AiConnectionRow } from "@/domain/types";
 
 import {
-  PROVIDER_FACTORY_REGISTRY,
   createLanguageModelForConnection,
   createProviderForConnection,
+  PROVIDER_FACTORY_REGISTRY,
 } from "./provider-factories";
 
 function createConnectionRow(

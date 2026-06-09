@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { Database } from "bun:sqlite";
+
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 
@@ -29,4 +30,4 @@ export type DatabaseExecutor =
   | DatabaseClient
   | Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0];
 
-export { sqlite, schema };
+export { schema, sqlite };

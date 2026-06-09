@@ -1,12 +1,18 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import js from "@eslint/js";
 import tsParser from "@typescript-eslint/parser";
 import eslintConfigPrettier from "eslint-config-prettier/flat";
 import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
+import simpleImportSort from "eslint-plugin-simple-import-sort";
+import tailwind from "eslint-plugin-tailwindcss";
 import globals from "globals";
 
 const files = ["**/*.{js,jsx,ts,tsx,mjs,cjs}"];
 const tsFiles = ["**/*.{ts,tsx}"];
+const rootDir = dirname(fileURLToPath(import.meta.url));
 
 export default [
   {
@@ -67,6 +73,30 @@ export default [
           varsIgnorePattern: "^_",
         },
       ],
+    },
+  },
+  {
+    files,
+    plugins: {
+      "simple-import-sort": simpleImportSort,
+    },
+    rules: {
+      "simple-import-sort/imports": [
+        "error",
+        {
+          groups: [["^node:"], ["^bun:"], ["^@?\\w"], ["^@/"], ["^\\."]],
+        },
+      ],
+      "simple-import-sort/exports": "error",
+    },
+  },
+  tailwind.configs.recommended,
+  {
+    files,
+    settings: {
+      tailwindcss: {
+        cssConfigPath: join(rootDir, "src/client/styles.css"),
+      },
     },
   },
   eslintConfigPrettier,

@@ -1,5 +1,5 @@
 import { mutation, query } from "@codehz/rpc";
-import { type InferInsertModel, type InferSelectModel, eq } from "drizzle-orm";
+import { eq, type InferInsertModel, type InferSelectModel } from "drizzle-orm";
 
 import { db, schema } from "@/db";
 import { createDefaultWorkspaceWithExecutor } from "@/domain";

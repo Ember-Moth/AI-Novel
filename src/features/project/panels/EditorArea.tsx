@@ -11,7 +11,7 @@ function SaveStatus({ saveState }: { saveState: SaveState }) {
 
   if (saveState.isSaving) {
     return (
-      <span className="text-accent-foreground ml-auto inline-flex items-center gap-1 text-[11px]">
+      <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-accent-foreground">
         <span className="icon-[material-symbols--sync] animate-spin text-sm" />
         保存中...
       </span>
@@ -19,10 +19,10 @@ function SaveStatus({ saveState }: { saveState: SaveState }) {
   }
 
   if (saveState.isDirty) {
-    return <span className="text-foreground-muted ml-auto text-[11px]">待保存</span>;
+    return <span className="ml-auto text-[11px] text-foreground-muted">待保存</span>;
   }
 
-  return <span className="text-foreground-muted ml-auto text-[11px]">已同步</span>;
+  return <span className="ml-auto text-[11px] text-foreground-muted">已同步</span>;
 }
 
 export function EditorArea({
@@ -52,7 +52,7 @@ export function EditorArea({
 }) {
   if (!target) {
     return (
-      <div className="text-foreground-muted flex h-full items-center justify-center text-sm">
+      <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
         选择一个正文节点或辅助文件开始编辑
       </div>
     );
@@ -66,14 +66,14 @@ export function EditorArea({
             hasBody={contentNode.body.trim().length > 0}
             hasChildren={contentNode.children.length > 0}
           />
-          <span className="text-foreground text-[14px]">{contentNode.title}</span>
+          <span className="text-[14px] text-foreground">{contentNode.title}</span>
           <SaveStatus saveState={contentSaveState} />
-          <span className="text-accent-foreground shrink-0 text-[11px]">
+          <span className="shrink-0 text-[11px] text-accent-foreground">
             时间锚点: {timelineLabel}
           </span>
         </div>
         <textarea
-          className="bg-editor-background text-editor-foreground flex-1 resize-none border-none p-4 font-mono text-[14px] leading-7 outline-none"
+          className="flex-1 resize-none border-none bg-editor-background p-4 font-mono text-[14px] leading-7 text-editor-foreground outline-none"
           value={body}
           onChange={(event) => onBodyChange(event.target.value)}
           placeholder="开始写作..."
@@ -94,14 +94,14 @@ export function EditorArea({
           <div className={EDITOR_HEADER_CLASS}>
             <AuxNodeIcon nodeType={auxNode.nodeType} />
             <span className="truncate text-[14px] text-red-300">{title}</span>
-            <span className="text-accent-foreground ml-auto shrink-0 text-[11px]">
+            <span className="ml-auto shrink-0 text-[11px] text-accent-foreground">
               时间点: {timelineLabel}
             </span>
             {auxRefreshing ? (
-              <span className="text-foreground-muted shrink-0 text-[11px]">刷新中...</span>
+              <span className="shrink-0 text-[11px] text-foreground-muted">刷新中...</span>
             ) : null}
           </div>
-          <div className="text-foreground-muted flex flex-1 items-center justify-center px-4 text-sm">
+          <div className="flex flex-1 items-center justify-center px-4 text-sm text-foreground-muted">
             该辅助信息已在当前时间点删除，需要恢复后才可以编辑
           </div>
         </div>
@@ -113,17 +113,17 @@ export function EditorArea({
         <div className="flex h-full flex-col">
           <div className={EDITOR_HEADER_CLASS}>
             <AuxNodeIcon nodeType="file" />
-            <span className="text-foreground truncate text-[14px]">{auxNode.path}</span>
+            <span className="truncate text-[14px] text-foreground">{auxNode.path}</span>
             <SaveStatus saveState={auxSaveState} />
-            <span className="text-accent-foreground shrink-0 text-[11px]">
+            <span className="shrink-0 text-[11px] text-accent-foreground">
               时间点: {timelineLabel}
             </span>
             {auxRefreshing ? (
-              <span className="text-foreground-muted shrink-0 text-[11px]">刷新中...</span>
+              <span className="shrink-0 text-[11px] text-foreground-muted">刷新中...</span>
             ) : null}
           </div>
           <textarea
-            className="bg-editor-background text-editor-foreground flex-1 resize-none border-none p-4 font-mono text-[14px] leading-7 outline-none"
+            className="flex-1 resize-none border-none bg-editor-background p-4 font-mono text-[14px] leading-7 text-editor-foreground outline-none"
             value={auxContent}
             onChange={(event) => onAuxContentChange(event.target.value)}
             placeholder="编辑辅助信息..."
@@ -141,19 +141,19 @@ export function EditorArea({
       <div className="flex h-full flex-col">
         <div className={EDITOR_HEADER_CLASS}>
           <AuxNodeIcon nodeType={auxNode.nodeType} />
-          <span className="text-foreground truncate text-[14px]">
+          <span className="truncate text-[14px] text-foreground">
             {auxNode.nodeType === "symlink" && auxNode.symlinkTargetPath
               ? `${auxNode.path} → ${auxNode.symlinkTargetPath}`
               : auxNode.path}
           </span>
-          <span className="text-accent-foreground ml-auto shrink-0 text-[11px]">
+          <span className="ml-auto shrink-0 text-[11px] text-accent-foreground">
             时间点: {timelineLabel}
           </span>
           {auxRefreshing ? (
-            <span className="text-foreground-muted shrink-0 text-[11px]">刷新中...</span>
+            <span className="shrink-0 text-[11px] text-foreground-muted">刷新中...</span>
           ) : null}
         </div>
-        <div className="text-foreground-muted flex flex-1 items-center justify-center px-4 text-sm">
+        <div className="flex flex-1 items-center justify-center px-4 text-sm text-foreground-muted">
           {placeholder}
         </div>
       </div>
@@ -161,7 +161,7 @@ export function EditorArea({
   }
 
   return (
-    <div className="text-foreground-muted flex h-full items-center justify-center text-sm">
+    <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
       选择一个正文节点或辅助文件开始编辑
     </div>
   );

@@ -1,5 +1,5 @@
-import { type InferInsertModel, and, eq, inArray, isNull, or } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
+import { and, eq, inArray, type InferInsertModel, isNull, or } from "drizzle-orm";
 
 import { type DatabaseExecutor, schema } from "@/db";
 import { ORIGIN_TIMELINE_POINT_ID } from "@/shared/constants";

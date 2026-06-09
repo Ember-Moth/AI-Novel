@@ -9,4 +9,4 @@ export {
   SidebarListRow,
 } from "./SidebarListRow";
 export { TreeNodePanel, type TreeRowContext } from "./TreeNodePanel";
-export { useDragReorder, type DragRowProps } from "./useDragReorder";
+export { type DragRowProps, useDragReorder } from "./useDragReorder";

@@ -13,7 +13,7 @@ export function App() {
 
   if (!isKnownRoute) {
     return (
-      <div className="bg-editor-background text-foreground-muted flex h-dvh items-center justify-center">
+      <div className="flex h-dvh items-center justify-center bg-editor-background text-foreground-muted">
         404: No such page!
       </div>
     );

@@ -32,7 +32,7 @@ export function AppShell({
 
 export function AppSidebar({ children }: { children: ReactNode }) {
   return (
-    <div className="border-border bg-sidebar-background relative flex w-72 shrink-0 flex-col overflow-hidden border-r">
+    <div className="relative flex w-72 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar-background">
       {children}
     </div>
   );

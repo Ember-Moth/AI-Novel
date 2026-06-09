@@ -1,5 +1,5 @@
-import { type MutationCtx, mutation, query } from "@codehz/rpc";
-import { type InferInsertModel, and, eq } from "drizzle-orm";
+import { mutation, type MutationCtx, query } from "@codehz/rpc";
+import { and, eq, type InferInsertModel } from "drizzle-orm";
 
 import { db, schema } from "@/db";
 import {
@@ -19,8 +19,8 @@ import {
 } from "@/domain/ai-config";
 import {
   type AiSupportedSdkPackage,
-  SUPPORTED_AI_SDK_PACKAGES,
   getAiSdkPackageRecipe,
+  SUPPORTED_AI_SDK_PACKAGES,
 } from "@/domain/ai-packages";
 import { createId, invariant, now } from "@/domain/internal/ids";
 import type {

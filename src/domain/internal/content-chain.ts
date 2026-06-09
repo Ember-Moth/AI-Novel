@@ -1,5 +1,5 @@
-import { and, eq } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { type DatabaseExecutor, schema } from "@/db";
 
