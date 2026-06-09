@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { motion } from "motion/react";
 
 import { cn } from "@/shared/cn";
 
@@ -43,18 +44,20 @@ export function SidebarListRow({
   const interactiveClass = onClick ? "cursor-pointer" : "";
 
   return (
-    <div
+    <motion.div
       data-action-anchor={anchorId}
       data-tree-node-id={dataNodeId}
       className={cn(ROW_BASE, stateClass, groupClass, interactiveClass, className)}
-      style={{ paddingLeft: `${rowPaddingLeft(depth)}px` }}
+      initial={false}
+      animate={{ paddingLeft: rowPaddingLeft(depth) }}
+      transition={{ duration: 0.14, ease: "easeOut" }}
       onClick={onClick}
     >
       {leading}
       {icon}
       <div className="flex min-w-0 flex-1 items-center gap-1">{label}</div>
       <RowHoverSlot badge={trailing} actions={actions} />
-    </div>
+    </motion.div>
   );
 }
 
