@@ -295,10 +295,9 @@ function DropIndicatorOverlay({ rect }: { rect: DropIndicatorRect }) {
       }}
     >
       <motion.span
-        className="absolute rounded border border-drag-border bg-list-hover-background/40"
+        className="absolute border border-drag-border bg-list-hover-background/40"
         animate={{
           inset: isInside ? 0 : "5px 0 5px 0",
-          borderRadius: isInside ? 0 : 999,
           opacity: isInside ? 1 : 0,
         }}
         transition={{ duration: 0.14, ease: "easeOut" }}
@@ -431,8 +430,7 @@ export function ContentTreePanel({
         : anchorRect.bottom - panelRect.top;
     const clampedTop = Math.min(Math.max(top, 1), Math.max(panelRect.height - 1, 1));
     const left = Math.max(rowPaddingLeft(boundaryDrop.depth) + 8, 8);
-    const rightInset = 12;
-    const width = Math.max(panelRect.width - left - rightInset, 24);
+    const width = Math.max(panelRect.width - left, 24);
 
     setDropIndicatorRect({
       mode: "boundary",
