@@ -18,6 +18,7 @@ import {
   type TreeRowContext,
 } from "@/features/project/components/nodes";
 import { PanelPlaceholder } from "@/features/project/components/PanelPlaceholder";
+import { RefreshOverlay } from "@/features/project/components/RefreshOverlay";
 import { actionAnchorId } from "@/features/project/model/action-error";
 import {
   collectContentSubtreeIds,
@@ -326,6 +327,7 @@ export function ContentTreePanel({
   activeId,
   timelineLabelMap,
   isBusy,
+  isRefreshing,
   canCreate,
 }: {
   tree: ContentTreeNodeVM[];
@@ -339,6 +341,7 @@ export function ContentTreePanel({
   activeId: string | null;
   timelineLabelMap: ReadonlyMap<string, string>;
   isBusy: boolean;
+  isRefreshing: boolean;
   canCreate: boolean;
 }) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -560,20 +563,28 @@ export function ContentTreePanel({
   );
 
   return (
-    <div ref={panelRef} className="relative min-h-full pb-2">
-      <TreeNodePanel
-        nodes={tree}
-        expandedIds={expandedIds}
-        activeId={activeId}
-        getId={(node) => node.id}
-        getChildren={(node) => node.children}
-        renderRow={renderRow}
-      />
-      <AnimatePresence>
-        {dropIndicatorRect ? (
-          <DropIndicatorOverlay key="content-drop-indicator" rect={dropIndicatorRect} />
-        ) : null}
-      </AnimatePresence>
+    <div ref={panelRef} className="relative min-h-full pb-2" aria-busy={isRefreshing}>
+      <RefreshOverlay active={isRefreshing} />
+      <div
+        inert={isRefreshing}
+        className={`transition-opacity duration-150 ease-out motion-reduce:transition-none ${
+          isRefreshing ? "pointer-events-none opacity-70 select-none" : "opacity-100"
+        }`}
+      >
+        <TreeNodePanel
+          nodes={tree}
+          expandedIds={expandedIds}
+          activeId={activeId}
+          getId={(node) => node.id}
+          getChildren={(node) => node.children}
+          renderRow={renderRow}
+        />
+        <AnimatePresence>
+          {dropIndicatorRect ? (
+            <DropIndicatorOverlay key="content-drop-indicator" rect={dropIndicatorRect} />
+          ) : null}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

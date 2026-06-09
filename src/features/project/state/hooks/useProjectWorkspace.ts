@@ -143,6 +143,11 @@ export function useProjectWorkspaceData(projectId: string) {
     !!visibleAuxSnapshot &&
     (auxQuery.isLoading || auxQuery.isStale) &&
     !auxQuery.error;
+  const contentRefreshing =
+    !contentQuery.isSkipped &&
+    contentState.tree.length > 0 &&
+    (contentQuery.isLoading || contentQuery.isStale) &&
+    !contentQuery.error;
   const pageError =
     workspaceQuery.error?.message ??
     contentQuery.error?.message ??
@@ -190,6 +195,7 @@ export function useProjectWorkspaceData(projectId: string) {
     auxBusy,
     auxInitialLoading,
     auxRefreshing,
+    contentRefreshing,
     pageError,
   };
 }

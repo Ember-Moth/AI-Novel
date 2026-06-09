@@ -58,6 +58,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
     workspaceId,
     contentRootId,
     contentQuery,
+    contentRefreshing,
     timelineQuery,
     contentTree,
     timelinePoints,
@@ -204,6 +205,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
                         onDelete={actions.handleContentDelete}
                         onMove={actions.handleContentMove}
                         isBusy={contentBusy}
+                        isRefreshing={contentRefreshing}
                         canCreate={!!activeTimelinePointId}
                       />
                     ),
