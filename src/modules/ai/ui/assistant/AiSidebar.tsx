@@ -728,7 +728,8 @@ function HeadRow({
     isActive || isEditing
       ? "bg-list-active-background text-foreground"
       : "text-foreground-muted hover:bg-list-hover-background hover:text-foreground"
-  } disabled:cursor-not-allowed disabled:opacity-50`;
+  } ${isBusy ? "opacity-50" : ""}`;
+  const rowContentClassName = "flex min-w-0 flex-1 items-center gap-2 text-left";
 
   if (isEditing) {
     return (
@@ -769,27 +770,36 @@ function HeadRow({
   }
 
   return (
-    <button
-      type="button"
-      onClick={onActivate}
-      disabled={isBusy || head.isArchived}
-      style={{ height: `${HEAD_ROW_HEIGHT}px` }}
-      className={rowClassName}
-    >
-      <span
-        className={`shrink-0 text-[16px] ${
-          head.isArchived
-            ? "icon-[material-symbols--inventory-2] text-foreground-muted"
-            : isActive
-              ? "icon-[material-symbols--chat] text-accent-foreground"
-              : "icon-[material-symbols--chat-outline]"
-        }`}
-      />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] font-medium">{head.name}</span>
-        <span className="block text-[10px] text-foreground-muted">{titleLabel}</span>
-      </span>
-      <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
+    <div style={{ height: `${HEAD_ROW_HEIGHT}px` }} className={rowClassName}>
+      {head.isArchived ? (
+        <div className={rowContentClassName}>
+          <span className="icon-[material-symbols--inventory-2] shrink-0 text-[16px] text-foreground-muted" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[12px] font-medium">{head.name}</span>
+            <span className="block text-[10px] text-foreground-muted">{titleLabel}</span>
+          </span>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onActivate}
+          disabled={isBusy}
+          className={`${rowContentClassName} disabled:cursor-not-allowed`}
+        >
+          <span
+            className={`shrink-0 text-[16px] ${
+              isActive
+                ? "icon-[material-symbols--chat] text-accent-foreground"
+                : "icon-[material-symbols--chat-outline]"
+            }`}
+          />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[12px] font-medium">{head.name}</span>
+            <span className="block text-[10px] text-foreground-muted">{titleLabel}</span>
+          </span>
+        </button>
+      )}
+      <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100">
         {!head.isArchived ? (
           <>
             <SessionActionButton
@@ -814,7 +824,7 @@ function HeadRow({
           />
         )}
       </div>
-    </button>
+    </div>
   );
 }
 
