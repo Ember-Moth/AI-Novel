@@ -15,7 +15,15 @@ import {
   useRole,
   useTypeahead,
 } from "@floating-ui/react";
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type {
   AiProjectGenerationAttemptView,
@@ -187,7 +195,7 @@ function ModelPicker({
             : triggerLabel
         }
         aria-label="选择连接和模型"
-        className="grid h-11 max-w-full min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-2 items-center gap-x-2 rounded border border-transparent px-1.5 py-1 text-left transition outline-none hover:border-border hover:bg-list-hover-background focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        className="grid h-11 max-w-full min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-2 items-center gap-x-2 border border-transparent px-1.5 py-1 text-left transition outline-none hover:border-border hover:bg-list-hover-background focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
         {...getReferenceProps()}
       >
         <span className="col-start-1 row-span-2 row-start-1 icon-[material-symbols--token] shrink-0 text-base text-accent-foreground" />
@@ -208,7 +216,7 @@ function ModelPicker({
             <div
               ref={setFloating}
               style={floatingStyles}
-              className="z-50 flex min-h-0 flex-col overflow-hidden border border-border bg-sidebar-background text-[12px] text-foreground shadow-[0_6px_18px_rgb(0_0_0/0.35)] outline-none"
+              className="z-50 flex min-h-0 flex-col overflow-hidden border border-border bg-sidebar-background text-[12px] text-foreground outline-none"
               {...getFloatingProps()}
             >
               <OverlayScrollbar variant="panel">
@@ -357,6 +365,96 @@ const EMPTY_ASSISTANT_STATE: AssistantState = {
 };
 
 const EMPTY_HEADS: AiProjectHeadView[] = [];
+const SESSION_PREVIEW_COUNT = 3;
+const SHEET_HANDLE_HEIGHT = 16;
+const PEEK_TO_EXPANDED_SNAP_RATIO = 0.3;
+const PEEK_TO_EXPANDED_SNAP_MAX_PX = 72;
+
+export type SheetState = "closed" | "peek" | "expanded";
+
+export type SheetAnchors = Record<SheetState, number>;
+
+export function clampSessionSectionHeight(height: number, maxHeight: number) {
+  return Math.min(Math.max(0, height), Math.max(0, maxHeight));
+}
+
+export function resolveNearestSheetState(height: number, anchors: SheetAnchors): SheetState {
+  const orderedStates: SheetState[] = ["closed", "peek", "expanded"];
+
+  return orderedStates.reduce((nearest, current) =>
+    Math.abs(anchors[current] - height) < Math.abs(anchors[nearest] - height) ? current : nearest,
+  );
+}
+
+export function resolveReleasedSheetState({
+  height,
+  anchors,
+  startState,
+}: {
+  height: number;
+  anchors: SheetAnchors;
+  startState: SheetState;
+}) {
+  if (startState === "peek" && anchors.expanded > anchors.peek) {
+    const expandedThresholdOffset = Math.min(
+      anchors.expanded - anchors.peek,
+      Math.min(
+        PEEK_TO_EXPANDED_SNAP_MAX_PX,
+        (anchors.expanded - anchors.peek) * PEEK_TO_EXPANDED_SNAP_RATIO,
+      ),
+    );
+    const expandedThreshold = anchors.peek + expandedThresholdOffset;
+    if (height >= expandedThreshold) {
+      return "expanded";
+    }
+  }
+
+  if (startState === "expanded" && anchors.expanded > anchors.peek) {
+    const peekThresholdOffset = Math.min(
+      anchors.expanded - anchors.peek,
+      Math.min(
+        PEEK_TO_EXPANDED_SNAP_MAX_PX,
+        (anchors.expanded - anchors.peek) * PEEK_TO_EXPANDED_SNAP_RATIO,
+      ),
+    );
+    const peekThreshold = anchors.expanded - peekThresholdOffset;
+    if (height <= peekThreshold) {
+      return "peek";
+    }
+  }
+
+  return resolveNearestSheetState(height, anchors);
+}
+
+export function resolvePreviewSessionBodyHeight({
+  visibleRowBottoms,
+  emptyStateHeight,
+}: {
+  visibleRowBottoms: number[];
+  emptyStateHeight: number;
+}) {
+  if (visibleRowBottoms.length === 0) {
+    return Math.max(0, emptyStateHeight);
+  }
+
+  const previewIndex = Math.min(SESSION_PREVIEW_COUNT, visibleRowBottoms.length) - 1;
+  return Math.max(0, visibleRowBottoms[previewIndex] ?? 0);
+}
+
+export function resolvePeekSessionHeight({
+  sessionHeaderHeight,
+  previewBodyHeight,
+  maxHeight,
+}: {
+  sessionHeaderHeight: number;
+  previewBodyHeight: number;
+  maxHeight: number;
+}) {
+  return clampSessionSectionHeight(
+    Math.max(0, sessionHeaderHeight) + Math.max(0, previewBodyHeight),
+    maxHeight,
+  );
+}
 
 function getMessageText(content: unknown) {
   if (!content || typeof content !== "object") {
@@ -604,7 +702,7 @@ function SessionActionButton({
         event.stopPropagation();
         onClick();
       }}
-      className="flex size-6 items-center justify-center rounded text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      className="flex size-6 items-center justify-center text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
     >
       <span className={`text-[16px] ${icon}`} />
     </button>
@@ -640,14 +738,14 @@ function HeadRow({
 }) {
   if (isEditing) {
     return (
-      <div className="rounded-md border border-border bg-editor-background p-2">
+      <div className="border border-border bg-editor-background p-2">
         <div className="flex items-center gap-2">
           <input
             value={editingName}
             onChange={(event) => onEditingNameChange(event.target.value)}
             disabled={isBusy}
             autoFocus
-            className="min-w-0 flex-1 rounded border border-border bg-sidebar-background px-2 py-1 text-[12px] text-foreground outline-none focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-w-0 flex-1 border border-border bg-sidebar-background px-2 py-1 text-[12px] text-foreground outline-none focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
             placeholder="会话名称"
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -682,7 +780,7 @@ function HeadRow({
       type="button"
       onClick={onActivate}
       disabled={isBusy || head.isArchived}
-      className={`group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition ${
+      className={`group flex w-full items-center gap-2 px-2 py-1.5 text-left transition ${
         isActive
           ? "bg-list-active-background text-foreground"
           : "text-foreground-muted hover:bg-list-hover-background hover:text-foreground"
@@ -735,7 +833,7 @@ function HeadRow({
 function PendingAssistantBubble({ label }: { label: string }) {
   return (
     <div className="flex justify-start">
-      <div className="max-w-[88%] rounded-md border border-border bg-editor-background px-3 py-2 text-[12px] text-foreground-muted">
+      <div className="max-w-[88%] border border-border bg-editor-background px-3 py-2 text-[12px] text-foreground-muted">
         <div className="flex items-center gap-2">
           <span className="icon-[material-symbols--progress-activity] animate-spin text-sm text-accent-foreground" />
           <span>{label}</span>
@@ -758,7 +856,7 @@ function AttemptErrorCard({
 }) {
   return (
     <div className="mt-2 flex justify-start">
-      <div className="max-w-[88%] rounded-md border border-red-500/30 bg-red-500/8 px-3 py-2 text-[12px] text-red-200">
+      <div className="max-w-[88%] border border-red-500/30 bg-red-500/8 px-3 py-2 text-[12px] text-red-200">
         <div className="flex items-start gap-2">
           <span className="icon-[material-symbols--warning]" />
           <div className="min-w-0 flex-1">
@@ -768,7 +866,7 @@ function AttemptErrorCard({
                 type="button"
                 onClick={onRetry}
                 disabled={isRetrying}
-                className="mt-2 inline-flex items-center gap-1 rounded border border-red-400/30 px-2 py-1 text-[11px] text-red-100 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-2 inline-flex items-center gap-1 border border-red-400/30 px-2 py-1 text-[11px] text-red-100 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span
                   className={
@@ -797,6 +895,24 @@ export function AiSidebar({ projectId }: { projectId: string }) {
   const [showArchivedHeads, setShowArchivedHeads] = useState(false);
   const [expectedActiveHeadId, setExpectedActiveHeadId] = useState<string | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [sheetState, setSheetState] = useState<SheetState>("peek");
+  const [sessionSectionHeight, setSessionSectionHeight] = useState(0);
+  const [availableBodyHeight, setAvailableBodyHeight] = useState(0);
+  const [sessionHeaderHeight, setSessionHeaderHeight] = useState(0);
+  const [previewBodyHeight, setPreviewBodyHeight] = useState(0);
+  const [isDraggingSheet, setIsDraggingSheet] = useState(false);
+  const bodyFrameRef = useRef<HTMLDivElement>(null);
+  const sessionHeaderRef = useRef<HTMLDivElement>(null);
+  const sessionBodyContentRef = useRef<HTMLDivElement>(null);
+  const emptyStateRef = useRef<HTMLDivElement>(null);
+  const headRowRefs = useRef(new Map<string, HTMLDivElement>());
+  const sessionSectionHeightRef = useRef(0);
+  const sheetDragRef = useRef<{
+    pointerId: number;
+    startY: number;
+    startHeight: number;
+    startState: SheetState;
+  } | null>(null);
   const storedSelectionQuery = rpc.useQuery("config.getAiAssistantModelSelection");
   const projectHeadsQuery = rpc.useQuery("ai.listProjectHeads", { projectId });
   const assistantStateQuery = rpc.useQuery("ai.getProjectAssistantState", { projectId });
@@ -857,6 +973,17 @@ export function AiSidebar({ projectId }: { projectId: string }) {
   const heads = projectHeadsQuery.data ?? EMPTY_HEADS;
   const unarchivedHeads = useMemo(() => heads.filter((head) => !head.isArchived), [heads]);
   const archivedHeads = useMemo(() => heads.filter((head) => head.isArchived), [heads]);
+  const visibleHeadIds = useMemo(
+    () => [
+      ...unarchivedHeads.map((head) => head.id),
+      ...(showArchivedHeads ? archivedHeads.map((head) => head.id) : []),
+    ],
+    [archivedHeads, showArchivedHeads, unarchivedHeads],
+  );
+  const previewHeadIds = useMemo(
+    () => visibleHeadIds.slice(0, SESSION_PREVIEW_COUNT),
+    [visibleHeadIds],
+  );
   const retryableAttempt = selectRetryableAttempt(assistantStateQuery.data);
   const pendingAttempt = selectPendingAttempt(assistantStateQuery.data);
   const isGenerating = sendMessage.isPending || retryMessage.isPending;
@@ -878,6 +1005,32 @@ export function AiSidebar({ projectId }: { projectId: string }) {
   });
   const messages = assistantState.messages;
   const showEmptyState = messages.length === 0 && pendingAction?.kind !== "send";
+  const sheetAnchors = useMemo<SheetAnchors>(
+    () => ({
+      closed: 0,
+      peek: resolvePeekSessionHeight({
+        sessionHeaderHeight,
+        previewBodyHeight,
+        maxHeight: availableBodyHeight,
+      }),
+      expanded: clampSessionSectionHeight(
+        availableBodyHeight - SHEET_HANDLE_HEIGHT,
+        availableBodyHeight,
+      ),
+    }),
+    [availableBodyHeight, previewBodyHeight, sessionHeaderHeight],
+  );
+  const clampedSessionSectionHeight = clampSessionSectionHeight(
+    sessionSectionHeight,
+    sheetAnchors.expanded,
+  );
+  const messageSheetHeight = clampSessionSectionHeight(
+    availableBodyHeight - clampedSessionSectionHeight,
+    availableBodyHeight,
+  );
+  const sectionHeightTransitionClass = isDraggingSheet
+    ? ""
+    : "transition-[height] duration-200 ease-out motion-reduce:transition-none";
 
   useEffect(() => {
     if (expectedActiveHeadId === null) {
@@ -907,6 +1060,82 @@ export function AiSidebar({ projectId }: { projectId: string }) {
     setSelectedModelId(storedSelectionQuery.data?.modelId ?? "");
     setSelectionHydrated(true);
   }, [selectionHydrated, storedSelectionQuery.data, storedSelectionQuery.error]);
+
+  useEffect(() => {
+    sessionSectionHeightRef.current = clampedSessionSectionHeight;
+  }, [clampedSessionSectionHeight]);
+
+  useEffect(() => {
+    const frame = bodyFrameRef.current;
+    const header = sessionHeaderRef.current;
+    const bodyContent = sessionBodyContentRef.current;
+    if (!frame || !header || !bodyContent) {
+      return;
+    }
+
+    const measureLayout = () => {
+      setAvailableBodyHeight(Math.round(frame.getBoundingClientRect().height));
+      setSessionHeaderHeight(Math.round(header.getBoundingClientRect().height));
+
+      const visibleRowBottoms = previewHeadIds
+        .map((headId) => {
+          const row = headRowRefs.current.get(headId);
+          return row ? Math.round(row.offsetTop + row.offsetHeight) : 0;
+        })
+        .filter((height) => height > 0);
+
+      const emptyStateHeight = emptyStateRef.current
+        ? Math.round(emptyStateRef.current.offsetHeight)
+        : 0;
+
+      setPreviewBodyHeight(
+        resolvePreviewSessionBodyHeight({
+          visibleRowBottoms,
+          emptyStateHeight,
+        }),
+      );
+    };
+
+    measureLayout();
+
+    const observer = new ResizeObserver(() => {
+      measureLayout();
+    });
+    observer.observe(frame);
+    observer.observe(header);
+    observer.observe(bodyContent);
+    previewHeadIds.forEach((headId) => {
+      const row = headRowRefs.current.get(headId);
+      if (row) {
+        observer.observe(row);
+      }
+    });
+    if (emptyStateRef.current) {
+      observer.observe(emptyStateRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [
+    editingHead?.headId,
+    previewHeadIds,
+    projectHeadsQuery.isInitialLoading,
+    showArchivedHeads,
+    unarchivedHeads.length,
+  ]);
+
+  useEffect(() => {
+    if (isDraggingSheet) {
+      return;
+    }
+
+    setSessionSectionHeight(sheetAnchors[sheetState]);
+  }, [isDraggingSheet, sheetAnchors, sheetState]);
+
+  useEffect(() => {
+    return () => {
+      document.body.style.cursor = "";
+    };
+  }, []);
 
   const handleSelectionChange = useCallback((connectionId: string, modelId: string) => {
     setSelectedConnectionId(connectionId);
@@ -1046,6 +1275,83 @@ export function AiSidebar({ projectId }: { projectId: string }) {
     [activeHeadId, archiveProjectHead, unarchivedHeads],
   );
 
+  const handleSheetPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (availableBodyHeight <= 0) {
+        return;
+      }
+
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      sheetDragRef.current = {
+        pointerId: event.pointerId,
+        startY: event.clientY,
+        startHeight: sessionSectionHeightRef.current,
+        startState: sheetState,
+      };
+      setIsDraggingSheet(true);
+      document.body.style.cursor = "row-resize";
+    },
+    [availableBodyHeight, sheetState],
+  );
+
+  const handleSheetPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const dragState = sheetDragRef.current;
+      if (!dragState || dragState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      setSessionSectionHeight(
+        clampSessionSectionHeight(
+          dragState.startHeight + (event.clientY - dragState.startY),
+          sheetAnchors.expanded,
+        ),
+      );
+    },
+    [sheetAnchors.expanded],
+  );
+
+  const finishSheetDrag = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const dragState = sheetDragRef.current;
+      if (!dragState || dragState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+
+      sheetDragRef.current = null;
+      setIsDraggingSheet(false);
+      document.body.style.cursor = "";
+
+      const nextHeight = clampSessionSectionHeight(
+        sessionSectionHeightRef.current,
+        sheetAnchors.expanded,
+      );
+      const nextState = resolveReleasedSheetState({
+        height: nextHeight,
+        anchors: sheetAnchors,
+        startState: dragState.startState,
+      });
+      setSheetState(nextState);
+      setSessionSectionHeight(sheetAnchors[nextState]);
+    },
+    [sheetAnchors],
+  );
+
+  const handleHeadActivate = useCallback(
+    (headId: string) => {
+      if (sheetState === "expanded") {
+        setSheetState("peek");
+      }
+      void handleActivateHead(headId);
+    },
+    [handleActivateHead, sheetState],
+  );
+
   return (
     <aside className="flex h-full w-80 max-w-[38vw] min-w-72 shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar-background">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-title-bar-background px-3">
@@ -1057,246 +1363,318 @@ export function AiSidebar({ projectId }: { projectId: string }) {
           type="button"
           onClick={() => void handleCreateSession()}
           disabled={isSessionMutating}
-          className="inline-flex h-7 items-center gap-1 rounded border border-border px-2 text-[11px] text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-7 items-center gap-1 border border-border px-2 text-[11px] text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
         >
           <span className="icon-[material-symbols--add]" />
           <span>新建会话</span>
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
-        <div className="shrink-0 rounded-md border border-border bg-editor-background">
-          <div className="border-b border-border px-3 py-2">
-            <div className="flex items-center gap-2 text-[12px] font-medium text-foreground">
-              <span className="icon-[material-symbols--forum]" />
-              <span>会话</span>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
+        <div
+          ref={bodyFrameRef}
+          className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border bg-editor-background"
+        >
+          <div
+            style={{ height: `${clampedSessionSectionHeight}px` }}
+            className={`min-h-0 shrink-0 overflow-hidden ${sectionHeightTransitionClass}`}
+          >
+            <div className="flex h-full min-h-0 flex-col bg-editor-background">
+              <div ref={sessionHeaderRef} className="shrink-0 border-b border-border px-3 py-2">
+                <div className="flex items-center gap-2 text-[12px] font-medium text-foreground">
+                  <span className="icon-[material-symbols--forum]" />
+                  <span>会话</span>
+                </div>
+              </div>
+
+              <OverlayScrollbar variant="panel">
+                <div ref={sessionBodyContentRef} className="flex min-h-full flex-col gap-1 p-2">
+                  {projectHeadsQuery.isInitialLoading && heads.length === 0 ? (
+                    <div className="px-2 py-1 text-[12px] text-foreground-muted">
+                      正在加载会话...
+                    </div>
+                  ) : null}
+
+                  {unarchivedHeads.length === 0 ? (
+                    <div
+                      ref={emptyStateRef}
+                      className="border border-dashed border-border px-3 py-2 text-[12px] text-foreground-muted"
+                    >
+                      还没有可用会话。点击右上角新建会话开始。
+                    </div>
+                  ) : (
+                    unarchivedHeads.map((head) => (
+                      <div
+                        key={head.id}
+                        ref={(node) => {
+                          if (node) {
+                            headRowRefs.current.set(head.id, node);
+                          } else {
+                            headRowRefs.current.delete(head.id);
+                          }
+                        }}
+                      >
+                        <HeadRow
+                          head={head}
+                          isActive={head.id === activeHeadId}
+                          isEditing={editingHead?.headId === head.id}
+                          editingName={editingHead?.headId === head.id ? editingHead.name : ""}
+                          isBusy={isSessionMutating}
+                          onActivate={() => handleHeadActivate(head.id)}
+                          onEditingNameChange={(value) =>
+                            setEditingHead({ headId: head.id, name: value })
+                          }
+                          onRenameStart={() => setEditingHead({ headId: head.id, name: head.name })}
+                          onRenameCancel={() => setEditingHead(null)}
+                          onRenameSubmit={() => void handleRenameSubmit()}
+                          onArchive={() => void handleArchiveToggle(head, true)}
+                          onRestore={() => void handleArchiveToggle(head, false)}
+                        />
+                      </div>
+                    ))
+                  )}
+
+                  {archivedHeads.length > 0 ? (
+                    <div className="mt-1 border-t border-border pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowArchivedHeads((current) => !current)}
+                        className="flex w-full items-center justify-between px-2 py-1 text-[11px] text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground"
+                      >
+                        <span>归档会话</span>
+                        <span className="flex items-center gap-1">
+                          <span>{archivedHeads.length}</span>
+                          <span
+                            className={
+                              showArchivedHeads
+                                ? "icon-[material-symbols--expand-less]"
+                                : "icon-[material-symbols--expand-more]"
+                            }
+                          />
+                        </span>
+                      </button>
+                      {showArchivedHeads ? (
+                        <div className="mt-1 flex flex-col gap-1">
+                          {archivedHeads.map((head) => (
+                            <div
+                              key={head.id}
+                              ref={(node) => {
+                                if (node) {
+                                  headRowRefs.current.set(head.id, node);
+                                } else {
+                                  headRowRefs.current.delete(head.id);
+                                }
+                              }}
+                            >
+                              <HeadRow
+                                head={head}
+                                isActive={head.id === activeHeadId}
+                                isEditing={editingHead?.headId === head.id}
+                                editingName={
+                                  editingHead?.headId === head.id ? editingHead.name : ""
+                                }
+                                isBusy={isSessionMutating}
+                                onActivate={() => handleHeadActivate(head.id)}
+                                onEditingNameChange={(value) =>
+                                  setEditingHead({ headId: head.id, name: value })
+                                }
+                                onRenameStart={() =>
+                                  setEditingHead({ headId: head.id, name: head.name })
+                                }
+                                onRenameCancel={() => setEditingHead(null)}
+                                onRenameSubmit={() => void handleRenameSubmit()}
+                                onArchive={() => void handleArchiveToggle(head, true)}
+                                onRestore={() => void handleArchiveToggle(head, false)}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </OverlayScrollbar>
             </div>
           </div>
 
-          <div className="space-y-1 p-2">
-            {projectHeadsQuery.isInitialLoading && heads.length === 0 ? (
-              <div className="px-2 py-1 text-[12px] text-foreground-muted">正在加载会话...</div>
-            ) : null}
-
-            {unarchivedHeads.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border px-3 py-2 text-[12px] text-foreground-muted">
-                还没有可用会话。点击右上角新建会话开始。
-              </div>
-            ) : (
-              unarchivedHeads.map((head) => (
-                <HeadRow
-                  key={head.id}
-                  head={head}
-                  isActive={head.id === activeHeadId}
-                  isEditing={editingHead?.headId === head.id}
-                  editingName={editingHead?.headId === head.id ? editingHead.name : ""}
-                  isBusy={isSessionMutating}
-                  onActivate={() => void handleActivateHead(head.id)}
-                  onEditingNameChange={(value) => setEditingHead({ headId: head.id, name: value })}
-                  onRenameStart={() => setEditingHead({ headId: head.id, name: head.name })}
-                  onRenameCancel={() => setEditingHead(null)}
-                  onRenameSubmit={() => void handleRenameSubmit()}
-                  onArchive={() => void handleArchiveToggle(head, true)}
-                  onRestore={() => void handleArchiveToggle(head, false)}
+          <div
+            style={{ height: `${messageSheetHeight}px` }}
+            className={`min-h-0 shrink-0 overflow-hidden bg-editor-background ${
+              clampedSessionSectionHeight > 0 && messageSheetHeight > 0
+                ? "border-t border-border"
+                : ""
+            } ${sectionHeightTransitionClass}`}
+          >
+            <div className="flex h-full min-h-0 flex-col bg-editor-background">
+              <div
+                aria-label="调整会话列表和消息区域"
+                className="flex h-4 shrink-0 cursor-row-resize touch-none items-center justify-center border-b border-border bg-sidebar-background"
+                onPointerDown={handleSheetPointerDown}
+                onPointerMove={handleSheetPointerMove}
+                onPointerUp={finishSheetDrag}
+                onPointerCancel={finishSheetDrag}
+              >
+                <span
+                  className={`h-px w-8 ${isDraggingSheet ? "bg-accent-foreground" : "bg-foreground-muted"}`}
                 />
-              ))
-            )}
+              </div>
 
-            {archivedHeads.length > 0 ? (
-              <div className="border-t border-border pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowArchivedHeads((current) => !current)}
-                  className="flex w-full items-center justify-between rounded-md px-2 py-1 text-[11px] text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground"
-                >
-                  <span>归档会话</span>
-                  <span className="flex items-center gap-1">
-                    <span>{archivedHeads.length}</span>
-                    <span
-                      className={
-                        showArchivedHeads
-                          ? "icon-[material-symbols--expand-less]"
-                          : "icon-[material-symbols--expand-more]"
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <OverlayScrollbar variant="panel">
+                  <div className="flex min-h-full flex-col gap-3 p-3">
+                    {assistantStateQuery.isInitialLoading && showEmptyState ? (
+                      <div className="border border-border bg-sidebar-background px-3 py-2 text-[12px] text-foreground-muted">
+                        正在加载会话...
+                      </div>
+                    ) : null}
+
+                    {showEmptyState ? (
+                      <div className="border border-border bg-sidebar-background px-3 py-2">
+                        <div className="mb-2 flex items-center gap-2 text-[12px] text-foreground-muted">
+                          <span className="icon-[material-symbols--auto-awesome] text-sm text-accent-foreground" />
+                          <span>{activeHeadId ? "这个会话还没有对话内容" : "还没有当前会话"}</span>
+                        </div>
+                        <p className="text-[12px] leading-5 text-foreground-muted">
+                          {activeHeadId
+                            ? "选择模型后可以直接开始对话。"
+                            : "先新建一个会话，或从上方切换到已有会话。"}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {messages.map((message) => {
+                      const text = getMessageText(message.content);
+                      const isUser = message.role === "user";
+                      const showRetryError = retryableAttempt?.triggerMessageId === message.id;
+                      const showServerPending = pendingAttempt?.triggerMessageId === message.id;
+                      const showLocalRetryPending =
+                        pendingAction?.kind === "retry" &&
+                        pendingAction.triggerMessageId === message.id;
+
+                      return (
+                        <div key={message.id}>
+                          <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+                            <div
+                              className={`max-w-[88%] px-3 py-2 text-[13px] leading-5 whitespace-pre-wrap ${
+                                isUser
+                                  ? "bg-accent-foreground text-sidebar-background"
+                                  : "border border-border bg-sidebar-background text-foreground"
+                              }`}
+                            >
+                              {text || " "}
+                            </div>
+                          </div>
+
+                          {showRetryError ? (
+                            <AttemptErrorCard
+                              message={getAttemptErrorMessage(retryableAttempt.error)}
+                              canRetry={!isBusy}
+                              isRetrying={retryMessage.isPending}
+                              onRetry={() => void handleRetry(message.id)}
+                            />
+                          ) : null}
+
+                          {showServerPending || showLocalRetryPending ? (
+                            <div className="mt-2">
+                              <PendingAssistantBubble label="正在生成回复..." />
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+
+                    {pendingAction?.kind === "send" ? (
+                      <>
+                        <div className="flex justify-end">
+                          <div className="max-w-[88%] bg-accent-foreground px-3 py-2 text-[13px] leading-5 whitespace-pre-wrap text-sidebar-background">
+                            {pendingAction.text}
+                          </div>
+                        </div>
+                        <PendingAssistantBubble label="正在生成回复..." />
+                      </>
+                    ) : null}
+                  </div>
+                </OverlayScrollbar>
+              </div>
+
+              <form
+                className="shrink-0 border-t border-border"
+                aria-label="AI 对话输入"
+                onSubmit={handleSubmit}
+              >
+                <div className="space-y-2 p-2.5">
+                  <div className="border border-border bg-editor-background focus-within:border-accent-foreground">
+                    <textarea
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      disabled={
+                        isLoadingSelection ||
+                        !selectedModelId ||
+                        !selectedConnectionId ||
+                        activeHeadId == null ||
+                        isBusy
+                      }
+                      rows={3}
+                      className="min-h-16 w-full resize-none border-none bg-transparent px-2.5 py-2 text-[13px] leading-5 text-editor-foreground outline-none placeholder:text-foreground-muted/70 disabled:cursor-not-allowed disabled:opacity-70"
+                      placeholder={
+                        isLoadingSelection
+                          ? "加载模型选择中..."
+                          : activeHeadId == null
+                            ? "先新建或切换到一个会话..."
+                            : selectedConnectionId && selectedModelId
+                              ? "输入消息..."
+                              : "选择可用模型后输入..."
                       }
                     />
-                  </span>
-                </button>
-                {showArchivedHeads ? (
-                  <div className="mt-1 space-y-1">
-                    {archivedHeads.map((head) => (
-                      <HeadRow
-                        key={head.id}
-                        head={head}
-                        isActive={head.id === activeHeadId}
-                        isEditing={editingHead?.headId === head.id}
-                        editingName={editingHead?.headId === head.id ? editingHead.name : ""}
-                        isBusy={isSessionMutating}
-                        onActivate={() => void handleActivateHead(head.id)}
-                        onEditingNameChange={(value) =>
-                          setEditingHead({ headId: head.id, name: value })
-                        }
-                        onRenameStart={() => setEditingHead({ headId: head.id, name: head.name })}
-                        onRenameCancel={() => setEditingHead(null)}
-                        onRenameSubmit={() => void handleRenameSubmit()}
-                        onArchive={() => void handleArchiveToggle(head, true)}
-                        onRestore={() => void handleArchiveToggle(head, false)}
+                    <div className="flex min-w-0 items-center gap-2 border-t border-border p-1.5">
+                      <ModelPicker
+                        selectedConnectionId={selectedConnectionId}
+                        selectedModelId={selectedModelId}
+                        selectionHydrated={selectionHydrated}
+                        onSelectionChange={handleSelectionChange}
+                        onSelectionCommit={handleSelectionCommit}
                       />
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-editor-background">
-          <OverlayScrollbar variant="panel">
-            <div className="flex min-h-full flex-col gap-3 p-3">
-              {assistantStateQuery.isInitialLoading && showEmptyState ? (
-                <div className="rounded-md border border-border bg-sidebar-background px-3 py-2 text-[12px] text-foreground-muted">
-                  正在加载会话...
-                </div>
-              ) : null}
-
-              {showEmptyState ? (
-                <div className="rounded-md border border-border bg-sidebar-background px-3 py-2">
-                  <div className="mb-2 flex items-center gap-2 text-[12px] text-foreground-muted">
-                    <span className="icon-[material-symbols--auto-awesome] text-sm text-accent-foreground" />
-                    <span>{activeHeadId ? "这个会话还没有对话内容" : "还没有当前会话"}</span>
-                  </div>
-                  <p className="text-[12px] leading-5 text-foreground-muted">
-                    {activeHeadId
-                      ? "选择模型后可以直接开始对话。"
-                      : "先新建一个会话，或从上方切换到已有会话。"}
-                  </p>
-                </div>
-              ) : null}
-
-              {messages.map((message) => {
-                const text = getMessageText(message.content);
-                const isUser = message.role === "user";
-                const showRetryError = retryableAttempt?.triggerMessageId === message.id;
-                const showServerPending = pendingAttempt?.triggerMessageId === message.id;
-                const showLocalRetryPending =
-                  pendingAction?.kind === "retry" && pendingAction.triggerMessageId === message.id;
-
-                return (
-                  <div key={message.id}>
-                    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-                      <div
-                        className={`max-w-[88%] rounded-md px-3 py-2 text-[13px] leading-5 whitespace-pre-wrap ${
-                          isUser
-                            ? "bg-accent-foreground text-sidebar-background"
-                            : "border border-border bg-sidebar-background text-foreground"
-                        }`}
+                      <button
+                        type="submit"
+                        disabled={!canSubmit}
+                        title={canSubmit ? "发送" : "当前无法发送"}
+                        aria-label="发送"
+                        className="flex size-9 shrink-0 items-center justify-center text-foreground-muted transition hover:bg-list-hover-background disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        {text || " "}
-                      </div>
-                    </div>
-
-                    {showRetryError ? (
-                      <AttemptErrorCard
-                        message={getAttemptErrorMessage(retryableAttempt.error)}
-                        canRetry={!isBusy}
-                        isRetrying={retryMessage.isPending}
-                        onRetry={() => void handleRetry(message.id)}
-                      />
-                    ) : null}
-
-                    {showServerPending || showLocalRetryPending ? (
-                      <div className="mt-2">
-                        <PendingAssistantBubble label="正在生成回复..." />
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-
-              {pendingAction?.kind === "send" ? (
-                <>
-                  <div className="flex justify-end">
-                    <div className="max-w-[88%] rounded-md bg-accent-foreground px-3 py-2 text-[13px] leading-5 whitespace-pre-wrap text-sidebar-background">
-                      {pendingAction.text}
+                        <span
+                          className={`text-xl ${
+                            isBusy
+                              ? "icon-[material-symbols--progress-activity] animate-spin"
+                              : "icon-[material-symbols--send]"
+                          }`}
+                        />
+                      </button>
                     </div>
                   </div>
-                  <PendingAssistantBubble label="正在生成回复..." />
-                </>
-              ) : null}
-            </div>
-          </OverlayScrollbar>
-        </div>
 
-        <form className="shrink-0" aria-label="AI 对话输入" onSubmit={handleSubmit}>
-          <div className="space-y-2">
-            <div className="rounded-md border border-border bg-editor-background focus-within:border-accent-foreground">
-              <textarea
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                disabled={
-                  isLoadingSelection ||
-                  !selectedModelId ||
-                  !selectedConnectionId ||
-                  activeHeadId == null ||
-                  isBusy
-                }
-                rows={3}
-                className="min-h-16 w-full resize-none border-none bg-transparent px-2.5 py-2 text-[13px] leading-5 text-editor-foreground outline-none placeholder:text-foreground-muted/70 disabled:cursor-not-allowed disabled:opacity-70"
-                placeholder={
-                  isLoadingSelection
-                    ? "加载模型选择中..."
-                    : activeHeadId == null
-                      ? "先新建或切换到一个会话..."
-                      : selectedConnectionId && selectedModelId
-                        ? "输入消息..."
-                        : "选择可用模型后输入..."
-                }
-              />
-              <div className="flex min-w-0 items-center gap-2 border-t border-border p-1.5">
-                <ModelPicker
-                  selectedConnectionId={selectedConnectionId}
-                  selectedModelId={selectedModelId}
-                  selectionHydrated={selectionHydrated}
-                  onSelectionChange={handleSelectionChange}
-                  onSelectionCommit={handleSelectionCommit}
-                />
-                <button
-                  type="submit"
-                  disabled={!canSubmit}
-                  title={canSubmit ? "发送" : "当前无法发送"}
-                  aria-label="发送"
-                  className="flex size-9 shrink-0 items-center justify-center rounded text-foreground-muted transition hover:bg-list-hover-background disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <span
-                    className={`text-xl ${
-                      isBusy
-                        ? "icon-[material-symbols--progress-activity] animate-spin"
-                        : "icon-[material-symbols--send]"
+                  <div
+                    className={`flex items-center gap-1.5 text-[11px] ${
+                      canSubmit ? "text-foreground-muted" : "text-accent-foreground"
                     }`}
-                  />
-                </button>
-              </div>
-            </div>
-
-            <div
-              className={`flex items-center gap-1.5 text-[11px] ${
-                canSubmit ? "text-foreground-muted" : "text-accent-foreground"
-              }`}
-            >
-              <ModelHint
-                canSend={canSubmit}
-                hasActiveHead={activeHeadId != null}
-                selectedConnectionId={selectedConnectionId}
-                selectedModelId={selectedModelId}
-                hasDraft={draft.trim().length > 0}
-                isLoadingSelection={isLoadingSelection}
-                isGenerating={isGenerating}
-                isSessionBusy={isSessionBusy}
-                hasPendingAttempt={pendingAttempt != null}
-                errorMessage={composerError}
-              />
+                  >
+                    <ModelHint
+                      canSend={canSubmit}
+                      hasActiveHead={activeHeadId != null}
+                      selectedConnectionId={selectedConnectionId}
+                      selectedModelId={selectedModelId}
+                      hasDraft={draft.trim().length > 0}
+                      isLoadingSelection={isLoadingSelection}
+                      isGenerating={isGenerating}
+                      isSessionBusy={isSessionBusy}
+                      hasPendingAttempt={pendingAttempt != null}
+                      errorMessage={composerError}
+                    />
+                  </div>
+                </div>
+              </form>
             </div>
           </div>
-        </form>
+        </div>
       </div>
     </aside>
   );
