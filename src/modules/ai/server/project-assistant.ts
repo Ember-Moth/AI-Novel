@@ -1496,7 +1496,7 @@ export function createProjectAssistantService(
         threads,
         state: activeThread
           ? getThreadView(activeThread.id)
-          : { thread: null, activePath: [], candidateGroups: [], latestRuns: [] },
+          : { thread: null, activePath: [], candidateGroups: [], latestRuns: [], runSummaries: [] },
       };
     },
 

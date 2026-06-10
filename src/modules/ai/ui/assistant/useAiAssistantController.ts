@@ -15,6 +15,8 @@ import {
   type AssistantToolTraceEntry,
   type EditingThreadState,
   getCandidateGroupForNode,
+  getRunErrorMessage,
+  getUsageTotalTokens,
   selectPendingRun,
   selectRetryableRun,
   type PendingAssistantAction,
@@ -39,6 +41,12 @@ export interface AssistantStreamOverlay {
   triggerNodeId: string | null;
   runId: string | null;
   activeAssistantNodeId: string | null;
+  startedAt: number;
+  completedAt: number | null;
+  status: "running" | "failed";
+  stepCount: number;
+  totalTokens: number | null;
+  errorMessage: string | null;
   blocks: Array<{
     assistantNodeId: string;
     assistantText: string;
@@ -150,6 +158,12 @@ function createStreamOverlay({
     triggerNodeId,
     runId: null,
     activeAssistantNodeId: null,
+    startedAt: Date.now(),
+    completedAt: null,
+    status: "running",
+    stepCount: 0,
+    totalTokens: null,
+    errorMessage: null,
     blocks: [],
   };
 }
@@ -333,7 +347,43 @@ function applyStreamEvent(
     };
   }
 
+  if (event.type === "step-finished") {
+    const tokens = getUsageTotalTokens(event.usage);
+    return {
+      ...overlay,
+      stepCount: Math.max(overlay.stepCount, event.stepIndex + 1),
+      totalTokens: tokens == null ? overlay.totalTokens : (overlay.totalTokens ?? 0) + tokens,
+    };
+  }
+
   return overlay;
+}
+
+function patchAssistantOverviewState({
+  projectId,
+  thread,
+  state,
+}: {
+  projectId: string;
+  thread: AgentThreadView;
+  state: typeof EMPTY_ASSISTANT_STATE;
+}) {
+  const current = rpc.getQueryData("ai.getProjectAssistantState", { projectId });
+  if (!current) {
+    return;
+  }
+
+  rpc.setQueryData(
+    "ai.getProjectAssistantState",
+    { projectId },
+    {
+      activeThreadId: thread.id,
+      threads: current.threads.some((entry) => entry.id === thread.id)
+        ? current.threads.map((entry) => (entry.id === thread.id ? thread : entry))
+        : [thread, ...current.threads],
+      state,
+    },
+  );
 }
 
 export function useAiAssistantController(
@@ -401,6 +451,7 @@ export function useAiAssistantController(
   );
   const retryableRun = selectRetryableRun(assistantState);
   const pendingRun = selectPendingRun(assistantState);
+  const runSummaries = assistantState.runSummaries;
   const isGenerating = sendMessageStream.isStreaming || retryMessageStream.isStreaming;
   const isThreadMutating =
     createThread.isPending ||
@@ -466,6 +517,19 @@ export function useAiAssistantController(
     };
   }, [activeStream, assistantOverviewQuery, pendingRun]);
 
+  useEffect(() => {
+    if (!activeStream || activeStream.status !== "failed" || !activeStream.runId) {
+      return;
+    }
+
+    if (runSummaries.some((summary) => summary.runId === activeStream.runId)) {
+      if (activeStream.kind === "send") {
+        setPendingAction(null);
+      }
+      setActiveStream(null);
+    }
+  }, [activeStream, runSummaries]);
+
   const handleSelectionChange = useCallback((connectionId: string, modelId: string) => {
     setSelectedConnectionId(connectionId);
     setSelectedModelId(modelId);
@@ -504,9 +568,10 @@ export function useAiAssistantController(
         }),
       );
       setDraft("");
+      let clearPendingAction = true;
 
       try {
-        await sendMessageStream.startAsync(
+        const result = await sendMessageStream.startAsync(
           {
             projectId,
             threadId: activeThreadId,
@@ -521,18 +586,47 @@ export function useAiAssistantController(
             },
           },
         );
+        patchAssistantOverviewState({
+          projectId,
+          thread: result.thread,
+          state: result.state,
+        });
+        setActiveStream(null);
       } catch (error) {
         setDraft(text);
         if (error instanceof Error && error.name === "RpcStreamAborted") {
+          setActiveStream(null);
           return;
         }
-        setComposerError(error instanceof Error ? error.message : "发送消息失败。");
+        clearPendingAction = false;
+        const message = error instanceof Error ? error.message : "发送消息失败。";
+        setComposerError(message);
+        setActiveStream((current) =>
+          current == null
+            ? current
+            : {
+                ...current,
+                status: "failed",
+                completedAt: Date.now(),
+                errorMessage: message || getRunErrorMessage(),
+              },
+        );
+        void assistantOverviewQuery.refetch();
       } finally {
-        setPendingAction(null);
-        setActiveStream(null);
+        if (clearPendingAction) {
+          setPendingAction(null);
+        }
       }
     },
-    [activeThreadId, canSubmit, contextSnapshot, draft, projectId, sendMessageStream],
+    [
+      activeThreadId,
+      assistantOverviewQuery,
+      canSubmit,
+      contextSnapshot,
+      draft,
+      projectId,
+      sendMessageStream,
+    ],
   );
 
   const handleRetry = useCallback(
@@ -552,7 +646,7 @@ export function useAiAssistantController(
       );
 
       try {
-        await retryMessageStream.startAsync(
+        const result = await retryMessageStream.startAsync(
           {
             projectId,
             threadId: activeThreadId,
@@ -567,17 +661,35 @@ export function useAiAssistantController(
             },
           },
         );
+        patchAssistantOverviewState({
+          projectId,
+          thread: result.thread,
+          state: result.state,
+        });
+        setActiveStream(null);
       } catch (error) {
         if (error instanceof Error && error.name === "RpcStreamAborted") {
+          setActiveStream(null);
           return;
         }
-        setComposerError(error instanceof Error ? error.message : "重试失败。");
+        const message = error instanceof Error ? error.message : "重试失败。";
+        setComposerError(message);
+        setActiveStream((current) =>
+          current == null
+            ? current
+            : {
+                ...current,
+                status: "failed",
+                completedAt: Date.now(),
+                errorMessage: message || getRunErrorMessage(),
+              },
+        );
+        void assistantOverviewQuery.refetch();
       } finally {
         setPendingAction(null);
-        setActiveStream(null);
       }
     },
-    [activeThreadId, contextSnapshot, projectId, retryMessageStream],
+    [activeThreadId, assistantOverviewQuery, contextSnapshot, projectId, retryMessageStream],
   );
 
   const handleCreateThread = useCallback(async () => {
@@ -725,6 +837,7 @@ export function useAiAssistantController(
     pendingAction,
     pendingRun,
     retryableRun,
+    runSummaries,
     selectedConnectionId,
     selectedModelId,
     selectionHydrated,

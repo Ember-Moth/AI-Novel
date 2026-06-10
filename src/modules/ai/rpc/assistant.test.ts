@@ -43,6 +43,7 @@ test("getProjectAssistantState watches overview, threads, and the active thread 
         activePath: [],
         candidateGroups: [],
         latestRuns: [],
+        runSummaries: [],
       },
     }),
     createProjectAssistantThread: () => {
@@ -105,6 +106,7 @@ test("sendProjectAssistantMessage invalidates overview, thread view, candidates,
         activePath: [],
         candidateGroups: [],
         latestRuns: [],
+        runSummaries: [],
       },
     }),
     createProjectAssistantThread: () => {
@@ -182,6 +184,7 @@ test("sendProjectAssistantMessage invalidates overview, thread view, candidates,
         activePath: [],
         candidateGroups: [],
         latestRuns: [],
+        runSummaries: [],
       },
     }),
     retryProjectAssistantMessage: async () => {
@@ -281,6 +284,7 @@ test("sendProjectAssistantMessageStream emits events and returns invalidate tags
       activePath: [],
       candidateGroups: [],
       latestRuns: [],
+      runSummaries: [],
     },
   };
 
@@ -293,6 +297,7 @@ test("sendProjectAssistantMessageStream emits events and returns invalidate tags
         activePath: [],
         candidateGroups: [],
         latestRuns: [],
+        runSummaries: [],
       },
     }),
     createProjectAssistantThread: () => {

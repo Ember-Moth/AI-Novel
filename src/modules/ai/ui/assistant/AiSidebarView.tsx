@@ -708,55 +708,122 @@ export function SessionStatusOverlay({ state }: { state: "loading" | "empty" }) 
   );
 }
 
-export function PendingAssistantBubble({ label }: { label: string }) {
+export function RunSummaryRow({
+  status,
+  stepCount,
+  totalTokens,
+  durationMs,
+  errorMessage,
+  canRetry,
+  isRetrying,
+  onRetry,
+  expanded,
+  onToggle,
+}: {
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  stepCount: number;
+  totalTokens: number | null;
+  durationMs: number | null;
+  errorMessage: string | null;
+  canRetry?: boolean;
+  isRetrying?: boolean;
+  onRetry?: () => void;
+  expanded?: boolean;
+  onToggle?: () => void;
+}) {
+  const isRunning = status === "running" || status === "queued";
+  const isFailed = status === "failed";
+  const canExpand = isFailed && typeof errorMessage === "string" && errorMessage.trim().length > 0;
+  const toneClassName = isFailed
+    ? "border-accent-foreground/30 bg-accent-foreground/5 text-accent-foreground"
+    : "border-border bg-editor-background text-foreground-muted";
+  const statusIcon = isRunning
+    ? "icon-[material-symbols--progress-activity] animate-spin text-accent-foreground"
+    : isFailed
+      ? "icon-[material-symbols--warning]"
+      : status === "cancelled"
+        ? "icon-[material-symbols--block]"
+        : "icon-[material-symbols--check-circle]";
+  const label = isRunning
+    ? "正在生成回复..."
+    : isFailed
+      ? "生成失败"
+      : status === "cancelled"
+        ? "已取消"
+        : "生成完成";
+  const metrics = [
+    durationMs != null ? formatDuration(durationMs) : null,
+    stepCount > 0 ? `${stepCount} 步` : null,
+    totalTokens != null ? `${totalTokens.toLocaleString("zh-CN")} tokens` : null,
+  ].filter(Boolean);
+
   return (
-    <div className="text-[12px] text-foreground-muted">
-      <div className="flex items-center gap-2">
-        <span className="icon-[material-symbols--progress-activity] animate-spin text-sm text-accent-foreground" />
-        <span>{label}</span>
+    <div className={`overflow-hidden rounded-md border ${toneClassName}`}>
+      <div className="flex min-h-8 items-center gap-2 px-2 py-1 text-[11px] leading-4">
+        {canExpand ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          >
+            <span className={`shrink-0 text-[14px] ${statusIcon}`} />
+            <span className="min-w-0 shrink-0">{label}</span>
+            <span className="min-w-0 flex-1 truncate opacity-80">
+              {metrics.length > 0 ? metrics.join(" / ") : "统计信息暂不可用"}
+            </span>
+            <span
+              className={`shrink-0 text-[14px] ${
+                expanded
+                  ? "icon-[material-symbols--keyboard-arrow-up]"
+                  : "icon-[material-symbols--keyboard-arrow-down]"
+              }`}
+            />
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className={`shrink-0 text-[14px] ${statusIcon}`} />
+            <span className="min-w-0 shrink-0">{label}</span>
+            <span className="min-w-0 flex-1 truncate opacity-80">
+              {metrics.length > 0 ? metrics.join(" / ") : "统计信息暂不可用"}
+            </span>
+          </div>
+        )}
+        {canRetry && onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={isRetrying}
+            className="inline-flex size-6 shrink-0 items-center justify-center rounded text-[14px] transition hover:bg-current/10 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label={isRetrying ? "重试中" : "重试"}
+            title={isRetrying ? "重试中" : "重试"}
+          >
+            <span
+              className={
+                isRetrying
+                  ? "icon-[material-symbols--progress-activity] animate-spin"
+                  : "icon-[material-symbols--refresh]"
+              }
+            />
+          </button>
+        ) : null}
       </div>
+      {canExpand && expanded ? (
+        <div className="border-t border-current/10 px-2 py-1.5 text-[10px] leading-4 break-all whitespace-pre-wrap">
+          {errorMessage}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-export function AttemptErrorCard({
-  message,
-  canRetry,
-  isRetrying,
-  onRetry,
-}: {
-  message: string;
-  canRetry: boolean;
-  isRetrying: boolean;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="text-[12px] text-red-400">
-      <div className="flex items-start gap-2">
-        <span className="mt-0.5 icon-[material-symbols--warning] shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p className="leading-5">{message}</p>
-          {canRetry ? (
-            <button
-              type="button"
-              onClick={onRetry}
-              disabled={isRetrying}
-              className="mt-2 inline-flex items-center gap-1 border border-red-400/30 px-2 py-1 text-[11px] text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span
-                className={
-                  isRetrying
-                    ? "icon-[material-symbols--progress-activity] animate-spin"
-                    : "icon-[material-symbols--refresh]"
-                }
-              />
-              <span>{isRetrying ? "重试中..." : "重试"}</span>
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
+function formatDuration(durationMs: number) {
+  if (durationMs < 1000) {
+    return `${Math.max(0, Math.round(durationMs))}ms`;
+  }
+  if (durationMs < 10_000) {
+    return `${(durationMs / 1000).toFixed(1)}s`;
+  }
+  return `${Math.round(durationMs / 1000)}s`;
 }
 
 export { AnimatePresence };

@@ -1,5 +1,6 @@
 import type {
   AgentCandidateGroupView,
+  AgentRunSummaryView,
   AgentRunView,
   AgentThreadNodeView,
   AgentThreadStateView,
@@ -30,6 +31,7 @@ export const EMPTY_ASSISTANT_STATE: AssistantState = {
   activePath: [],
   candidateGroups: [],
   latestRuns: [],
+  runSummaries: [],
 };
 
 export const EMPTY_THREADS: AgentThreadView[] = [];
@@ -54,6 +56,37 @@ export interface AssistantContentBlock {
   kind: "text" | "reasoning";
   blockId: string;
   text: string;
+}
+
+export function getRunSummaryByDisplayNode(
+  summaries: AgentRunSummaryView[],
+  displayNodeId: string,
+) {
+  return summaries.filter((summary) => summary.displayNodeId === displayNodeId);
+}
+
+export function getUsageTotalTokens(usage: unknown) {
+  if (!usage || typeof usage !== "object") {
+    return null;
+  }
+
+  const totalTokens = Reflect.get(usage as Record<string, unknown>, "totalTokens");
+  if (typeof totalTokens === "number" && Number.isFinite(totalTokens)) {
+    return Math.max(0, Math.round(totalTokens));
+  }
+
+  const inputTokens = Reflect.get(usage as Record<string, unknown>, "inputTokens");
+  const outputTokens = Reflect.get(usage as Record<string, unknown>, "outputTokens");
+  if (
+    typeof inputTokens === "number" &&
+    Number.isFinite(inputTokens) &&
+    typeof outputTokens === "number" &&
+    Number.isFinite(outputTokens)
+  ) {
+    return Math.max(0, Math.round(inputTokens + outputTokens));
+  }
+
+  return null;
 }
 
 export function getMessageText(node: AgentThreadNodeView | null | undefined) {

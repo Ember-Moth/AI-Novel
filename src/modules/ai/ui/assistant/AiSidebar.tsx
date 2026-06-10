@@ -1,14 +1,16 @@
 import { useState } from "react";
 
 import { AnimatePresence } from "./AiSidebarView";
-import type { ProjectAssistantContextSnapshot } from "@/modules/ai/domain/types";
+import type {
+  AgentRunSummaryView,
+  ProjectAssistantContextSnapshot,
+} from "@/modules/ai/domain/types";
 import {
   AnimatedHeadRow,
   ArchivedSectionToggleRow,
-  AttemptErrorCard,
   ModelHint,
   ModelPicker,
-  PendingAssistantBubble,
+  RunSummaryRow,
   SessionStatusOverlay,
 } from "./AiSidebarView";
 import { AiAssistantSheetLayout } from "./AiAssistantSheetLayout";
@@ -16,10 +18,10 @@ import {
   getAssistantContentBlocks,
   getAssistantToolTrace,
   getMessageText,
-  getRunErrorMessage,
+  getRunSummaryByDisplayNode,
   listAssistantContextDetails,
 } from "./assistantState";
-import { useAiAssistantController } from "./useAiAssistantController";
+import { type AssistantStreamOverlay, useAiAssistantController } from "./useAiAssistantController";
 import { useAssistantSheetLayout } from "./useAssistantSheetLayout";
 
 export function AiSidebar({
@@ -35,7 +37,12 @@ export function AiSidebar({
   });
   const [expandedToolTraceKeys, setExpandedToolTraceKeys] = useState<Set<string>>(new Set());
   const [expandedReasoningKeys, setExpandedReasoningKeys] = useState<Set<string>>(new Set());
+  const [expandedRunSummaryKeys, setExpandedRunSummaryKeys] = useState<Set<string>>(new Set());
   const contextDetails = listAssistantContextDetails(controller.contextSnapshot);
+  const pendingSendSummary =
+    controller.activeStream?.kind === "send"
+      ? buildStreamRunSummary(controller.activeStream)
+      : null;
   const visibleMessages = controller.messages.flatMap((message, index) =>
     message.role === "tool" ? [] : [{ message, index }],
   );
@@ -54,6 +61,18 @@ export function AiSidebar({
 
   function toggleReasoning(key: string) {
     setExpandedReasoningKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
+  function toggleRunSummary(key: string) {
+    setExpandedRunSummaryKeys((current) => {
       const next = new Set(current);
       if (next.has(key)) {
         next.delete(key);
@@ -171,19 +190,19 @@ export function AiSidebar({
               const isUser = message.role === "user";
               const showMessageBubble = isUser || text.trim().length > 0;
               const candidateGroup = controller.getCandidateGroupForNode(message);
-              const showRetryError = controller.retryableRun?.triggerNodeId === message.id;
               const streamOverlayForMessage =
                 controller.activeStream?.kind === "retry" &&
                 controller.activeStream.triggerNodeId === message.id
                   ? controller.activeStream
                   : null;
-              const showServerPending =
-                streamOverlayForMessage == null &&
-                controller.pendingRun?.triggerNodeId === message.id;
-              const showLocalRetryPending =
-                streamOverlayForMessage == null &&
-                controller.pendingAction?.kind === "retry" &&
-                controller.pendingAction.triggerNodeId === message.id;
+              const streamSummaryForMessage =
+                streamOverlayForMessage != null
+                  ? buildStreamRunSummary(streamOverlayForMessage)
+                  : null;
+              const persistedSummaries = getRunSummaryByDisplayNode(
+                controller.runSummaries,
+                message.id,
+              ).filter((summary) => summary.runId !== controller.activeStream?.runId);
 
               return (
                 <div key={message.id} className="flex flex-col gap-1.5">
@@ -216,19 +235,6 @@ export function AiSidebar({
                         ),
                       )
                     : null}
-
-                  {showRetryError ? (
-                    <AttemptErrorCard
-                      message={getRunErrorMessage()}
-                      canRetry={!controller.isBusy}
-                      isRetrying={controller.isRetrying}
-                      onRetry={() => void controller.handleRetry(message.id)}
-                    />
-                  ) : null}
-
-                  {showServerPending || showLocalRetryPending ? (
-                    <PendingAssistantBubble label="正在生成回复..." />
-                  ) : null}
 
                   {streamOverlayForMessage ? (
                     <div className="flex flex-col gap-1.5">
@@ -285,7 +291,6 @@ export function AiSidebar({
                           ) : null}
                         </div>
                       ))}
-                      <PendingAssistantBubble label="正在生成回复..." />
                     </div>
                   ) : null}
 
@@ -332,6 +337,46 @@ export function AiSidebar({
                       })}
                     </div>
                   ) : null}
+
+                  {streamSummaryForMessage ? (
+                    <RunSummaryRow
+                      status={streamSummaryForMessage.status}
+                      stepCount={streamSummaryForMessage.stepCount}
+                      totalTokens={streamSummaryForMessage.totalTokens}
+                      durationMs={streamSummaryForMessage.durationMs}
+                      errorMessage={streamSummaryForMessage.errorMessage}
+                      expanded={expandedRunSummaryKeys.has(streamSummaryForMessage.key)}
+                      onToggle={() => toggleRunSummary(streamSummaryForMessage.key)}
+                    />
+                  ) : null}
+
+                  {persistedSummaries.map((summary) => {
+                    const key = getRunSummaryKey(summary);
+                    const retryTriggerNodeId = summary.triggerNodeId;
+                    const canRetry =
+                      summary.status === "failed" &&
+                      controller.retryableRun?.id === summary.runId &&
+                      message.id === summary.displayNodeId;
+                    return (
+                      <RunSummaryRow
+                        key={summary.runId}
+                        status={summary.status}
+                        stepCount={summary.stepCount}
+                        totalTokens={summary.totalTokens}
+                        durationMs={summary.durationMs}
+                        errorMessage={summary.errorMessage}
+                        canRetry={canRetry}
+                        isRetrying={canRetry && controller.isRetrying}
+                        onRetry={
+                          canRetry && retryTriggerNodeId
+                            ? () => void controller.handleRetry(retryTriggerNodeId)
+                            : undefined
+                        }
+                        expanded={expandedRunSummaryKeys.has(key)}
+                        onToggle={() => toggleRunSummary(key)}
+                      />
+                    );
+                  })}
                 </div>
               );
             })}
@@ -393,7 +438,17 @@ export function AiSidebar({
                       </div>
                     ))
                   : null}
-                <PendingAssistantBubble label="正在生成回复..." />
+                {pendingSendSummary ? (
+                  <RunSummaryRow
+                    status={pendingSendSummary.status}
+                    stepCount={pendingSendSummary.stepCount}
+                    totalTokens={pendingSendSummary.totalTokens}
+                    durationMs={pendingSendSummary.durationMs}
+                    errorMessage={pendingSendSummary.errorMessage}
+                    expanded={expandedRunSummaryKeys.has(pendingSendSummary.key)}
+                    onToggle={() => toggleRunSummary(pendingSendSummary.key)}
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -491,6 +546,21 @@ export function AiSidebar({
       />
     </aside>
   );
+}
+
+function buildStreamRunSummary(overlay: AssistantStreamOverlay) {
+  return {
+    key: overlay.runId ? `stream:${overlay.runId}` : `stream:${overlay.kind}:${overlay.threadId}`,
+    status: overlay.status,
+    stepCount: overlay.stepCount,
+    totalTokens: overlay.totalTokens,
+    durationMs: Math.max(0, (overlay.completedAt ?? Date.now()) - overlay.startedAt),
+    errorMessage: overlay.errorMessage,
+  };
+}
+
+function getRunSummaryKey(summary: AgentRunSummaryView) {
+  return `run-summary:${summary.runId}`;
 }
 
 function getReasoningTraceText(

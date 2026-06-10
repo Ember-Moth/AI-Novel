@@ -3,7 +3,9 @@ import { expect, test } from "bun:test";
 import {
   getAssistantContentBlocks,
   getAssistantReasoning,
+  getRunSummaryByDisplayNode,
   getAssistantToolTrace,
+  getUsageTotalTokens,
   listAssistantContextDetails,
 } from "./assistantState";
 
@@ -348,6 +350,53 @@ test("getAssistantContentBlocks preserves reasoning and text order", () => {
       kind: "text",
       blockId: "part_text",
       text: "这是回复正文。",
+    },
+  ]);
+});
+
+test("getUsageTotalTokens prefers totalTokens and falls back to input/output sum", () => {
+  expect(getUsageTotalTokens({ totalTokens: 12, inputTokens: 1, outputTokens: 2 })).toBe(12);
+  expect(getUsageTotalTokens({ inputTokens: 4, outputTokens: 6 })).toBe(10);
+  expect(getUsageTotalTokens({ inputTokens: 4 })).toBeNull();
+});
+
+test("getRunSummaryByDisplayNode returns summaries for the matched node", () => {
+  expect(
+    getRunSummaryByDisplayNode(
+      [
+        {
+          runId: "run_1",
+          triggerNodeId: "node_user",
+          displayNodeId: "node_assistant",
+          status: "succeeded",
+          stepCount: 1,
+          totalTokens: 8,
+          durationMs: 1200,
+          errorMessage: null,
+        },
+        {
+          runId: "run_2",
+          triggerNodeId: "node_user",
+          displayNodeId: "node_user",
+          status: "failed",
+          stepCount: 0,
+          totalTokens: null,
+          durationMs: 300,
+          errorMessage: "boom",
+        },
+      ],
+      "node_user",
+    ),
+  ).toEqual([
+    {
+      runId: "run_2",
+      triggerNodeId: "node_user",
+      displayNodeId: "node_user",
+      status: "failed",
+      stepCount: 0,
+      totalTokens: null,
+      durationMs: 300,
+      errorMessage: "boom",
     },
   ]);
 });

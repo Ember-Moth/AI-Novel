@@ -225,6 +225,17 @@ export interface AgentRunView {
   updatedAt: number;
 }
 
+export interface AgentRunSummaryView {
+  runId: string;
+  triggerNodeId: string | null;
+  displayNodeId: string;
+  status: AgentRunStatus;
+  stepCount: number;
+  totalTokens: number | null;
+  durationMs: number | null;
+  errorMessage: string | null;
+}
+
 export type ProjectAssistantStreamEvent =
   | {
       type: "run-started";
@@ -322,6 +333,7 @@ export interface AgentThreadStateView {
   activePath: AgentThreadNodeView[];
   candidateGroups: AgentCandidateGroupView[];
   latestRuns: AgentRunView[];
+  runSummaries: AgentRunSummaryView[];
 }
 
 export interface AiCatalogProviderView {

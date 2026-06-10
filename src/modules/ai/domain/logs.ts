@@ -1,5 +1,5 @@
 import type { ModelMessage } from "ai";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { type DatabaseExecutor, db, schema } from "@/db";
 import { createId, invariant, now } from "@/shared/lib/domain";
@@ -21,6 +21,7 @@ import type {
   AgentRunStatus,
   AgentRunStepRow,
   AgentRunStepView,
+  AgentRunSummaryView,
   AgentRunTraceView,
   AgentRunView,
   AgentThreadNodePartKind,
@@ -1008,6 +1009,30 @@ function mapRunStepRow(row: AgentRunStepRow): AgentRunStepView {
   };
 }
 
+function normalizeUsageTotalTokens(usage: unknown): number | null {
+  if (!usage || typeof usage !== "object") {
+    return null;
+  }
+
+  const totalTokens = Reflect.get(usage as Record<string, unknown>, "totalTokens");
+  if (typeof totalTokens === "number" && Number.isFinite(totalTokens)) {
+    return Math.max(0, Math.round(totalTokens));
+  }
+
+  const inputTokens = Reflect.get(usage as Record<string, unknown>, "inputTokens");
+  const outputTokens = Reflect.get(usage as Record<string, unknown>, "outputTokens");
+  if (
+    typeof inputTokens === "number" &&
+    Number.isFinite(inputTokens) &&
+    typeof outputTokens === "number" &&
+    Number.isFinite(outputTokens)
+  ) {
+    return Math.max(0, Math.round(inputTokens + outputTokens));
+  }
+
+  return null;
+}
+
 function mapRunEventRow(row: AgentRunEventRow): AgentRunEventView {
   assertEventKind(row.eventKind);
   return {
@@ -1477,6 +1502,120 @@ function buildCandidateGroups(threadId: string, activePath: AgentThreadNodeView[
   return groups;
 }
 
+function buildRunSummaries(threadId: string, activePath: AgentThreadNodeView[]) {
+  const activeNodeIds = new Set(activePath.map((node) => node.id));
+  const activeIndexByNodeId = new Map(activePath.map((node, index) => [node.id, index]));
+  const includedRunIds = new Set(
+    activePath.flatMap((node) => (node.createdByRunId ? [node.createdByRunId] : [])),
+  );
+  const assistantDisplayNodeByRunId = new Map<string, string>();
+
+  activePath.forEach((node) => {
+    if (node.role === "assistant" && node.createdByRunId) {
+      assistantDisplayNodeByRunId.set(node.createdByRunId, node.id);
+    }
+  });
+
+  const runRows = db
+    .select()
+    .from(schema.agentRuns)
+    .where(eq(schema.agentRuns.threadId, threadId))
+    .orderBy(schema.agentRuns.createdAt)
+    .all();
+  const relevantRunRows = runRows.filter((row) => {
+    if (includedRunIds.has(row.id)) {
+      return true;
+    }
+    return (
+      row.status === "failed" && row.triggerNodeId != null && activeNodeIds.has(row.triggerNodeId)
+    );
+  });
+  const relevantRuns = relevantRunRows.map(mapRunRow);
+
+  if (relevantRuns.length === 0) {
+    return [] as AgentRunSummaryView[];
+  }
+
+  const runIds = relevantRuns.map((run) => run.id);
+  const stepRows =
+    runIds.length > 0
+      ? db
+          .select()
+          .from(schema.agentRunSteps)
+          .where(inArray(schema.agentRunSteps.runId, runIds))
+          .orderBy(schema.agentRunSteps.runId, schema.agentRunSteps.stepIndex)
+          .all()
+      : [];
+  const errorArtifactIds = relevantRuns.flatMap((row) =>
+    row.errorArtifactId ? [row.errorArtifactId] : [],
+  );
+  const errorArtifacts =
+    errorArtifactIds.length > 0
+      ? db
+          .select()
+          .from(schema.agentArtifacts)
+          .where(inArray(schema.agentArtifacts.id, errorArtifactIds))
+          .all()
+      : [];
+  const stepsByRunId = new Map<string, AgentRunStepRow[]>();
+  const errorArtifactById = new Map(errorArtifacts.map((artifact) => [artifact.id, artifact]));
+
+  stepRows.forEach((row) => {
+    const entries = stepsByRunId.get(row.runId) ?? [];
+    entries.push(row);
+    stepsByRunId.set(row.runId, entries);
+  });
+
+  return relevantRuns
+    .flatMap((row) => {
+      const displayNodeId =
+        assistantDisplayNodeByRunId.get(row.id) ??
+        (row.triggerNodeId && activeNodeIds.has(row.triggerNodeId) ? row.triggerNodeId : null);
+      if (!displayNodeId) {
+        return [];
+      }
+
+      const stepEntries = stepsByRunId.get(row.id) ?? [];
+      const totalTokens = stepEntries.reduce<number | null>((sum, step) => {
+        const value = normalizeUsageTotalTokens(parseStoredJson(step.usageJson));
+        if (value == null) {
+          return sum;
+        }
+        return (sum ?? 0) + value;
+      }, null);
+      const errorArtifact = row.errorArtifactId
+        ? (errorArtifactById.get(row.errorArtifactId) ?? null)
+        : null;
+
+      return [
+        {
+          runId: row.id,
+          triggerNodeId: row.triggerNodeId,
+          displayNodeId,
+          status: row.status,
+          stepCount: stepEntries.length,
+          totalTokens,
+          durationMs:
+            typeof row.completedAt === "number"
+              ? Math.max(0, row.completedAt - row.startedAt)
+              : null,
+          errorMessage:
+            row.status === "failed" ? (errorArtifact?.summaryText ?? "AI 回复失败。") : null,
+        } satisfies AgentRunSummaryView,
+      ];
+    })
+    .sort((left, right) => {
+      const leftIndex = activeIndexByNodeId.get(left.displayNodeId) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex = activeIndexByNodeId.get(right.displayNodeId) ?? Number.MAX_SAFE_INTEGER;
+      if (leftIndex !== rightIndex) {
+        return leftIndex - rightIndex;
+      }
+      const leftRun = relevantRuns.find((row) => row.id === left.runId)!;
+      const rightRun = relevantRuns.find((row) => row.id === right.runId)!;
+      return leftRun.createdAt - rightRun.createdAt;
+    });
+}
+
 export function listLatestRuns(threadId: string, limit = 10) {
   getThreadOrThrow(db, threadId);
   return db
@@ -1497,6 +1636,7 @@ export function getThreadView(threadId: string): AgentThreadStateView {
     activePath,
     candidateGroups: buildCandidateGroups(thread.id, activePath),
     latestRuns: listLatestRuns(thread.id),
+    runSummaries: buildRunSummaries(thread.id, activePath),
   };
 }
 
