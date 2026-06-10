@@ -67,6 +67,7 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
               id: input.id,
               name: input.name,
               description: input.description ?? null,
+              defaultBranchId: null,
               createdAt: timestamp,
               updatedAt: timestamp,
             }),
@@ -130,9 +131,14 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
 
   const projectList = [...(projects ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
   const project = projectId ? (projectList.find((item) => item.id === projectId) ?? null) : null;
+  const defaultBranchId = project?.defaultBranchId ?? null;
+  const isDefaultWorkspace = (workspace: { branchId: string }) =>
+    defaultBranchId != null && workspace.branchId === defaultBranchId;
   const workspaceList = [...(workspacesQuery.data ?? [])].sort((a, b) => {
-    if (a.isDefault !== b.isDefault) {
-      return a.isDefault ? -1 : 1;
+    const aDefault = isDefaultWorkspace(a);
+    const bDefault = isDefaultWorkspace(b);
+    if (aDefault !== bDefault) {
+      return aDefault ? -1 : 1;
     }
     return b.updatedAt - a.updatedAt;
   });
@@ -508,6 +514,9 @@ function ProjectDetailView({
   onOpenWorkspace: (_workspaceId: string) => void;
   renderError: React.ReactNode;
 }) {
+  const detailDefaultBranchId = project?.defaultBranchId ?? null;
+  const isDefaultWorkspace = (workspace: { branchId: string }) =>
+    detailDefaultBranchId != null && workspace.branchId === detailDefaultBranchId;
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader
@@ -649,7 +658,7 @@ function ProjectDetailView({
                             <span className="truncate text-sm font-medium text-foreground">
                               {workspace.name}
                             </span>
-                            {workspace.isDefault ? (
+                            {isDefaultWorkspace(workspace) ? (
                               <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-accent-foreground">
                                 默认
                               </span>
