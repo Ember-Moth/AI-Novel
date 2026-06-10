@@ -4,6 +4,7 @@ import {
   foreignKey,
   index,
   integer,
+  primaryKey,
   real,
   sqliteTable,
   text,
@@ -35,11 +36,15 @@ export const projects = sqliteTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     description: text("description"),
+    defaultBranchId: text("default_branch_id").references((): any => branches.id, {
+      onDelete: "set null",
+    }),
     ...timestampColumns,
   },
   (table) => [
     check("projects_name_nonempty", sql`length(${table.name}) > 0`),
     index("projects_updated_at_idx").on(table.updatedAt),
+    index("projects_default_branch_idx").on(table.defaultBranchId),
   ],
 );
 
@@ -50,8 +55,10 @@ export const workspaces = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    branchId: text("branch_id")
+      .notNull()
+      .references((): any => branches.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
     contentRootId: text("content_root_id"),
     auxRootId: text("aux_root_id"),
     ...timestampColumns,
@@ -59,7 +66,112 @@ export const workspaces = sqliteTable(
   (table) => [
     check("workspaces_name_nonempty", sql`length(${table.name}) > 0`),
     uniqueIndex("workspaces_project_name_idx").on(table.projectId, table.name),
+    uniqueIndex("workspaces_branch_idx").on(table.branchId),
     index("workspaces_project_idx").on(table.projectId),
+  ],
+);
+
+export const blobs = sqliteTable("blobs", {
+  id: text("id").primaryKey(),
+  content: text("content").notNull(),
+  createdAt: integer("created_at", { mode: "number" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+export const treeObjects = sqliteTable(
+  "tree_objects",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    createdAt: integer("created_at", { mode: "number" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    check(
+      "tree_objects_kind_valid",
+      sql`${table.kind} IN ('root', 'content_node', 'aux_node', 'timeline')`,
+    ),
+    index("tree_objects_project_idx").on(table.projectId),
+  ],
+);
+
+export const commits = sqliteTable(
+  "commits",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    treeId: text("tree_id")
+      .notNull()
+      .references(() => treeObjects.id, { onDelete: "restrict" }),
+    message: text("message").notNull(),
+    author: text("author"),
+    committedAt: integer("committed_at", { mode: "number" }).notNull(),
+    createdAt: integer("created_at", { mode: "number" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("commits_project_idx").on(table.projectId),
+    index("commits_tree_idx").on(table.treeId),
+  ],
+);
+
+export const commitParents = sqliteTable(
+  "commit_parents",
+  {
+    commitId: text("commit_id")
+      .notNull()
+      .references(() => commits.id, { onDelete: "cascade" }),
+    parentId: text("parent_id")
+      .notNull()
+      .references(() => commits.id, { onDelete: "restrict" }),
+    parentIndex: integer("parent_index").notNull(),
+    mergeRole: text("merge_role").notNull().default("normal"),
+    createdAt: integer("created_at", { mode: "number" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    check(
+      "commit_parents_merge_role_valid",
+      sql`${table.mergeRole} IN ('normal', 'mainline', 'merged')`,
+    ),
+    check("commit_parents_not_self", sql`${table.commitId} <> ${table.parentId}`),
+    primaryKey({ columns: [table.commitId, table.parentId] }),
+    uniqueIndex("commit_parents_commit_index_idx").on(table.commitId, table.parentIndex),
+    index("commit_parents_parent_idx").on(table.parentId),
+  ],
+);
+
+export const branches = sqliteTable(
+  "branches",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    headCommitId: text("head_commit_id").references((): any => commits.id, {
+      onDelete: "set null",
+    }),
+    forkedFromCommitId: text("forked_from_commit_id").references((): any => commits.id, {
+      onDelete: "set null",
+    }),
+    ...timestampColumns,
+  },
+  (table) => [
+    check("branches_name_nonempty", sql`length(${table.name}) > 0`),
+    uniqueIndex("branches_project_name_idx").on(table.projectId, table.name),
+    index("branches_project_idx").on(table.projectId),
+    index("branches_head_commit_idx").on(table.headCommitId),
   ],
 );
 

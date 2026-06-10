@@ -328,6 +328,58 @@ CREATE TABLE `aux_nodes` (
 );
 --> statement-breakpoint
 CREATE INDEX `aux_nodes_workspace_idx` ON `aux_nodes` (`workspace_id`);--> statement-breakpoint
+CREATE TABLE `blobs` (
+	`id` text PRIMARY KEY NOT NULL,
+	`content` text NOT NULL,
+	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `branches` (
+	`id` text PRIMARY KEY NOT NULL,
+	`project_id` text NOT NULL,
+	`name` text NOT NULL,
+	`head_commit_id` text,
+	`forked_from_commit_id` text,
+	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`head_commit_id`) REFERENCES `commits`(`id`) ON UPDATE no action ON DELETE set null,
+	FOREIGN KEY (`forked_from_commit_id`) REFERENCES `commits`(`id`) ON UPDATE no action ON DELETE set null,
+	CONSTRAINT "branches_name_nonempty" CHECK(length("branches"."name") > 0)
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `branches_project_name_idx` ON `branches` (`project_id`,`name`);--> statement-breakpoint
+CREATE INDEX `branches_project_idx` ON `branches` (`project_id`);--> statement-breakpoint
+CREATE INDEX `branches_head_commit_idx` ON `branches` (`head_commit_id`);--> statement-breakpoint
+CREATE TABLE `commit_parents` (
+	`commit_id` text NOT NULL,
+	`parent_id` text NOT NULL,
+	`parent_index` integer NOT NULL,
+	`merge_role` text DEFAULT 'normal' NOT NULL,
+	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	PRIMARY KEY(`commit_id`, `parent_id`),
+	FOREIGN KEY (`commit_id`) REFERENCES `commits`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`parent_id`) REFERENCES `commits`(`id`) ON UPDATE no action ON DELETE restrict,
+	CONSTRAINT "commit_parents_merge_role_valid" CHECK("commit_parents"."merge_role" IN ('normal', 'mainline', 'merged')),
+	CONSTRAINT "commit_parents_not_self" CHECK("commit_parents"."commit_id" <> "commit_parents"."parent_id")
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `commit_parents_commit_index_idx` ON `commit_parents` (`commit_id`,`parent_index`);--> statement-breakpoint
+CREATE INDEX `commit_parents_parent_idx` ON `commit_parents` (`parent_id`);--> statement-breakpoint
+CREATE TABLE `commits` (
+	`id` text PRIMARY KEY NOT NULL,
+	`project_id` text NOT NULL,
+	`tree_id` text NOT NULL,
+	`message` text NOT NULL,
+	`author` text,
+	`committed_at` integer NOT NULL,
+	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`tree_id`) REFERENCES `tree_objects`(`id`) ON UPDATE no action ON DELETE restrict
+);
+--> statement-breakpoint
+CREATE INDEX `commits_project_idx` ON `commits` (`project_id`);--> statement-breakpoint
+CREATE INDEX `commits_tree_idx` ON `commits` (`tree_id`);--> statement-breakpoint
 CREATE TABLE `content_nodes` (
 	`id` text PRIMARY KEY NOT NULL,
 	`workspace_id` text NOT NULL,
@@ -363,12 +415,15 @@ CREATE TABLE `projects` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`description` text,
+	`default_branch_id` text,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	FOREIGN KEY (`default_branch_id`) REFERENCES `branches`(`id`) ON UPDATE no action ON DELETE set null,
 	CONSTRAINT "projects_name_nonempty" CHECK(length("projects"."name") > 0)
 );
 --> statement-breakpoint
 CREATE INDEX `projects_updated_at_idx` ON `projects` (`updated_at`);--> statement-breakpoint
+CREATE INDEX `projects_default_branch_idx` ON `projects` (`default_branch_id`);--> statement-breakpoint
 CREATE TABLE `timeline_points` (
 	`id` text PRIMARY KEY NOT NULL,
 	`workspace_id` text NOT NULL,
@@ -390,18 +445,31 @@ CREATE UNIQUE INDEX `timeline_points_workspace_id_idx` ON `timeline_points` (`wo
 CREATE UNIQUE INDEX `timeline_points_prev_point_idx` ON `timeline_points` (`prev_point_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `timeline_points_single_origin_successor_per_workspace_idx` ON `timeline_points` (`workspace_id`) WHERE "timeline_points"."prev_point_id" IS NULL;--> statement-breakpoint
 CREATE INDEX `timeline_points_workspace_idx` ON `timeline_points` (`workspace_id`);--> statement-breakpoint
+CREATE TABLE `tree_objects` (
+	`id` text PRIMARY KEY NOT NULL,
+	`project_id` text NOT NULL,
+	`kind` text NOT NULL,
+	`payload_json` text NOT NULL,
+	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade,
+	CONSTRAINT "tree_objects_kind_valid" CHECK("tree_objects"."kind" IN ('root', 'content_node', 'aux_node', 'timeline'))
+);
+--> statement-breakpoint
+CREATE INDEX `tree_objects_project_idx` ON `tree_objects` (`project_id`);--> statement-breakpoint
 CREATE TABLE `workspaces` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
+	`branch_id` text NOT NULL,
 	`name` text NOT NULL,
-	`is_default` integer DEFAULT false NOT NULL,
 	`content_root_id` text,
 	`aux_root_id` text,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`branch_id`) REFERENCES `branches`(`id`) ON UPDATE no action ON DELETE cascade,
 	CONSTRAINT "workspaces_name_nonempty" CHECK(length("workspaces"."name") > 0)
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `workspaces_project_name_idx` ON `workspaces` (`project_id`,`name`);--> statement-breakpoint
+CREATE UNIQUE INDEX `workspaces_branch_idx` ON `workspaces` (`branch_id`);--> statement-breakpoint
 CREATE INDEX `workspaces_project_idx` ON `workspaces` (`project_id`);
