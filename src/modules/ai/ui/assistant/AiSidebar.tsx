@@ -31,6 +31,7 @@ import type {
   AiProjectMessageView,
 } from "@/modules/ai/domain/types";
 import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
+import { InlineEditInput } from "@/shared/ui/InlineEditableText";
 import { rpc } from "@/rpc/client";
 
 type ConnectionModelGroup = NonNullable<
@@ -677,7 +678,7 @@ function SessionActionButton({
         event.stopPropagation();
         onClick();
       }}
-      className="flex size-6 items-center justify-center text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      className="flex size-6 items-center justify-center rounded-md text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
     >
       <span className={`text-[16px] ${icon}`} />
     </button>
@@ -711,41 +712,57 @@ function HeadRow({
   onArchive: () => void;
   onRestore: () => void;
 }) {
+  const editingInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isEditing) {
+      return;
+    }
+
+    editingInputRef.current?.focus();
+    editingInputRef.current?.select();
+  }, [isEditing]);
+
+  const titleLabel = isActive ? "当前会话" : head.isArchived ? "已归档" : "点击切换";
+  const rowClassName = `group flex w-full items-center gap-2 overflow-hidden px-3 py-2 text-left transition ${
+    isActive || isEditing
+      ? "bg-list-active-background text-foreground"
+      : "text-foreground-muted hover:bg-list-hover-background hover:text-foreground"
+  } disabled:cursor-not-allowed disabled:opacity-50`;
+
   if (isEditing) {
     return (
-      <div
-        className="flex items-center gap-2 overflow-hidden border border-border bg-editor-background px-2"
-        style={{ height: `${HEAD_ROW_HEIGHT}px` }}
-      >
-        <input
-          value={editingName}
-          onChange={(event) => onEditingNameChange(event.target.value)}
-          disabled={isBusy}
-          autoFocus
-          className="min-w-0 flex-1 border border-border bg-sidebar-background px-2 py-1 text-[12px] text-foreground outline-none focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
-          placeholder="会话名称"
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              onRenameSubmit();
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              onRenameCancel();
-            }
+      <div className={rowClassName} style={{ height: `${HEAD_ROW_HEIGHT}px` }}>
+        <span
+          className={`shrink-0 text-[16px] ${
+            head.isArchived
+              ? "icon-[material-symbols--inventory-2] text-foreground-muted"
+              : isActive
+                ? "icon-[material-symbols--chat] text-accent-foreground"
+                : "icon-[material-symbols--chat-outline]"
+          }`}
+        />
+        <InlineEditInput
+          inputRef={editingInputRef}
+          inputProps={{
+            value: editingName,
+            disabled: isBusy,
+            onChange: (event) => onEditingNameChange(event.target.value),
+            onBlur: () => void onRenameSubmit(),
+            onClick: (event) => event.stopPropagation(),
+            onDoubleClick: (event) => event.stopPropagation(),
+            onKeyDown: (event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void onRenameSubmit();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                onRenameCancel();
+              }
+            },
           }}
-        />
-        <SessionActionButton
-          icon="icon-[material-symbols--check]"
-          label="保存会话名称"
-          disabled={isBusy}
-          onClick={onRenameSubmit}
-        />
-        <SessionActionButton
-          icon="icon-[material-symbols--close]"
-          label="取消重命名"
-          disabled={isBusy}
-          onClick={onRenameCancel}
+          placeholder="会话名称"
+          className="box-border h-5.5 min-w-0 flex-1 rounded border border-border bg-editor-background px-1.5 text-[12px] leading-5.5 text-foreground outline-none select-text focus:border-accent-foreground"
         />
       </div>
     );
@@ -757,11 +774,7 @@ function HeadRow({
       onClick={onActivate}
       disabled={isBusy || head.isArchived}
       style={{ height: `${HEAD_ROW_HEIGHT}px` }}
-      className={`group flex w-full items-center gap-2 px-3 py-2 text-left transition ${
-        isActive
-          ? "bg-list-active-background text-foreground"
-          : "text-foreground-muted hover:bg-list-hover-background hover:text-foreground"
-      } overflow-hidden disabled:cursor-not-allowed disabled:opacity-50`}
+      className={rowClassName}
     >
       <span
         className={`shrink-0 text-[16px] ${
@@ -774,9 +787,7 @@ function HeadRow({
       />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[12px] font-medium">{head.name}</span>
-        <span className="block text-[10px] text-foreground-muted">
-          {isActive ? "当前会话" : head.isArchived ? "已归档" : "点击切换"}
-        </span>
+        <span className="block text-[10px] text-foreground-muted">{titleLabel}</span>
       </span>
       <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
         {!head.isArchived ? (
@@ -1156,18 +1167,25 @@ export function AiSidebar({ projectId }: { projectId: string }) {
       return;
     }
 
+    const normalizedName = editingHead.name.trim();
+    const currentHead = heads.find((head) => head.id === editingHead.headId) ?? null;
+    if (currentHead && normalizedName === currentHead.name.trim()) {
+      setEditingHead(null);
+      return;
+    }
+
     setComposerError(null);
 
     try {
       await renameProjectHead.mutate({
         headId: editingHead.headId,
-        name: editingHead.name,
+        name: normalizedName,
       });
       setEditingHead(null);
     } catch (error) {
       setComposerError(error instanceof Error ? error.message : "重命名会话失败。");
     }
-  }, [editingHead, renameProjectHead]);
+  }, [editingHead, heads, renameProjectHead]);
 
   const handleArchiveToggle = useCallback(
     async (head: AiProjectHeadView, archived: boolean) => {
