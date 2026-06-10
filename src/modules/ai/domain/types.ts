@@ -20,6 +20,28 @@ export type AiProjectGenerationAttemptRow = InferSelectModel<
 export type AiProjectMessageRole = "system" | "user" | "assistant" | "tool";
 export type AiGenerationAttemptStatus = "pending" | "success" | "error";
 export type AiSelectionSnapshotOrigin = "catalog" | "custom";
+export type ProjectAssistantToolTraceStatus = "success" | "error";
+
+export interface ProjectAssistantContextSnapshot {
+  workspaceId: string | null;
+  activeContentNodeId: string | null;
+  activeContentTitle: string | null;
+  activeAuxNodeId: string | null;
+  activeAuxPath: string | null;
+  activeTimelinePointId: string | null;
+  activeTimelineLabel: string | null;
+}
+
+export interface ProjectAssistantToolTraceEntry {
+  toolName: string;
+  summary: string;
+  status: ProjectAssistantToolTraceStatus;
+}
+
+export interface AiAssistantMessageMetadata {
+  finishReason?: string;
+  toolTrace?: ProjectAssistantToolTraceEntry[];
+}
 
 export interface AiSelectionCapabilitySnapshot {
   supportsVision: boolean;

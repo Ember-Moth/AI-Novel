@@ -11,6 +11,9 @@ const { db, schema } = await import("@/db");
 const logs = await import("@/modules/ai/domain/logs");
 const { PROJECT_ASSISTANT_SYSTEM_PROMPT_ID, createProjectAssistantService } =
   await import("./project-assistant");
+const { createAssistantReadOnlyTools } = await import("./assistant-tools");
+const { createContentNode, createDefaultWorkspace, createTimelinePoint, mkdirAt, writeFileAt } =
+  await import("@/modules/workspace/domain");
 
 function seedProject(projectId: string) {
   db.insert(schema.projects)
@@ -22,16 +25,23 @@ function seedProject(projectId: string) {
     .run();
 }
 
+async function executeTool<T>(execute: any, input: Record<string, unknown>) {
+  expect(execute).toBeTruthy();
+  return (await execute?.(input, {})) as T;
+}
+
 function seedCustomConnection({
   connectionId,
   modelId,
   modelRowId,
   apiKey = "sk-test",
+  supportsToolUse = false,
 }: {
   connectionId: string;
   modelId: string;
   modelRowId: string;
   apiKey?: string | null;
+  supportsToolUse?: boolean;
 }) {
   db.insert(schema.aiConnections)
     .values({
@@ -52,6 +62,7 @@ function seedCustomConnection({
       modelId,
       displayName: "Story Model",
       supportsReasoning: true,
+      supportsToolUse,
       isEnabled: true,
     })
     .run();
@@ -75,7 +86,9 @@ function getText(content: unknown) {
 }
 
 beforeEach(() => {
+  db.run("PRAGMA foreign_keys = OFF;");
   db.delete(schema.globalConfigOptions).run();
+  db.delete(schema.aiProjectAssistantState).run();
   db.delete(schema.aiProjectGenerationAttempts).run();
   db.delete(schema.aiProjectHeads).run();
   db.delete(schema.aiProjectMessages).run();
@@ -91,6 +104,7 @@ beforeEach(() => {
   db.delete(schema.auxNodes).run();
   db.delete(schema.workspaces).run();
   db.delete(schema.projects).run();
+  db.run("PRAGMA foreign_keys = ON;");
 });
 
 afterAll(() => {
@@ -113,6 +127,7 @@ test("send appends messages to the explicit head and records attempt state", asy
         text: "Assistant reply",
         usage: { totalTokens: 42 },
         finishReason: "stop",
+        toolTrace: [],
       };
     },
   });
@@ -151,6 +166,7 @@ test("send uses the provided head and makes it the active assistant session", as
       text: "Follow-up",
       usage: null,
       finishReason: "stop",
+      toolTrace: [],
     }),
   });
 
@@ -201,6 +217,7 @@ test("retry reuses the trigger user message and appends only a new assistant rep
       text: "Retried reply",
       usage: { totalTokens: 9 },
       finishReason: "stop",
+      toolTrace: [],
     }),
   });
 
@@ -280,6 +297,7 @@ test("send rejects while the head has a pending attempt", async () => {
       text: "unused",
       usage: null,
       finishReason: "stop",
+      toolTrace: [],
     }),
   });
 
@@ -300,6 +318,190 @@ test("send rejects while the head has a pending attempt", async () => {
       text: "Blocked",
     }),
   ).rejects.toThrow("当前会话正在生成回复，请稍后再试。");
+});
+
+test("tool-capable models enable read-only tool mode and persist tool trace metadata", async () => {
+  seedProject("assistant_tool_mode");
+  const seeded = seedCustomConnection({
+    connectionId: "conn_tool_mode",
+    modelId: "story-model",
+    modelRowId: "cmodel_tool_mode",
+    supportsToolUse: true,
+  });
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+    generateAssistantText: async ({ toolMode, context, system }) => {
+      expect(toolMode).toBe("auto-read-only");
+      expect(context).toEqual({
+        workspaceId: "workspace_main",
+        activeContentNodeId: "content_scene_1",
+        activeContentTitle: "Scene 1",
+        activeAuxNodeId: "aux_notes",
+        activeAuxPath: "notes/scene-1.md",
+        activeTimelinePointId: "timeline_now",
+        activeTimelineLabel: "现在",
+      });
+      expect(system).toContain("当前编辑上下文");
+      expect(system).toContain("Scene 1");
+      expect(system).toContain("notes/scene-1.md");
+
+      return {
+        text: "结合资料后给出的建议",
+        usage: { totalTokens: 15 },
+        finishReason: "stop",
+        toolTrace: [
+          {
+            toolName: "read_current_writing_context",
+            summary: "读取写作上下文：Scene 1",
+            status: "success",
+          },
+        ],
+      };
+    },
+  });
+  const head = logs.createAssistantSession("assistant_tool_mode");
+
+  const result = await service.sendProjectAssistantMessage({
+    projectId: "assistant_tool_mode",
+    headId: head.id,
+    text: "继续这一段",
+    context: {
+      workspaceId: "workspace_main",
+      activeContentNodeId: " content_scene_1 ",
+      activeContentTitle: " Scene 1 ",
+      activeAuxNodeId: " aux_notes ",
+      activeAuxPath: " notes/scene-1.md ",
+      activeTimelinePointId: " timeline_now ",
+      activeTimelineLabel: " 现在 ",
+    },
+  });
+
+  expect(result.assistantMessage.metadata).toEqual({
+    finishReason: "stop",
+    toolTrace: [
+      {
+        toolName: "read_current_writing_context",
+        summary: "读取写作上下文：Scene 1",
+        status: "success",
+      },
+    ],
+  });
+  expect((result.attempt.request as Record<string, unknown>).toolMode).toBe("auto-read-only");
+  expect((result.attempt.request as Record<string, unknown>).contextMode).toBe("editor-selection");
+  expect((result.attempt.request as Record<string, unknown>).contextSnapshot).toEqual({
+    workspaceId: "workspace_main",
+    activeContentNodeId: "content_scene_1",
+    activeContentTitle: "Scene 1",
+    activeAuxNodeId: "aux_notes",
+    activeAuxPath: "notes/scene-1.md",
+    activeTimelinePointId: "timeline_now",
+    activeTimelineLabel: "现在",
+  });
+});
+
+test("read_current_writing_context returns truncated read-only data", async () => {
+  seedProject("assistant_tools_context");
+  const workspace = createDefaultWorkspace("assistant_tools_context");
+  const timeline = createTimelinePoint({
+    workspaceId: workspace.id,
+    key: "now",
+    label: "现在",
+  });
+  const contentNode = createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    anchorPointId: timeline.id,
+    title: "Scene 1",
+    body: "A".repeat(2_500),
+  });
+  const notesDir = mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: timeline.id,
+    parentDirId: workspace.auxRootId!,
+    name: "notes",
+  });
+  writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: timeline.id,
+    parentDirId: notesDir.id,
+    name: "scene-1.md",
+    content: "B".repeat(3_500),
+  });
+
+  const tools = createAssistantReadOnlyTools({
+    projectId: "assistant_tools_context",
+    context: {
+      workspaceId: workspace.id,
+      activeContentNodeId: contentNode.id,
+      activeContentTitle: "Scene 1",
+      activeAuxNodeId: null,
+      activeAuxPath: null,
+      activeTimelinePointId: timeline.id,
+      activeTimelineLabel: "现在",
+    },
+  });
+  const result = await executeTool<
+    | {
+        ok: true;
+        truncated: boolean;
+        data: {
+          contentNode: {
+            title: string | null;
+            body: string | null;
+          };
+          auxSnapshot: Array<{
+            path: string;
+            content: string | null;
+          }>;
+        };
+      }
+    | { ok: false; error: string }
+  >(tools.read_current_writing_context.execute, {});
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) {
+    return;
+  }
+
+  expect(result.truncated).toBe(true);
+  expect(result.data.contentNode.title).toBe("Scene 1");
+  expect(result.data.contentNode.body?.endsWith("…")).toBe(true);
+  expect(result.data.auxSnapshot.some((node) => node.path.includes("scene-1.md"))).toBe(true);
+  const auxFile = result.data.auxSnapshot.find((node) => node.path.includes("scene-1.md"));
+  expect(auxFile?.content?.endsWith("…")).toBe(true);
+});
+
+test("read_aux_path returns a structured error envelope when the path is missing", async () => {
+  seedProject("assistant_tools_missing_aux");
+  const workspace = createDefaultWorkspace("assistant_tools_missing_aux");
+  const timeline = createTimelinePoint({
+    workspaceId: workspace.id,
+    key: "now",
+    label: "现在",
+  });
+  const tools = createAssistantReadOnlyTools({
+    projectId: "assistant_tools_missing_aux",
+    context: {
+      workspaceId: workspace.id,
+      activeContentNodeId: null,
+      activeContentTitle: null,
+      activeAuxNodeId: null,
+      activeAuxPath: null,
+      activeTimelinePointId: timeline.id,
+      activeTimelineLabel: "现在",
+    },
+  });
+  const result = await executeTool<{ ok: false; error: string } | { ok: true }>(
+    tools.read_aux_path.execute,
+    {
+      path: "notes/missing.md",
+    },
+  );
+
+  expect(result).toEqual({
+    ok: false,
+    error: "辅助资料不存在或在当前时间点不可见。",
+  });
 });
 
 function getAttemptErrorMessage(error: unknown) {

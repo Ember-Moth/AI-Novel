@@ -1,7 +1,10 @@
 import type {
+  AiAssistantMessageMetadata,
   AiProjectGenerationAttemptView,
   AiProjectHeadView,
   AiProjectMessageView,
+  ProjectAssistantContextSnapshot,
+  ProjectAssistantToolTraceEntry,
 } from "@/modules/ai/domain/types";
 
 export type AssistantState = {
@@ -60,6 +63,67 @@ export function getMessageText(content: unknown) {
 
   const text = Reflect.get(content as Record<string, unknown>, "text");
   return typeof text === "string" ? text : "";
+}
+
+export function getAssistantMessageMetadata(metadata: unknown): AiAssistantMessageMetadata | null {
+  if (!metadata || typeof metadata !== "object") {
+    return null;
+  }
+
+  const rawToolTrace = Reflect.get(metadata as Record<string, unknown>, "toolTrace");
+  const toolTrace = Array.isArray(rawToolTrace)
+    ? rawToolTrace.flatMap((entry): ProjectAssistantToolTraceEntry[] => {
+        if (!entry || typeof entry !== "object") {
+          return [];
+        }
+
+        const toolName = Reflect.get(entry as Record<string, unknown>, "toolName");
+        const summary = Reflect.get(entry as Record<string, unknown>, "summary");
+        const status = Reflect.get(entry as Record<string, unknown>, "status");
+        if (
+          typeof toolName !== "string" ||
+          typeof summary !== "string" ||
+          (status !== "success" && status !== "error")
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            toolName,
+            summary,
+            status,
+          },
+        ];
+      })
+    : [];
+  const finishReason = Reflect.get(metadata as Record<string, unknown>, "finishReason");
+
+  return {
+    finishReason: typeof finishReason === "string" ? finishReason : undefined,
+    toolTrace,
+  };
+}
+
+export function getAssistantToolTrace(metadata: unknown) {
+  return getAssistantMessageMetadata(metadata)?.toolTrace ?? [];
+}
+
+export function listAssistantContextDetails(context: ProjectAssistantContextSnapshot) {
+  return [
+    {
+      label: "正文",
+      value: context.activeContentTitle ?? "未选中",
+    },
+    {
+      label: "辅助",
+      value: context.activeAuxPath ?? "未选中",
+    },
+    {
+      label: "时间",
+      value: context.activeTimelineLabel ?? "未选中",
+    },
+  ];
 }
 
 export function selectRetryableAttempt(

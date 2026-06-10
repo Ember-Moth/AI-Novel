@@ -47,6 +47,7 @@ import { createId, invariant, now } from "@/shared/lib/domain";
 import type {
   AiCatalogModelView,
   AiCatalogProviderView,
+  ProjectAssistantContextSnapshot,
   AiCatalogStatusView,
   AiConnectionRow,
   AiProjectGenerationAttemptView,
@@ -173,12 +174,14 @@ interface SendProjectAssistantMessageInput {
   projectId: string;
   headId: string;
   text: string;
+  context?: ProjectAssistantContextSnapshot | null;
 }
 
 interface RetryProjectAssistantMessageInput {
   projectId: string;
   headId: string;
   triggerMessageId: string;
+  context?: ProjectAssistantContextSnapshot | null;
 }
 
 type RpcMutationCtx = MutationCtx<RpcTagList>;
@@ -837,12 +840,13 @@ export const sendProjectAssistantMessage = mutation<
   SendProjectAssistantMessageInput,
   ProjectAssistantSendResult,
   RpcTagList
->(async ({ projectId, headId, text }, ctx) => {
+>(async ({ projectId, headId, text, context }, ctx) => {
   try {
     const result = await getProjectAssistantService().sendProjectAssistantMessage({
       projectId,
       headId,
       text,
+      context,
     });
     invalidateProjectAiState(ctx, projectId, {
       headId: result.head.id,
@@ -860,12 +864,13 @@ export const retryProjectAssistantMessage = mutation<
   RetryProjectAssistantMessageInput,
   ProjectAssistantRetryResult,
   RpcTagList
->(async ({ projectId, headId, triggerMessageId }, ctx) => {
+>(async ({ projectId, headId, triggerMessageId, context }, ctx) => {
   try {
     const result = await getProjectAssistantService().retryProjectAssistantMessage({
       projectId,
       headId,
       triggerMessageId,
+      context,
     });
     invalidateProjectAiState(ctx, projectId, {
       headId: result.head.id,

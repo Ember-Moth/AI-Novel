@@ -1,4 +1,5 @@
 import { AnimatePresence } from "./AiSidebarView";
+import type { ProjectAssistantContextSnapshot } from "@/modules/ai/domain/types";
 import {
   AnimatedHeadRow,
   ArchivedSectionToggleRow,
@@ -9,15 +10,27 @@ import {
   SessionStatusOverlay,
 } from "./AiSidebarView";
 import { AiAssistantSheetLayout } from "./AiAssistantSheetLayout";
-import { getAttemptErrorMessage, getMessageText } from "./assistantState";
+import {
+  getAssistantToolTrace,
+  getAttemptErrorMessage,
+  getMessageText,
+  listAssistantContextDetails,
+} from "./assistantState";
 import { useAiAssistantController } from "./useAiAssistantController";
 import { useAssistantSheetLayout } from "./useAssistantSheetLayout";
 
-export function AiSidebar({ projectId }: { projectId: string }) {
-  const controller = useAiAssistantController(projectId);
+export function AiSidebar({
+  projectId,
+  contextSnapshot,
+}: {
+  projectId: string;
+  contextSnapshot: ProjectAssistantContextSnapshot;
+}) {
+  const controller = useAiAssistantController(projectId, contextSnapshot);
   const layout = useAssistantSheetLayout({
     defaultState: "peek",
   });
+  const contextDetails = listAssistantContextDetails(controller.contextSnapshot);
 
   return (
     <aside className="flex h-full w-80 max-w-[38vw] min-w-72 shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar-background">
@@ -121,6 +134,7 @@ export function AiSidebar({ projectId }: { projectId: string }) {
 
             {controller.messages.map((message) => {
               const text = getMessageText(message.content);
+              const toolTrace = getAssistantToolTrace(message.metadata);
               const isUser = message.role === "user";
               const showRetryError = controller.retryableAttempt?.triggerMessageId === message.id;
               const showServerPending = controller.pendingAttempt?.triggerMessageId === message.id;
@@ -156,6 +170,23 @@ export function AiSidebar({ projectId }: { projectId: string }) {
                       <PendingAssistantBubble label="正在生成回复..." />
                     </div>
                   ) : null}
+
+                  {!isUser && toolTrace.length > 0 ? (
+                    <div className="mt-2 flex flex-col gap-1.5 px-1">
+                      {toolTrace.map((entry, index) => (
+                        <div
+                          key={`${message.id}:${entry.toolName}:${index}`}
+                          className={`rounded-md border px-2 py-1 text-[11px] leading-4 ${
+                            entry.status === "error"
+                              ? "border-accent-foreground/30 bg-accent-foreground/5 text-accent-foreground"
+                              : "border-border bg-editor-background text-foreground-muted"
+                          }`}
+                        >
+                          {entry.summary}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
@@ -175,6 +206,23 @@ export function AiSidebar({ projectId }: { projectId: string }) {
         composerPane={
           <form className="shrink-0" aria-label="AI 对话输入" onSubmit={controller.handleSubmit}>
             <div className="space-y-2 p-2">
+              <div className="rounded-lg border border-border bg-sidebar-background px-2.5 py-2">
+                <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-foreground-muted">
+                  <span className="icon-[material-symbols--my-location] text-sm text-accent-foreground" />
+                  <span>当前上下文</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {contextDetails.map((item) => (
+                    <span
+                      key={item.label}
+                      className="rounded-md border border-border bg-editor-background px-2 py-1 text-[11px] leading-4 text-foreground"
+                    >
+                      <span className="text-foreground-muted">{item.label}:</span> {item.value}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
               <div className="overflow-hidden rounded-lg border border-border bg-editor-background focus-within:border-accent-foreground">
                 <textarea
                   value={controller.draft}

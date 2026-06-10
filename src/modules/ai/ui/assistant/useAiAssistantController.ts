@@ -1,7 +1,7 @@
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { AiProjectHeadView } from "@/modules/ai/domain/types";
+import type { AiProjectHeadView, ProjectAssistantContextSnapshot } from "@/modules/ai/domain/types";
 import { rpc } from "@/rpc/client";
 
 import {
@@ -102,7 +102,10 @@ export function resolveExpectedActiveHeadAfterArchiveToggle({
   return null;
 }
 
-export function useAiAssistantController(projectId: string) {
+export function useAiAssistantController(
+  projectId: string,
+  contextSnapshot: ProjectAssistantContextSnapshot,
+) {
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [draft, setDraft] = useState("");
@@ -273,7 +276,12 @@ export function useAiAssistantController(projectId: string) {
       setDraft("");
 
       try {
-        await sendMessage.mutate({ projectId, headId: activeHeadId, text });
+        await sendMessage.mutate({
+          projectId,
+          headId: activeHeadId,
+          text,
+          context: contextSnapshot,
+        });
       } catch (error) {
         setDraft(text);
         setComposerError(error instanceof Error ? error.message : "发送消息失败。");
@@ -281,7 +289,7 @@ export function useAiAssistantController(projectId: string) {
         setPendingAction(null);
       }
     },
-    [activeHeadId, canSubmit, draft, projectId, sendMessage],
+    [activeHeadId, canSubmit, contextSnapshot, draft, projectId, sendMessage],
   );
 
   const handleRetry = useCallback(
@@ -294,14 +302,19 @@ export function useAiAssistantController(projectId: string) {
       setPendingAction({ kind: "retry", triggerMessageId });
 
       try {
-        await retryMessage.mutate({ projectId, headId: activeHeadId, triggerMessageId });
+        await retryMessage.mutate({
+          projectId,
+          headId: activeHeadId,
+          triggerMessageId,
+          context: contextSnapshot,
+        });
       } catch (error) {
         setComposerError(error instanceof Error ? error.message : "重试失败。");
       } finally {
         setPendingAction(null);
       }
     },
-    [activeHeadId, projectId, retryMessage],
+    [activeHeadId, contextSnapshot, projectId, retryMessage],
   );
 
   const handleCreateSession = useCallback(async () => {
@@ -435,6 +448,7 @@ export function useAiAssistantController(projectId: string) {
     setShowArchivedHeads,
     showEmptyState,
     assistantStateIsInitialLoading: assistantStateQuery.isInitialLoading,
+    contextSnapshot,
     hasDraft: draft.trim().length > 0,
   };
 }

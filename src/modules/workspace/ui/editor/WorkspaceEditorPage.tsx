@@ -1,7 +1,9 @@
 import { ScopeProvider, useMolecule } from "bunshi/react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useMemo } from "react";
 
 import { AppShell, AppSidebar } from "@/app/shell/AppShell";
+import type { ProjectAssistantContextSnapshot } from "@/modules/ai/domain/types";
 import { ActionErrorBubble } from "@/modules/workspace/ui/editor/components/ActionErrorBubble";
 import { AiSidebar } from "@/modules/ai/ui/assistant/AiSidebar";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
@@ -101,6 +103,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
     activeContentNode,
     activeAuxNode,
     activeTimelineLabel,
+    browsingTimelineLabel,
   } = selection;
   const { editorBody, editorContent, activeSaveState, auxSaveState, editorTarget } = editorView;
   const { pageErrorDismissed, setPageErrorDismissed } = pageErrorState;
@@ -110,6 +113,27 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
 
   const pageErrorBubble =
     pageError && !pageErrorDismissed ? { message: pageError, anchorId: PAGE_ERROR_ANCHOR } : null;
+  const assistantContext = useMemo<ProjectAssistantContextSnapshot>(
+    () => ({
+      workspaceId: workspaceId ?? null,
+      activeContentNodeId,
+      activeContentTitle: activeContentNode?.title ?? null,
+      activeAuxNodeId,
+      activeAuxPath: activeAuxNode?.path ?? null,
+      activeTimelinePointId,
+      activeTimelineLabel: browsingTimelineLabel ?? activeTimelineLabel,
+    }),
+    [
+      activeAuxNode?.path,
+      activeAuxNodeId,
+      activeContentNode?.title,
+      activeContentNodeId,
+      activeTimelineLabel,
+      activeTimelinePointId,
+      browsingTimelineLabel,
+      workspaceId,
+    ],
+  );
 
   if (workspaceInitialLoading) {
     return (
@@ -322,7 +346,7 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
               onAuxContentChange={actions.handleAuxContentChange}
             />
           </div>
-          <AiSidebar projectId={projectId} />
+          <AiSidebar projectId={projectId} contextSnapshot={assistantContext} />
         </div>
       </AppShell>
     </>
