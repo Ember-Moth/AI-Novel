@@ -95,7 +95,8 @@
 }
 
 .os-theme-panel,
-.os-theme-card {
+.os-theme-card,
+.os-theme-inline {
   --os-handle-bg: var(--color-scrollbar-thumb);
   --os-handle-bg-hover: var(--color-scrollbar-thumb-hover);
   --os-handle-bg-active: var(--color-scrollbar-thumb-dragging);
@@ -125,15 +126,29 @@
   --os-handle-perpendicular-size-active: 6px;
 }
 
+.os-theme-inline {
+  --os-size: 8px;
+  --os-padding-perpendicular: 0;
+  --os-padding-axis: 2px;
+  --os-track-border-radius: 999px;
+  --os-handle-border-radius: 999px;
+  --os-handle-min-size: 24px;
+  --os-handle-perpendicular-size: 4px;
+  --os-handle-perpendicular-size-hover: 5px;
+  --os-handle-perpendicular-size-active: 5px;
+}
+
 .os-theme-panel.os-scrollbar,
-.os-theme-card.os-scrollbar {
+.os-theme-card.os-scrollbar,
+.os-theme-inline.os-scrollbar {
   transition:
     opacity 100ms ease-in,
     visibility 100ms ease-in allow-discrete;
 }
 
 .os-theme-panel.os-scrollbar.os-scrollbar-auto-hide-hidden,
-.os-theme-card.os-scrollbar.os-scrollbar-auto-hide-hidden {
+.os-theme-card.os-scrollbar.os-scrollbar-auto-hide-hidden,
+.os-theme-inline.os-scrollbar.os-scrollbar-auto-hide-hidden {
   transition:
     opacity 500ms ease-out,
     visibility 500ms ease-out allow-discrete;
@@ -143,14 +158,17 @@
   .os-theme-panel.os-scrollbar.os-scrollbar-visible,
   .os-theme-panel.os-scrollbar.os-scrollbar-interaction,
   .os-theme-card.os-scrollbar.os-scrollbar-visible,
-  .os-theme-card.os-scrollbar.os-scrollbar-interaction {
+  .os-theme-card.os-scrollbar.os-scrollbar-interaction,
+  .os-theme-inline.os-scrollbar.os-scrollbar-visible,
+  .os-theme-inline.os-scrollbar.os-scrollbar-interaction {
     opacity: 0;
   }
 }
 
 @media (pointer: coarse) {
   .os-theme-panel.os-scrollbar,
-  .os-theme-card.os-scrollbar {
+  .os-theme-card.os-scrollbar,
+  .os-theme-inline.os-scrollbar {
     display: none !important;
   }
 }
@@ -215,6 +233,7 @@
 }
 
 .ai-markdown [data-streamdown="code-block"] {
+  margin-block: 0.5rem;
   overflow: hidden;
   border-radius: 0.375rem;
   border: 1px solid var(--color-border);
@@ -227,14 +246,21 @@
   border-bottom: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--color-sidebar-background) 88%, transparent);
   color: var(--color-foreground-muted);
-  padding-inline: 0.75rem;
+  padding-inline: 0.625rem;
 }
 
 .ai-markdown [data-streamdown="code-block-body"] {
-  overflow-x: auto;
   border: none;
   background: transparent;
   border-radius: 0;
+  padding: 0;
+}
+
+.ai-markdown .ai-code-scrollbar {
+  max-width: 100%;
+}
+
+.ai-markdown [data-streamdown="code-block-body"] .os-viewport {
   padding: 0.75rem;
 }
 

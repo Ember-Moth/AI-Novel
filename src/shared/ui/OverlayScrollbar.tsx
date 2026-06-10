@@ -1,20 +1,28 @@
 import type { PartialOptions } from "overlayscrollbars";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import { type ReactNode, useEffect } from "react";
+import { type ComponentProps, type ReactNode, useEffect } from "react";
 
-export type OverlayScrollbarVariant = "panel" | "card";
+export type OverlayScrollbarVariant = "panel" | "card" | "inline";
 
 const VARIANT_THEMES: Record<OverlayScrollbarVariant, string> = {
   panel: "os-theme-panel",
   card: "os-theme-card",
+  inline: "os-theme-inline",
 };
 
 function getScrollbarOptions(variant: OverlayScrollbarVariant): PartialOptions {
+  const overflow =
+    variant === "inline"
+      ? {
+          x: "scroll" as const,
+          y: "hidden" as const,
+        }
+      : {
+          x: "scroll" as const,
+          y: "scroll" as const,
+        };
   return {
-    overflow: {
-      x: "scroll",
-      y: "scroll",
-    },
+    overflow,
     scrollbars: {
       theme: VARIANT_THEMES[variant],
       visibility: "auto",
@@ -32,14 +40,20 @@ export function OverlayScrollbar({
   className,
   viewportRef,
   onViewportScroll,
+  ...props
 }: {
   children: ReactNode;
   variant?: OverlayScrollbarVariant;
   className?: string;
   viewportRef?: { current: HTMLElement | null };
   onViewportScroll?: (_event: Event) => void;
-}) {
-  const rootClassName = ["h-full w-full min-h-0 flex-1", className].filter(Boolean).join(" ");
+} & Omit<ComponentProps<"div">, "children" | "className" | "ref">) {
+  const rootClassName = [
+    variant === "inline" ? "w-full max-w-full min-w-0" : "h-full w-full min-h-0 flex-1",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   useEffect(() => {
     return () => {
@@ -68,6 +82,7 @@ export function OverlayScrollbar({
       }}
       className={rootClassName}
       data-overlayscrollbars-initialize
+      {...props}
     >
       {children}
     </OverlayScrollbarsComponent>
