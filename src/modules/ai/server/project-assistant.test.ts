@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import type { ModelMessage } from "ai";
+import { modelMessageSchema, type ModelMessage } from "ai";
 
 const tempDir = mkdtempSync(join(tmpdir(), "novel-evolver-project-assistant-"));
 const dbPath = join(tempDir, "assistant.sqlite");
@@ -608,4 +608,260 @@ test("sendProjectAssistantMessageStream keeps running after subscribers detach",
 
   expect(result.run.status).toBe("succeeded");
   expect(result.state.activePath.map((node) => node.role)).toEqual(["user", "assistant"]);
+});
+
+test("follow-up send after tool results reuses sanitized history messages", async () => {
+  seedProject("assistant_followup_sanitize");
+  const seeded = seedCustomConnection({
+    connectionId: "conn_followup_sanitize",
+    modelId: "story-model",
+    modelRowId: "cmodel_followup_sanitize",
+    supportsToolUse: true,
+  });
+  let invocation = 0;
+  let secondCallMessages: ModelMessage[] | null = null;
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+    streamAssistantText: ((input: { messages: ModelMessage[] }) => {
+      invocation += 1;
+      if (invocation === 1) {
+        return {
+          chunks: (async function* () {
+            yield { type: "start-step", stepNumber: 0 };
+            yield { type: "text-delta", stepNumber: 0, delta: "我先读取设定。" };
+            yield {
+              type: "tool-call",
+              stepNumber: 0,
+              toolCall: {
+                toolCallId: "call_followup",
+                toolName: "read_aux_path",
+                input: { path: "/设定" },
+              },
+            };
+            yield {
+              type: "tool-result",
+              stepNumber: 0,
+              toolResult: {
+                toolCallId: "call_followup",
+                toolName: "read_aux_path",
+                output: {
+                  ok: true,
+                  data: {
+                    path: "/设定",
+                  },
+                },
+              },
+            };
+            yield {
+              type: "finish-step",
+              stepNumber: 0,
+              finishReason: "tool-calls",
+              usage: { totalTokens: 10 },
+            };
+            yield { type: "start-step", stepNumber: 1 };
+            yield { type: "text-delta", stepNumber: 1, delta: "设定我已经看完了。" };
+            yield {
+              type: "finish-step",
+              stepNumber: 1,
+              finishReason: "stop",
+              usage: { totalTokens: 11 },
+            };
+          })(),
+          text: Promise.resolve("设定我已经看完了。"),
+          usage: Promise.resolve({ totalTokens: 21 }),
+          finishReason: Promise.resolve("stop"),
+          steps: Promise.resolve([
+            {
+              stepNumber: 0,
+              preparedMessages: input.messages,
+              model: { provider: "openai", modelId: "story-model" },
+              finishReason: "tool-calls",
+              rawFinishReason: "tool_calls",
+              usage: { totalTokens: 10 },
+              request: { body: { step: 0 } },
+              response: {
+                body: { id: "resp_followup_0" },
+                messages: [
+                  {
+                    role: "assistant",
+                    content: [
+                      { type: "text", text: "我先读取设定。" },
+                      {
+                        type: "tool-call",
+                        toolCallId: "call_followup",
+                        toolName: "read_aux_path",
+                        input: { path: "/设定" },
+                      },
+                    ],
+                  },
+                  {
+                    role: "tool",
+                    content: [
+                      {
+                        type: "tool-result",
+                        toolCallId: "call_followup",
+                        toolName: "read_aux_path",
+                        output: {
+                          type: "json",
+                          value: {
+                            ok: true,
+                            data: {
+                              path: "/设定",
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+              providerMetadata: {},
+              toolCalls: [
+                {
+                  toolCallId: "call_followup",
+                  toolName: "read_aux_path",
+                  input: { path: "/设定" },
+                },
+              ],
+              toolResults: [
+                {
+                  toolCallId: "call_followup",
+                  toolName: "read_aux_path",
+                  output: {
+                    ok: true,
+                    data: {
+                      path: "/设定",
+                    },
+                  },
+                },
+              ],
+            },
+            {
+              stepNumber: 1,
+              preparedMessages: input.messages,
+              model: { provider: "openai", modelId: "story-model" },
+              finishReason: "stop",
+              rawFinishReason: "stop",
+              usage: { totalTokens: 11 },
+              request: { body: { step: 1 } },
+              response: {
+                body: { id: "resp_followup_1" },
+                messages: [
+                  {
+                    role: "assistant",
+                    content: [{ type: "text", text: "设定我已经看完了。" }],
+                  },
+                ],
+              },
+              providerMetadata: {},
+              toolCalls: [],
+              toolResults: [],
+            },
+          ]),
+        };
+      }
+
+      secondCallMessages = input.messages;
+      expect(modelMessageSchema.array().safeParse(input.messages).success).toBe(true);
+
+      return createMockStream({
+        chunks: [
+          { type: "start-step", stepNumber: 0 },
+          { type: "text-delta", stepNumber: 0, delta: "继续分析完成。" },
+          {
+            type: "finish-step",
+            stepNumber: 0,
+            finishReason: "stop",
+            usage: { totalTokens: 6 },
+          },
+        ],
+        text: "继续分析完成。",
+        usage: { totalTokens: 6 },
+        finishReason: "stop",
+        steps: [
+          {
+            stepNumber: 0,
+            preparedMessages: input.messages,
+            model: { provider: "openai", modelId: "story-model" },
+            finishReason: "stop",
+            rawFinishReason: "stop",
+            usage: { totalTokens: 6 },
+            request: { body: { prompt: "follow up" } },
+            response: {
+              body: { id: "resp_followup_final" },
+              messages: [
+                {
+                  role: "assistant",
+                  content: [{ type: "text", text: "继续分析完成。" }],
+                },
+              ],
+            },
+            providerMetadata: {},
+            toolCalls: [],
+            toolResults: [],
+          },
+        ],
+      })();
+    }) as any,
+  });
+  const thread = service.createProjectAssistantThread("assistant_followup_sanitize");
+
+  await service.sendProjectAssistantMessage({
+    projectId: "assistant_followup_sanitize",
+    threadId: thread.id,
+    text: "先读一下设定",
+  });
+  const followUp = await service.sendProjectAssistantMessage({
+    projectId: "assistant_followup_sanitize",
+    threadId: thread.id,
+    text: "继续往下说",
+  });
+
+  expect(followUp.run.status).toBe("succeeded");
+  expect(secondCallMessages).not.toBeNull();
+  expect(secondCallMessages!).toEqual([
+    {
+      role: "user",
+      content: [{ type: "text", text: "先读一下设定" }],
+    },
+    {
+      role: "assistant",
+      content: [
+        { type: "text", text: "我先读取设定。" },
+        {
+          type: "tool-call",
+          toolCallId: "call_followup",
+          toolName: "read_aux_path",
+          input: { path: "/设定" },
+        },
+      ],
+    },
+    {
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: "call_followup",
+          toolName: "read_aux_path",
+          output: {
+            type: "json",
+            value: {
+              ok: true,
+              data: {
+                path: "/设定",
+              },
+            },
+          },
+        },
+      ],
+    },
+    {
+      role: "assistant",
+      content: [{ type: "text", text: "设定我已经看完了。" }],
+    },
+    {
+      role: "user",
+      content: [{ type: "text", text: "继续往下说" }],
+    },
+  ]);
 });
