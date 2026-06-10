@@ -9,6 +9,11 @@ export const rpcTags = defineTags({
   workspacesByProject: (projectId: string) => ["workspaces", "project", projectId] as const,
   workspace: (workspaceId: string) => ["workspaces", "detail", workspaceId] as const,
 
+  branchesByProject: (projectId: string) => ["branches", "project", projectId] as const,
+  branch: (branchId: string) => ["branches", "detail", branchId] as const,
+  commitHistory: (branchId: string) => ["commits", "history", branchId] as const,
+  commit: (commitId: string) => ["commits", "detail", commitId] as const,
+
   contentTree: (workspaceId: string) => ["content", "tree", workspaceId] as const,
 
   timelineList: (workspaceId: string) => ["timeline", "list", workspaceId] as const,

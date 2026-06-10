@@ -2,6 +2,8 @@ import * as aiHandlers from "@/modules/ai/rpc";
 import * as configHandlers from "@/modules/config/rpc";
 import * as projectHandlers from "@/modules/projects/rpc";
 import * as auxHandlers from "@/modules/workspace/rpc/aux";
+import * as branchHandlers from "@/modules/workspace/rpc/branches";
+import * as commitHandlers from "@/modules/workspace/rpc/commits";
 import * as contentHandlers from "@/modules/workspace/rpc/content";
 import * as timelineHandlers from "@/modules/workspace/rpc/timeline";
 import * as workspaceHandlers from "@/modules/workspace/rpc/workspaces";
@@ -59,6 +61,21 @@ export const workspaces = {
   list: workspaceHandlers.list,
   default: workspaceHandlers.defaultWorkspace,
   get: workspaceHandlers.get,
+};
+
+export const branches = {
+  list: branchHandlers.list,
+  get: branchHandlers.get,
+  create: branchHandlers.create,
+  createWithWorkspace: branchHandlers.createWithWorkspace,
+  delete: branchHandlers.deleteMutation,
+};
+
+export const commits = {
+  history: commitHandlers.history,
+  get: commitHandlers.get,
+  create: commitHandlers.create,
+  checkout: commitHandlers.checkout,
 };
 
 export const timeline = {
