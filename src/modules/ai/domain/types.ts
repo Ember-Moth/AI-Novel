@@ -246,6 +246,10 @@ export type ProjectAssistantStreamEvent =
       replacementNode?: AgentThreadNodeView;
     }
   | {
+      type: "step-started";
+      stepIndex: number;
+    }
+  | {
       type: "assistant-message-started";
       nodeId: string;
       parentNodeId: string | null;

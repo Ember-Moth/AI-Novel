@@ -143,7 +143,7 @@ export function resolveExpectedActiveThreadAfterArchiveToggle({
   return null;
 }
 
-function createStreamOverlay({
+export function createStreamOverlay({
   kind,
   threadId,
   triggerNodeId,
@@ -243,7 +243,7 @@ function ensureStreamBlock(
   };
 }
 
-function applyStreamEvent(
+export function applyStreamEvent(
   overlay: AssistantStreamOverlay,
   event: ProjectAssistantStreamEvent,
 ): AssistantStreamOverlay {
@@ -255,11 +255,19 @@ function applyStreamEvent(
     };
   }
 
+  if (event.type === "step-started") {
+    return {
+      ...overlay,
+      stepCount: Math.max(overlay.stepCount, event.stepIndex + 1),
+    };
+  }
+
   if (event.type === "assistant-message-started") {
     const nextOverlay = ensureStreamBlock(overlay, event.nodeId);
     return {
       ...nextOverlay,
       activeAssistantNodeId: event.nodeId,
+      stepCount: Math.max(nextOverlay.stepCount, event.stepIndex + 1),
     };
   }
 

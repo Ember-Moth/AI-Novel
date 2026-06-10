@@ -657,6 +657,85 @@ test("sendProjectAssistantMessageStream keeps running after subscribers detach",
   expect(result.state.activePath.map((node) => node.role)).toEqual(["user", "assistant"]);
 });
 
+test("sendProjectAssistantMessageStream relays step lifecycle events while streaming", async () => {
+  seedProject("assistant_stream_steps");
+  const seeded = seedCustomConnection({
+    connectionId: "conn_stream_steps",
+    modelId: "story-model",
+    modelRowId: "cmodel_stream_steps",
+  });
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+    streamAssistantText: createMockStream({
+      chunks: [
+        { type: "start-step", stepNumber: 0 },
+        { type: "text-delta", stepNumber: 0, delta: "Streaming reply" },
+        {
+          type: "finish-step",
+          stepNumber: 0,
+          finishReason: "stop",
+          usage: { totalTokens: 13 },
+        },
+      ],
+      text: "Streaming reply",
+      usage: { totalTokens: 13 },
+      finishReason: "stop",
+      steps: [
+        {
+          stepNumber: 0,
+          preparedMessages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }],
+          model: { provider: "openai", modelId: "story-model" },
+          finishReason: "stop",
+          rawFinishReason: "stop",
+          usage: { totalTokens: 13 },
+          request: { body: { prompt: "Hello" } },
+          response: {
+            body: { id: "resp_stream_steps" },
+            messages: [
+              {
+                role: "assistant",
+                content: [{ type: "text", text: "Streaming reply" }],
+              },
+            ],
+          },
+          providerMetadata: {},
+          toolCalls: [],
+          toolResults: [],
+        },
+      ],
+    }) as any,
+  });
+  const thread = service.createProjectAssistantThread("assistant_stream_steps");
+  const handle = service.sendProjectAssistantMessageStream({
+    projectId: "assistant_stream_steps",
+    threadId: thread.id,
+    text: "Hello",
+  });
+  const emitted: Array<Record<string, unknown>> = [];
+  handle.subscribe((event) => {
+    emitted.push(event as Record<string, unknown>);
+  });
+
+  await handle.finalResult;
+
+  expect(emitted.map((event) => event.type)).toEqual([
+    "run-started",
+    "step-started",
+    "assistant-message-started",
+    "assistant-text-delta",
+    "step-finished",
+  ]);
+  expect(emitted[1]).toMatchObject({
+    type: "step-started",
+    stepIndex: 0,
+  });
+  expect(emitted[4]).toMatchObject({
+    type: "step-finished",
+    stepIndex: 0,
+    usage: { totalTokens: 13 },
+  });
+});
+
 test("follow-up send after tool results reuses sanitized history messages", async () => {
   seedProject("assistant_followup_sanitize");
   const seeded = seedCustomConnection({

@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 
 import {
+  applyStreamEvent,
   buildSessionRows,
+  createStreamOverlay,
   resolveExpectedActiveThreadAfterArchiveToggle,
 } from "./useAiAssistantController";
 
@@ -64,4 +66,43 @@ test("resolveExpectedActiveThreadAfterArchiveToggle chooses fallback when archiv
   });
 
   expect(result).toBe("thread_b");
+});
+
+test("applyStreamEvent updates step count as soon as a step starts", () => {
+  const overlay = createStreamOverlay({
+    kind: "send",
+    threadId: "thread_a",
+    triggerNodeId: null,
+  });
+
+  expect(
+    applyStreamEvent(overlay, {
+      type: "step-started",
+      stepIndex: 0,
+    }).stepCount,
+  ).toBe(1);
+});
+
+test("applyStreamEvent accumulates usage tokens as steps finish", () => {
+  const overlay = createStreamOverlay({
+    kind: "send",
+    threadId: "thread_a",
+    triggerNodeId: null,
+  });
+
+  const afterFirstStep = applyStreamEvent(overlay, {
+    type: "step-finished",
+    stepIndex: 0,
+    finishReason: "tool-calls",
+    usage: { totalTokens: 40 },
+  });
+  const afterSecondStep = applyStreamEvent(afterFirstStep, {
+    type: "step-finished",
+    stepIndex: 1,
+    finishReason: "stop",
+    usage: { totalTokens: 41 },
+  });
+
+  expect(afterSecondStep.stepCount).toBe(2);
+  expect(afterSecondStep.totalTokens).toBe(81);
 });

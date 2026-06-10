@@ -934,6 +934,10 @@ async function executeProjectAssistantRun<TResult>({
 
       if (chunk.type === "start-step") {
         currentAssistantNode = null;
+        relay.emit({
+          type: "step-started",
+          stepIndex: chunk.stepNumber,
+        });
         continue;
       }
 
