@@ -141,7 +141,7 @@ export function AiSidebar({
           </>
         }
         messagesPane={
-          <div className="flex min-h-full flex-col gap-2.5 px-2.5 py-2">
+          <div className="flex min-h-full flex-col gap-2 px-3.5 py-2">
             {controller.assistantStateIsInitialLoading && controller.showEmptyState ? (
               <div className="border border-border bg-sidebar-background px-3 py-2 text-[12px] text-foreground-muted">
                 正在加载会话...
@@ -186,7 +186,7 @@ export function AiSidebar({
                 controller.pendingAction.triggerNodeId === message.id;
 
               return (
-                <div key={message.id}>
+                <div key={message.id} className="flex flex-col gap-1.5">
                   {isUser ? (
                     showMessageBubble ? (
                       <div className="flex justify-end">
@@ -202,18 +202,17 @@ export function AiSidebar({
                         block.kind === "text" ? (
                           <div
                             key={block.blockId}
-                            className="py-1 text-[13px] leading-5 whitespace-pre-wrap text-foreground"
+                            className="text-[13px] leading-5 whitespace-pre-wrap text-foreground"
                           >
                             {block.text}
                           </div>
                         ) : (
-                          <div key={block.blockId} className="mt-1.5 px-1">
-                            <ReasoningTraceCard
-                              reasoningText={block.text}
-                              expanded={expandedReasoningKeys.has(`${message.id}:${block.blockId}`)}
-                              onToggle={() => toggleReasoning(`${message.id}:${block.blockId}`)}
-                            />
-                          </div>
+                          <ReasoningTraceCard
+                            key={block.blockId}
+                            reasoningText={block.text}
+                            expanded={expandedReasoningKeys.has(`${message.id}:${block.blockId}`)}
+                            onToggle={() => toggleReasoning(`${message.id}:${block.blockId}`)}
+                          />
                         ),
                       )
                     : null}
@@ -228,51 +227,46 @@ export function AiSidebar({
                   ) : null}
 
                   {showServerPending || showLocalRetryPending ? (
-                    <div className="mt-2">
-                      <PendingAssistantBubble label="正在生成回复..." />
-                    </div>
+                    <PendingAssistantBubble label="正在生成回复..." />
                   ) : null}
 
                   {streamOverlayForMessage ? (
-                    <div className="mt-2">
+                    <div className="flex flex-col gap-1.5">
                       {streamOverlayForMessage.blocks.map((block, blockIndex) => (
                         <div
                           key={`${message.id}:stream-block:${block.assistantNodeId}:${blockIndex}`}
+                          className="flex flex-col gap-1.5"
                         >
                           {block.contentOrder.map((entry) =>
                             entry.kind === "text" ? (
                               block.assistantText.trim().length > 0 ? (
                                 <div
                                   key={`${message.id}:stream:${block.assistantNodeId}:text`}
-                                  className="py-1 text-[13px] leading-5 whitespace-pre-wrap text-foreground"
+                                  className="text-[13px] leading-5 whitespace-pre-wrap text-foreground"
                                 >
                                   {block.assistantText}
                                 </div>
                               ) : null
                             ) : (
-                              <div
+                              <ReasoningTraceCard
                                 key={`${message.id}:stream:${block.assistantNodeId}:${entry.id}`}
-                                className="mt-1.5 px-1"
-                              >
-                                <ReasoningTraceCard
-                                  reasoningText={getReasoningTraceText(
-                                    block.reasoningTrace,
-                                    entry.id,
-                                  )}
-                                  expanded={expandedReasoningKeys.has(
+                                reasoningText={getReasoningTraceText(
+                                  block.reasoningTrace,
+                                  entry.id,
+                                )}
+                                expanded={expandedReasoningKeys.has(
+                                  `${message.id}:stream:${block.assistantNodeId}:${entry.id}`,
+                                )}
+                                onToggle={() =>
+                                  toggleReasoning(
                                     `${message.id}:stream:${block.assistantNodeId}:${entry.id}`,
-                                  )}
-                                  onToggle={() =>
-                                    toggleReasoning(
-                                      `${message.id}:stream:${block.assistantNodeId}:${entry.id}`,
-                                    )
-                                  }
-                                />
-                              </div>
+                                  )
+                                }
+                              />
                             ),
                           )}
                           {block.toolTrace.length > 0 ? (
-                            <div className="mt-1.5 flex flex-col gap-1 px-1">
+                            <div className="flex flex-col gap-1">
                               {block.toolTrace.map((entry, entryIndex) => (
                                 <ToolTraceCard
                                   key={`${message.id}:stream:${block.assistantNodeId}:${entry.toolCallId ?? entry.toolName}:${entryIndex}`}
@@ -296,7 +290,7 @@ export function AiSidebar({
                   ) : null}
 
                   {!isUser && toolTrace.length > 0 ? (
-                    <div className="mt-1.5 flex flex-col gap-1 px-1">
+                    <div className="flex flex-col gap-1">
                       {toolTrace.map((entry, index) => (
                         <ToolTraceCard
                           key={`${message.id}:${entry.toolCallId ?? entry.toolName}:${index}`}
@@ -315,7 +309,7 @@ export function AiSidebar({
                   ) : null}
 
                   {candidateGroup ? (
-                    <div className="mt-2 flex items-center gap-1.5 px-1">
+                    <div className="flex items-center gap-1.5">
                       {candidateGroup.nodes.map((candidate, index) => {
                         const active = candidate.id === candidateGroup.activeNodeId;
                         return (
@@ -343,7 +337,7 @@ export function AiSidebar({
             })}
 
             {controller.pendingAction?.kind === "send" ? (
-              <>
+              <div className="flex flex-col gap-1.5">
                 <div className="flex justify-end">
                   <div className="max-w-[88%] rounded-lg bg-accent-foreground px-3 py-2 text-[13px] leading-5 whitespace-pre-wrap text-sidebar-background">
                     {controller.pendingAction.text}
@@ -351,41 +345,35 @@ export function AiSidebar({
                 </div>
                 {controller.activeStream?.kind === "send"
                   ? controller.activeStream.blocks.map((block, blockIndex) => (
-                      <div key={`send-stream-block:${block.assistantNodeId}:${blockIndex}`}>
+                      <div
+                        key={`send-stream-block:${block.assistantNodeId}:${blockIndex}`}
+                        className="flex flex-col gap-1.5"
+                      >
                         {block.contentOrder.map((entry) =>
                           entry.kind === "text" ? (
                             block.assistantText.trim().length > 0 ? (
                               <div
                                 key={`send-stream:${block.assistantNodeId}:text`}
-                                className="py-1 text-[13px] leading-5 whitespace-pre-wrap text-foreground"
+                                className="text-[13px] leading-5 whitespace-pre-wrap text-foreground"
                               >
                                 {block.assistantText}
                               </div>
                             ) : null
                           ) : (
-                            <div
+                            <ReasoningTraceCard
                               key={`send-stream:${block.assistantNodeId}:${entry.id}`}
-                              className="mt-1.5 px-1"
-                            >
-                              <ReasoningTraceCard
-                                reasoningText={getReasoningTraceText(
-                                  block.reasoningTrace,
-                                  entry.id,
-                                )}
-                                expanded={expandedReasoningKeys.has(
-                                  `send-stream:${block.assistantNodeId}:${entry.id}`,
-                                )}
-                                onToggle={() =>
-                                  toggleReasoning(
-                                    `send-stream:${block.assistantNodeId}:${entry.id}`,
-                                  )
-                                }
-                              />
-                            </div>
+                              reasoningText={getReasoningTraceText(block.reasoningTrace, entry.id)}
+                              expanded={expandedReasoningKeys.has(
+                                `send-stream:${block.assistantNodeId}:${entry.id}`,
+                              )}
+                              onToggle={() =>
+                                toggleReasoning(`send-stream:${block.assistantNodeId}:${entry.id}`)
+                              }
+                            />
                           ),
                         )}
                         {block.toolTrace.length > 0 ? (
-                          <div className="mt-1.5 flex flex-col gap-1 px-1">
+                          <div className="flex flex-col gap-1">
                             {block.toolTrace.map((entry, index) => (
                               <ToolTraceCard
                                 key={`send-stream:${block.assistantNodeId}:${entry.toolCallId ?? entry.toolName}:${index}`}
@@ -406,7 +394,7 @@ export function AiSidebar({
                     ))
                   : null}
                 <PendingAssistantBubble label="正在生成回复..." />
-              </>
+              </div>
             ) : null}
           </div>
         }

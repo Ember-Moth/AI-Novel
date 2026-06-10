@@ -710,7 +710,7 @@ export function SessionStatusOverlay({ state }: { state: "loading" | "empty" }) 
 
 export function PendingAssistantBubble({ label }: { label: string }) {
   return (
-    <div className="py-1 text-[12px] text-foreground-muted">
+    <div className="text-[12px] text-foreground-muted">
       <div className="flex items-center gap-2">
         <span className="icon-[material-symbols--progress-activity] animate-spin text-sm text-accent-foreground" />
         <span>{label}</span>
@@ -731,7 +731,7 @@ export function AttemptErrorCard({
   onRetry: () => void;
 }) {
   return (
-    <div className="mt-2 py-1 text-[12px] text-red-400">
+    <div className="text-[12px] text-red-400">
       <div className="flex items-start gap-2">
         <span className="mt-0.5 icon-[material-symbols--warning] shrink-0" />
         <div className="min-w-0 flex-1">
