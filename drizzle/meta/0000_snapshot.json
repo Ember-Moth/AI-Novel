@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "0e3c14cd-fdce-438f-a857-1aa4252b3a3a",
+  "id": "49b355cb-c5c9-4c56-8e2d-be42835ca72b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "agent_artifacts": {
@@ -2017,7 +2017,7 @@
         },
         "aux_node_layers_timeline_point_idx": {
           "name": "aux_node_layers_timeline_point_idx",
-          "columns": ["timeline_point_id"],
+          "columns": ["workspace_id", "timeline_point_id"],
           "isUnique": false
         }
       },
@@ -2031,39 +2031,39 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "aux_node_layers_timeline_point_id_timeline_points_id_fk": {
-          "name": "aux_node_layers_timeline_point_id_timeline_points_id_fk",
+        "aux_node_layers_timeline_point_fk": {
+          "name": "aux_node_layers_timeline_point_fk",
           "tableFrom": "aux_node_layers",
           "tableTo": "timeline_points",
-          "columnsFrom": ["timeline_point_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": ["workspace_id", "timeline_point_id"],
+          "columnsTo": ["workspace_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "aux_node_layers_aux_node_id_aux_nodes_id_fk": {
-          "name": "aux_node_layers_aux_node_id_aux_nodes_id_fk",
+        "aux_node_layers_aux_node_fk": {
+          "name": "aux_node_layers_aux_node_fk",
           "tableFrom": "aux_node_layers",
           "tableTo": "aux_nodes",
-          "columnsFrom": ["aux_node_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": ["workspace_id", "aux_node_id"],
+          "columnsTo": ["workspace_id", "id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "aux_node_layers_parent_aux_node_id_aux_nodes_id_fk": {
-          "name": "aux_node_layers_parent_aux_node_id_aux_nodes_id_fk",
+        "aux_node_layers_parent_aux_node_fk": {
+          "name": "aux_node_layers_parent_aux_node_fk",
           "tableFrom": "aux_node_layers",
           "tableTo": "aux_nodes",
-          "columnsFrom": ["parent_aux_node_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": ["workspace_id", "parent_aux_node_id"],
+          "columnsTo": ["workspace_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "aux_node_layers_symlink_target_aux_node_id_aux_nodes_id_fk": {
-          "name": "aux_node_layers_symlink_target_aux_node_id_aux_nodes_id_fk",
+        "aux_node_layers_symlink_target_fk": {
+          "name": "aux_node_layers_symlink_target_fk",
           "tableFrom": "aux_node_layers",
           "tableTo": "aux_nodes",
-          "columnsFrom": ["symlink_target_aux_node_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": ["workspace_id", "symlink_target_aux_node_id"],
+          "columnsTo": ["workspace_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -2083,7 +2083,7 @@
         "id": {
           "name": "id",
           "type": "text",
-          "primaryKey": true,
+          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -2136,7 +2136,12 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "aux_nodes_workspace_id_id_pk": {
+          "columns": ["workspace_id", "id"],
+          "name": "aux_nodes_workspace_id_id_pk"
+        }
+      },
       "uniqueConstraints": {},
       "checkConstraints": {
         "aux_nodes_node_type_valid": {
@@ -2474,7 +2479,7 @@
         "id": {
           "name": "id",
           "type": "text",
-          "primaryKey": true,
+          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -2547,7 +2552,7 @@
       "indexes": {
         "content_nodes_next_sibling_idx": {
           "name": "content_nodes_next_sibling_idx",
-          "columns": ["next_sibling_id"],
+          "columns": ["workspace_id", "next_sibling_id"],
           "isUnique": true
         },
         "content_nodes_workspace_idx": {
@@ -2557,12 +2562,12 @@
         },
         "content_nodes_parent_idx": {
           "name": "content_nodes_parent_idx",
-          "columns": ["parent_id"],
+          "columns": ["workspace_id", "parent_id"],
           "isUnique": false
         },
         "content_nodes_anchor_timeline_point_idx": {
           "name": "content_nodes_anchor_timeline_point_idx",
-          "columns": ["anchor_timeline_point_id"],
+          "columns": ["workspace_id", "anchor_timeline_point_id"],
           "isUnique": false
         }
       },
@@ -2576,35 +2581,40 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "content_nodes_parent_id_content_nodes_id_fk": {
-          "name": "content_nodes_parent_id_content_nodes_id_fk",
+        "content_nodes_parent_same_workspace_fk": {
+          "name": "content_nodes_parent_same_workspace_fk",
           "tableFrom": "content_nodes",
           "tableTo": "content_nodes",
-          "columnsFrom": ["parent_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": ["workspace_id", "parent_id"],
+          "columnsTo": ["workspace_id", "id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "content_nodes_next_sibling_id_content_nodes_id_fk": {
-          "name": "content_nodes_next_sibling_id_content_nodes_id_fk",
+        "content_nodes_next_sibling_same_workspace_fk": {
+          "name": "content_nodes_next_sibling_same_workspace_fk",
           "tableFrom": "content_nodes",
           "tableTo": "content_nodes",
-          "columnsFrom": ["next_sibling_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": ["workspace_id", "next_sibling_id"],
+          "columnsTo": ["workspace_id", "id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "content_nodes_anchor_timeline_point_id_timeline_points_id_fk": {
-          "name": "content_nodes_anchor_timeline_point_id_timeline_points_id_fk",
+        "content_nodes_anchor_same_workspace_fk": {
+          "name": "content_nodes_anchor_same_workspace_fk",
           "tableFrom": "content_nodes",
           "tableTo": "timeline_points",
-          "columnsFrom": ["anchor_timeline_point_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": ["workspace_id", "anchor_timeline_point_id"],
+          "columnsTo": ["workspace_id", "id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "content_nodes_workspace_id_id_pk": {
+          "columns": ["workspace_id", "id"],
+          "name": "content_nodes_workspace_id_id_pk"
+        }
+      },
       "uniqueConstraints": {},
       "checkConstraints": {
         "content_nodes_parent_not_self": {
@@ -2748,7 +2758,7 @@
         "id": {
           "name": "id",
           "type": "text",
-          "primaryKey": true,
+          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -2810,14 +2820,9 @@
           "columns": ["workspace_id", "key"],
           "isUnique": true
         },
-        "timeline_points_workspace_id_idx": {
-          "name": "timeline_points_workspace_id_idx",
-          "columns": ["workspace_id", "id"],
-          "isUnique": true
-        },
         "timeline_points_prev_point_idx": {
           "name": "timeline_points_prev_point_idx",
-          "columns": ["prev_point_id"],
+          "columns": ["workspace_id", "prev_point_id"],
           "isUnique": true
         },
         "timeline_points_single_origin_successor_per_workspace_idx": {
@@ -2852,7 +2857,12 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "timeline_points_workspace_id_id_pk": {
+          "columns": ["workspace_id", "id"],
+          "name": "timeline_points_workspace_id_id_pk"
+        }
+      },
       "uniqueConstraints": {},
       "checkConstraints": {
         "timeline_points_key_nonempty": {
@@ -2932,7 +2942,7 @@
       "checkConstraints": {
         "tree_objects_kind_valid": {
           "name": "tree_objects_kind_valid",
-          "value": "\"tree_objects\".\"kind\" IN ('root', 'content_node', 'aux_node', 'timeline')"
+          "value": "\"tree_objects\".\"kind\" IN ('root', 'content', 'aux', 'timeline')"
         }
       }
     },

@@ -1,5 +1,7 @@
 export type * from "./types";
 export * from "./aux";
+export * from "./branches";
+export * from "./commits";
 export * from "./content";
 export * from "./context";
 export * from "./lifecycle";

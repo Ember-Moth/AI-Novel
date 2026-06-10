@@ -93,10 +93,7 @@ export const treeObjects = sqliteTable(
       .default(sql`(unixepoch() * 1000)`),
   },
   (table) => [
-    check(
-      "tree_objects_kind_valid",
-      sql`${table.kind} IN ('root', 'content_node', 'aux_node', 'timeline')`,
-    ),
+    check("tree_objects_kind_valid", sql`${table.kind} IN ('root', 'content', 'aux', 'timeline')`),
     index("tree_objects_project_idx").on(table.projectId),
   ],
 );
@@ -178,7 +175,7 @@ export const branches = sqliteTable(
 export const timelinePoints = sqliteTable(
   "timeline_points",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
@@ -195,14 +192,14 @@ export const timelinePoints = sqliteTable(
       "timeline_points_prev_not_self",
       sql`${table.prevPointId} IS NULL OR ${table.prevPointId} <> ${table.id}`,
     ),
+    primaryKey({ columns: [table.workspaceId, table.id] }),
     foreignKey({
       columns: [table.workspaceId, table.prevPointId],
       foreignColumns: [table.workspaceId, table.id],
       name: "timeline_points_prev_same_workspace_fk",
     }),
     uniqueIndex("timeline_points_workspace_key_idx").on(table.workspaceId, table.key),
-    uniqueIndex("timeline_points_workspace_id_idx").on(table.workspaceId, table.id),
-    uniqueIndex("timeline_points_prev_point_idx").on(table.prevPointId),
+    uniqueIndex("timeline_points_prev_point_idx").on(table.workspaceId, table.prevPointId),
     uniqueIndex("timeline_points_single_origin_successor_per_workspace_idx")
       .on(table.workspaceId)
       .where(sql`${table.prevPointId} IS NULL`),
@@ -213,19 +210,13 @@ export const timelinePoints = sqliteTable(
 export const contentNodes = sqliteTable(
   "content_nodes",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    parentId: text("parent_id").references((): any => contentNodes.id, {
-      onDelete: "cascade",
-    }),
-    nextSiblingId: text("next_sibling_id").references((): any => contentNodes.id, {
-      onDelete: "set null",
-    }),
-    anchorTimelinePointId: text("anchor_timeline_point_id").references(() => timelinePoints.id, {
-      onDelete: "set null",
-    }),
+    parentId: text("parent_id"),
+    nextSiblingId: text("next_sibling_id"),
+    anchorTimelinePointId: text("anchor_timeline_point_id"),
     kind: text("kind"),
     title: text("title"),
     body: text("body"),
@@ -240,17 +231,36 @@ export const contentNodes = sqliteTable(
       "content_nodes_next_sibling_not_self",
       sql`${table.nextSiblingId} IS NULL OR ${table.nextSiblingId} <> ${table.id}`,
     ),
-    uniqueIndex("content_nodes_next_sibling_idx").on(table.nextSiblingId),
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      columns: [table.workspaceId, table.parentId],
+      foreignColumns: [table.workspaceId, table.id],
+      name: "content_nodes_parent_same_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.nextSiblingId],
+      foreignColumns: [table.workspaceId, table.id],
+      name: "content_nodes_next_sibling_same_workspace_fk",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.workspaceId, table.anchorTimelinePointId],
+      foreignColumns: [timelinePoints.workspaceId, timelinePoints.id],
+      name: "content_nodes_anchor_same_workspace_fk",
+    }).onDelete("set null"),
+    uniqueIndex("content_nodes_next_sibling_idx").on(table.workspaceId, table.nextSiblingId),
     index("content_nodes_workspace_idx").on(table.workspaceId),
-    index("content_nodes_parent_idx").on(table.parentId),
-    index("content_nodes_anchor_timeline_point_idx").on(table.anchorTimelinePointId),
+    index("content_nodes_parent_idx").on(table.workspaceId, table.parentId),
+    index("content_nodes_anchor_timeline_point_idx").on(
+      table.workspaceId,
+      table.anchorTimelinePointId,
+    ),
   ],
 );
 
 export const auxNodes = sqliteTable(
   "aux_nodes",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
@@ -262,6 +272,7 @@ export const auxNodes = sqliteTable(
       "aux_nodes_node_type_valid",
       sql`${table.nodeType} IN ('root', 'dir', 'file', 'symlink')`,
     ),
+    primaryKey({ columns: [table.workspaceId, table.id] }),
     index("aux_nodes_workspace_idx").on(table.workspaceId),
   ],
 );
@@ -716,21 +727,13 @@ export const auxNodeLayers = sqliteTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    timelinePointId: text("timeline_point_id").references(() => timelinePoints.id, {
-      onDelete: "restrict",
-    }),
-    auxNodeId: text("aux_node_id")
-      .notNull()
-      .references(() => auxNodes.id, { onDelete: "cascade" }),
+    timelinePointId: text("timeline_point_id"),
+    auxNodeId: text("aux_node_id").notNull(),
     isDeleted: integer("is_deleted", { mode: "boolean" }).notNull().default(false),
-    parentAuxNodeId: text("parent_aux_node_id").references(() => auxNodes.id, {
-      onDelete: "restrict",
-    }),
+    parentAuxNodeId: text("parent_aux_node_id"),
     name: text("name"),
     content: text("content"),
-    symlinkTargetAuxNodeId: text("symlink_target_aux_node_id").references(() => auxNodes.id, {
-      onDelete: "restrict",
-    }),
+    symlinkTargetAuxNodeId: text("symlink_target_aux_node_id"),
     ...timestampColumns,
   },
   (table) => [
@@ -738,6 +741,26 @@ export const auxNodeLayers = sqliteTable(
       "aux_node_layers_not_deleted_or_has_payload",
       sql`${table.isDeleted} = 1 OR ${table.parentAuxNodeId} IS NOT NULL OR ${table.name} IS NOT NULL OR ${table.content} IS NOT NULL OR ${table.symlinkTargetAuxNodeId} IS NOT NULL`,
     ),
+    foreignKey({
+      columns: [table.workspaceId, table.timelinePointId],
+      foreignColumns: [timelinePoints.workspaceId, timelinePoints.id],
+      name: "aux_node_layers_timeline_point_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.auxNodeId],
+      foreignColumns: [auxNodes.workspaceId, auxNodes.id],
+      name: "aux_node_layers_aux_node_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.parentAuxNodeId],
+      foreignColumns: [auxNodes.workspaceId, auxNodes.id],
+      name: "aux_node_layers_parent_aux_node_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.symlinkTargetAuxNodeId],
+      foreignColumns: [auxNodes.workspaceId, auxNodes.id],
+      name: "aux_node_layers_symlink_target_fk",
+    }).onDelete("restrict"),
     uniqueIndex("aux_node_layers_origin_aux_idx")
       .on(table.workspaceId, table.auxNodeId)
       .where(sql`${table.timelinePointId} IS NULL`),
@@ -745,6 +768,6 @@ export const auxNodeLayers = sqliteTable(
       .on(table.workspaceId, table.timelinePointId, table.auxNodeId)
       .where(sql`${table.timelinePointId} IS NOT NULL`),
     index("aux_node_layers_workspace_aux_idx").on(table.workspaceId, table.auxNodeId),
-    index("aux_node_layers_timeline_point_idx").on(table.timelinePointId),
+    index("aux_node_layers_timeline_point_idx").on(table.workspaceId, table.timelinePointId),
   ],
 );

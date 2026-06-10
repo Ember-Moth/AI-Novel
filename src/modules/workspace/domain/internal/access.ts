@@ -24,6 +24,34 @@ export function getProjectOrThrow(executor: DatabaseExecutor, projectId: string)
   return project;
 }
 
+export function getBranchOrThrow(executor: DatabaseExecutor, branchId: string) {
+  const branch = executor
+    .select()
+    .from(schema.branches)
+    .where(eq(schema.branches.id, branchId))
+    .get();
+  invariant(branch, "未找到分支。");
+  return branch;
+}
+
+export function getCommitOrThrow(executor: DatabaseExecutor, projectId: string, commitId: string) {
+  const commit = executor
+    .select()
+    .from(schema.commits)
+    .where(and(eq(schema.commits.id, commitId), eq(schema.commits.projectId, projectId)))
+    .get();
+  invariant(commit, "未找到提交。");
+  return commit;
+}
+
+export function getWorkspaceForBranch(executor: DatabaseExecutor, branchId: string) {
+  return executor
+    .select()
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.branchId, branchId))
+    .get();
+}
+
 export function getTimelinePointOrThrow(
   executor: DatabaseExecutor,
   workspaceId: string,

@@ -33,6 +33,6 @@ test("workspace detail query watches the workspace tag and returns the workspace
     id: workspace.id,
     projectId: "rpc_workspace_detail",
     name: "main",
-    isDefault: true,
+    branchId: workspace.branchId,
   });
 });
