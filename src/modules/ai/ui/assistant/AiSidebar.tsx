@@ -195,7 +195,7 @@ function ModelPicker({
             : triggerLabel
         }
         aria-label="选择连接和模型"
-        className="grid h-11 max-w-full min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-2 items-center gap-x-2 border border-transparent px-1.5 py-1 text-left transition outline-none hover:border-border hover:bg-list-hover-background focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        className="grid h-11 max-w-full min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-2 items-center gap-x-2 rounded-md border border-transparent px-1.5 py-1 text-left transition outline-none hover:border-border hover:bg-list-hover-background focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
         {...getReferenceProps()}
       >
         <span className="col-start-1 row-span-2 row-start-1 icon-[material-symbols--token] shrink-0 text-base text-accent-foreground" />
@@ -1585,7 +1585,7 @@ export function AiSidebar({ projectId }: { projectId: string }) {
                 onSubmit={handleSubmit}
               >
                 <div className="space-y-2 p-2">
-                  <div className="border border-border bg-editor-background focus-within:border-accent-foreground">
+                  <div className="overflow-hidden rounded-lg border border-border bg-editor-background focus-within:border-accent-foreground">
                     <textarea
                       value={draft}
                       onChange={(event) => setDraft(event.target.value)}
@@ -1621,7 +1621,7 @@ export function AiSidebar({ projectId }: { projectId: string }) {
                         disabled={!canSubmit}
                         title={canSubmit ? "发送" : "当前无法发送"}
                         aria-label="发送"
-                        className="flex size-9 shrink-0 items-center justify-center text-foreground-muted transition hover:bg-list-hover-background disabled:cursor-not-allowed disabled:opacity-40"
+                        className="flex size-9 shrink-0 items-center justify-center rounded-md text-foreground-muted transition hover:bg-list-hover-background disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <span
                           className={`text-xl ${
