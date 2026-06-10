@@ -6,6 +6,7 @@ import { useLocation } from "wouter";
 import { AppShell } from "@/app/shell/AppShell";
 import { lastProjectIdAtom, lastWorkspaceRouteAtom } from "@/app/state/lastProject";
 import { rpc } from "@/rpc/client";
+import { createProjectId } from "@/shared/lib/domain";
 import { FullPageMessage } from "@/shared/ui/FullPageMessage";
 import { LoadingBlock } from "@/shared/ui/Loading";
 
@@ -174,7 +175,7 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
     }
 
     try {
-      const id = crypto.randomUUID();
+      const id = createProjectId();
       await createProject.mutate({
         id,
         name: trimmedName,

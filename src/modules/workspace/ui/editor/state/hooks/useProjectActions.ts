@@ -3,6 +3,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useState } from "react";
 
 import { moveArrayItem } from "@/shared/lib/array";
+import { createTimelineKey } from "@/shared/lib/domain";
 import {
   actionAnchorId,
   clearActionError,
@@ -940,7 +941,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         const point = await createTimeline.mutate({
           workspaceId,
           afterPointId: activeTimelinePointId,
-          key: `timeline_${crypto.randomUUID().replaceAll("-", "").slice(0, 10)}`,
+          key: createTimelineKey(),
           label: `新时间点 ${newIndex}`,
           description: "",
         });

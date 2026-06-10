@@ -21,6 +21,20 @@ test("parseAppRoute recognizes home, detail, workspace, settings, and unknown ro
   expect(parseAppRoute("/projects/project_1")).toEqual({ kind: "unknown" });
 });
 
+test("parseAppRoute accepts non-uuid project and workspace ids", () => {
+  expect(parseAppRoute("/project/V1sibl4A5sWB6UlUjzT4w")).toEqual({
+    kind: "project",
+    projectId: "V1sibl4A5sWB6UlUjzT4w",
+  });
+  expect(
+    parseAppRoute("/project/V1sibl4A5sWB6UlUjzT4w/workspace/workspace_4A5sWB6UlUjzT4w"),
+  ).toEqual({
+    kind: "workspace",
+    projectId: "V1sibl4A5sWB6UlUjzT4w",
+    workspaceId: "workspace_4A5sWB6UlUjzT4w",
+  });
+});
+
 test("resolveCachedWorkspaceRoute clears mounted workspace on home route", () => {
   const lastWorkspaceRoute = {
     projectId: "project_1",
