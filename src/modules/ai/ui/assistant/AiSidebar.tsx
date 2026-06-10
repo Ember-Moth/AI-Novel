@@ -1352,7 +1352,7 @@ export function AiSidebar({ projectId }: { projectId: string }) {
           type="button"
           onClick={() => void handleCreateSession()}
           disabled={isSessionMutating}
-          className="inline-flex h-7 items-center gap-1 border border-border px-2 text-[11px] text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
         >
           <span className="icon-[material-symbols--add]" />
           <span>新建会话</span>
