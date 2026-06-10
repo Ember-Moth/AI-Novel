@@ -12,25 +12,11 @@ import {
   refreshAiCatalog,
 } from "@/modules/ai/domain/catalog";
 import {
-  appendMessage as appendProjectAiMessage,
-  archiveHead as archiveProjectAiHead,
-  completeGenerationAttemptError,
-  completeGenerationAttemptSuccess,
-  createAssistantSession,
-  createHead as createProjectAiHead,
-  forkHeadFromMessage,
-  listHeadChildren,
-  listProjectHeads as listProjectAiHeads,
-  renameHead as renameProjectAiHead,
-  recordGenerationAttempt,
-  resolveHeadMessages,
-  setActiveAssistantHead as setProjectAssistantActiveHeadInDomain,
-} from "@/modules/ai/domain/logs";
-import {
   getProjectAssistantService,
+  type ProjectAssistantEditResult,
+  type ProjectAssistantOverview,
   type ProjectAssistantRetryResult,
   type ProjectAssistantSendResult,
-  type ProjectAssistantStateView,
 } from "@/modules/ai/server/project-assistant";
 import {
   type AiConnectionConfig,
@@ -45,16 +31,17 @@ import {
 } from "@/modules/ai/domain/packages";
 import { createId, invariant, now } from "@/shared/lib/domain";
 import type {
+  AgentCandidateNodeView,
+  AgentRunView,
+  AgentRunTraceView,
+  AgentThreadStateView,
+  AgentThreadView,
   AiCatalogModelView,
   AiCatalogProviderView,
-  ProjectAssistantContextSnapshot,
   AiCatalogStatusView,
   AiConnectionRow,
-  AiProjectGenerationAttemptView,
-  AiProjectHeadView,
-  AiProjectMessageView,
   AiResolvedModelView,
-  AiSelectionSnapshotInput,
+  ProjectAssistantContextSnapshot,
 } from "@/modules/ai/domain/types";
 import { assertRpcFound } from "@/rpc/errors";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
@@ -111,76 +98,29 @@ type CustomModelMutationInput = Pick<
   | "isEnabled"
 >;
 
-interface CreateHeadInput {
-  projectId: string;
-  name?: string | null;
-  initialMessage?: {
-    role: "system" | "user" | "assistant" | "tool";
-    content: unknown;
-    summaryText?: string | null;
-    aiSelection?: AiSelectionSnapshotInput | null;
-    metadata?: unknown;
-  } | null;
-}
-
-interface AppendHeadMessageInput {
-  projectId: string;
-  headId: string;
-  prevMessageId: string | null;
-  role: "system" | "user" | "assistant" | "tool";
-  content: unknown;
-  summaryText?: string | null;
-  aiSelection?: AiSelectionSnapshotInput | null;
-  metadata?: unknown;
-}
-
-interface ForkHeadInput {
-  projectId: string;
-  sourceHeadId: string;
-  sourceMessageId: string;
-  name?: string | null;
-  replacementRole: "system" | "user" | "assistant" | "tool";
-  replacementContent: unknown;
-  replacementSummaryText?: string | null;
-  aiSelection?: AiSelectionSnapshotInput | null;
-  metadata?: unknown;
-}
-
-interface RecordGenerationAttemptInput {
-  projectId: string;
-  headId?: string | null;
-  triggerMessageId?: string | null;
-  request: unknown;
-  aiSelection?: AiSelectionSnapshotInput | null;
-}
-
-interface CompleteGenerationAttemptSuccessInput {
-  attemptId: string;
-  assistantMessageId?: string | null;
-  usage?: unknown;
-}
-
-interface CompleteGenerationAttemptErrorInput {
-  attemptId: string;
-  error: unknown;
-  usage?: unknown;
-}
-
 interface ProjectAssistantStateInput {
   projectId: string;
 }
 
 interface SendProjectAssistantMessageInput {
   projectId: string;
-  headId: string;
+  threadId: string;
   text: string;
   context?: ProjectAssistantContextSnapshot | null;
 }
 
 interface RetryProjectAssistantMessageInput {
   projectId: string;
-  headId: string;
-  triggerMessageId: string;
+  threadId: string;
+  triggerNodeId: string;
+  context?: ProjectAssistantContextSnapshot | null;
+}
+
+interface EditProjectAssistantMessageInput {
+  projectId: string;
+  threadId: string;
+  nodeId: string;
+  text: string;
   context?: ProjectAssistantContextSnapshot | null;
 }
 
@@ -199,17 +139,22 @@ function invalidateProjectAiState(
   ctx: RpcMutationCtx,
   projectId: string,
   options?: {
-    headId?: string | null;
-    messageParentId?: string | null;
+    threadId?: string | null;
+    candidateParentNodeId?: string | null;
+    runId?: string | null;
   },
 ) {
-  ctx.invalidate(rpcTags.aiProjectAssistantState(projectId));
-  ctx.invalidate(rpcTags.aiProjectHeads(projectId));
-  if (options?.headId) {
-    ctx.invalidate(rpcTags.aiHeadMessages(options.headId));
+  ctx.invalidate(rpcTags.aiProjectAssistantOverview(projectId));
+  ctx.invalidate(rpcTags.aiProjectThreads(projectId));
+  if (options?.threadId) {
+    ctx.invalidate(rpcTags.aiThreadView(options.threadId));
   }
-  if (options?.messageParentId) {
-    ctx.invalidate(rpcTags.aiMessageChildren(projectId, options.messageParentId));
+  if (options?.candidateParentNodeId) {
+    ctx.invalidate(rpcTags.aiNodeCandidates(options.candidateParentNodeId));
+  }
+  if (options?.runId) {
+    ctx.invalidate(rpcTags.aiRunTrace(options.runId));
+    ctx.invalidate(rpcTags.aiChildRuns(options.runId));
   }
 }
 
@@ -683,179 +628,144 @@ export const deleteCustomModel = mutation<{ id: string }, void, RpcTagList>(({ i
   invalidateConnection(ctx, model.connectionId);
 });
 
-export const listProjectHeads = query<
+export const listProjectThreads = query<
   { projectId: string; archived?: boolean },
-  AiProjectHeadView[],
+  AgentThreadView[],
   RpcTagList
 >({
-  watch: ({ projectId }) => [rpcTags.aiProjectHeads(projectId)],
-  handler: ({ projectId, archived }) => listProjectAiHeads(projectId, { archived }),
+  watch: ({ projectId }) => [rpcTags.aiProjectThreads(projectId)],
+  handler: ({ projectId, archived }) =>
+    getProjectAssistantService()
+      .getProjectAssistantState(projectId)
+      .threads.filter((thread) =>
+        archived ? thread.archivedAt != null : thread.archivedAt == null,
+      ),
 });
 
 export const getProjectAssistantState = query<
   ProjectAssistantStateInput,
-  ProjectAssistantStateView,
+  ProjectAssistantOverview,
   RpcTagList
 >({
   watch: ({ projectId }, result) => [
-    rpcTags.aiProjectAssistantState(projectId),
-    rpcTags.aiProjectHeads(projectId),
-    rpcTags.aiGenerationAttempts(projectId),
-    ...(result.head ? [rpcTags.aiHeadMessages(result.head.id)] : []),
+    rpcTags.aiProjectAssistantOverview(projectId),
+    rpcTags.aiProjectThreads(projectId),
+    ...(result.activeThreadId ? [rpcTags.aiThreadView(result.activeThreadId)] : []),
   ],
   handler: ({ projectId }) => getProjectAssistantService().getProjectAssistantState(projectId),
 });
 
-export const getHeadMessages = query<{ headId: string }, AiProjectMessageView[], RpcTagList>({
-  watch: ({ headId }) => [rpcTags.aiHeadMessages(headId)],
-  handler: ({ headId }) => resolveHeadMessages(headId),
+export const getThreadView = query<{ threadId: string }, AgentThreadStateView, RpcTagList>({
+  watch: ({ threadId }, result) => [
+    rpcTags.aiThreadView(threadId),
+    ...result.candidateGroups.map((group) =>
+      rpcTags.aiNodeCandidates(group.parentNodeId ?? "__root__"),
+    ),
+    ...result.latestRuns.map((run) => rpcTags.aiRunTrace(run.id)),
+  ],
+  handler: ({ threadId }) => getProjectAssistantService().getThreadView(threadId),
 });
 
-export const getMessageChildren = query<
-  { projectId: string; messageId: string },
-  AiProjectMessageView[],
+export const getNodeCandidatesQuery = query<
+  { parentNodeId: string },
+  AgentCandidateNodeView[],
   RpcTagList
 >({
-  watch: ({ projectId, messageId }) => [rpcTags.aiMessageChildren(projectId, messageId)],
-  handler: ({ projectId, messageId }) => listHeadChildren(projectId, messageId),
+  watch: ({ parentNodeId }) => [rpcTags.aiNodeCandidates(parentNodeId)],
+  handler: ({ parentNodeId }) => getProjectAssistantService().getNodeCandidates(parentNodeId),
 });
 
-export const createHead = mutation<CreateHeadInput, AiProjectHeadView, RpcTagList>((input, ctx) => {
-  const head = createProjectAiHead(input);
-  invalidateProjectAiState(ctx, input.projectId, {
-    headId: head.id,
-  });
-  return head;
+export const getRunTraceQuery = query<{ runId: string }, AgentRunTraceView, RpcTagList>({
+  watch: ({ runId }) => [rpcTags.aiRunTrace(runId), rpcTags.aiChildRuns(runId)],
+  handler: ({ runId }) => getProjectAssistantService().getRunTrace(runId),
 });
 
-export const createProjectAssistantSession = mutation<
+export const getChildRunsQuery = query<{ runId: string }, AgentRunView[], RpcTagList>({
+  watch: ({ runId }) => [rpcTags.aiChildRuns(runId)],
+  handler: ({ runId }) => getProjectAssistantService().getChildRuns(runId),
+});
+
+export const createProjectAssistantThread = mutation<
   { projectId: string },
-  AiProjectHeadView,
+  AgentThreadView,
   RpcTagList
 >(({ projectId }, ctx) => {
-  const head = createAssistantSession(projectId);
+  const thread = getProjectAssistantService().createProjectAssistantThread(projectId);
   invalidateProjectAiState(ctx, projectId, {
-    headId: head.id,
+    threadId: thread.id,
   });
-  return head;
+  return thread;
 });
 
-export const setProjectAssistantActiveHead = mutation<
-  { projectId: string; headId: string },
-  AiProjectHeadView,
+export const setProjectAssistantActiveThread = mutation<
+  { projectId: string; threadId: string },
+  AgentThreadView,
   RpcTagList
->(({ projectId, headId }, ctx) => {
-  const head = setProjectAssistantActiveHeadInDomain(projectId, headId);
+>(({ projectId, threadId }, ctx) => {
+  const thread = getProjectAssistantService().setProjectAssistantActiveThread(projectId, threadId);
   invalidateProjectAiState(ctx, projectId, {
-    headId: head.id,
+    threadId: thread.id,
   });
-  return head;
+  return thread;
 });
 
-export const renameProjectHead = mutation<
-  { headId: string; name: string },
-  AiProjectHeadView,
+export const renameProjectAssistantThread = mutation<
+  { threadId: string; title: string },
+  AgentThreadView,
   RpcTagList
->(({ headId, name }, ctx) => {
-  const head = renameProjectAiHead(headId, name);
-  invalidateProjectAiState(ctx, head.projectId, {
-    headId: head.id,
+>(({ threadId, title }, ctx) => {
+  const thread = getProjectAssistantService().renameProjectAssistantThread(threadId, title);
+  invalidateProjectAiState(ctx, thread.projectId, {
+    threadId: thread.id,
   });
-  return head;
+  return thread;
 });
 
-export const appendMessage = mutation<AppendHeadMessageInput, AiProjectMessageView, RpcTagList>(
-  (input, ctx) => {
-    const message = appendProjectAiMessage(input);
-    invalidateProjectAiState(ctx, input.projectId, {
-      headId: input.headId,
-      messageParentId: input.prevMessageId,
-    });
-    return message;
-  },
-);
-
-export const forkProjectHeadFromMessage = mutation<ForkHeadInput, AiProjectHeadView, RpcTagList>(
-  (input, ctx) => {
-    const head = forkHeadFromMessage({
-      projectId: input.projectId,
-      sourceHeadId: input.sourceHeadId,
-      sourceMessageId: input.sourceMessageId,
-      name: input.name,
-      role: input.replacementRole,
-      content: input.replacementContent,
-      summaryText: input.replacementSummaryText,
-      aiSelection: input.aiSelection,
-      metadata: input.metadata,
-    });
-    invalidateProjectAiState(ctx, input.projectId, {
-      headId: head.id,
-      messageParentId: input.sourceMessageId,
-    });
-    return head;
-  },
-);
-
-export const archiveProjectHead = mutation<
-  { headId: string; archived: boolean },
-  AiProjectHeadView,
+export const archiveProjectAssistantThread = mutation<
+  { threadId: string; archived: boolean },
+  AgentThreadView,
   RpcTagList
->(({ headId, archived }, ctx) => {
-  const head = archiveProjectAiHead(headId, archived);
-  invalidateProjectAiState(ctx, head.projectId, { headId: head.id });
-  return head;
+>(({ threadId, archived }, ctx) => {
+  const thread = getProjectAssistantService().archiveProjectAssistantThread(threadId, archived);
+  invalidateProjectAiState(ctx, thread.projectId, {
+    threadId: thread.id,
+  });
+  return thread;
 });
 
-export const createGenerationAttempt = mutation<
-  RecordGenerationAttemptInput,
-  AiProjectGenerationAttemptView,
+export const selectThreadTip = mutation<
+  { threadId: string; tipNodeId: string },
+  AgentThreadView,
   RpcTagList
->((input, ctx) => {
-  const attempt = recordGenerationAttempt(input);
-  ctx.invalidate(rpcTags.aiGenerationAttempts(input.projectId));
-  return attempt;
-});
-
-export const finishGenerationAttemptSuccess = mutation<
-  CompleteGenerationAttemptSuccessInput,
-  AiProjectGenerationAttemptView,
-  RpcTagList
->((input, ctx) => {
-  const attempt = completeGenerationAttemptSuccess(input);
-  ctx.invalidate(rpcTags.aiGenerationAttempts(attempt.projectId));
-  return attempt;
-});
-
-export const finishGenerationAttemptError = mutation<
-  CompleteGenerationAttemptErrorInput,
-  AiProjectGenerationAttemptView,
-  RpcTagList
->((input, ctx) => {
-  const attempt = completeGenerationAttemptError(input);
-  ctx.invalidate(rpcTags.aiGenerationAttempts(attempt.projectId));
-  return attempt;
+>(({ threadId, tipNodeId }, ctx) => {
+  const thread = getProjectAssistantService().selectThreadTip(threadId, tipNodeId);
+  invalidateProjectAiState(ctx, thread.projectId, {
+    threadId: thread.id,
+    candidateParentNodeId: tipNodeId,
+  });
+  return thread;
 });
 
 export const sendProjectAssistantMessage = mutation<
   SendProjectAssistantMessageInput,
   ProjectAssistantSendResult,
   RpcTagList
->(async ({ projectId, headId, text, context }, ctx) => {
+>(async ({ projectId, threadId, text, context }, ctx) => {
   try {
     const result = await getProjectAssistantService().sendProjectAssistantMessage({
       projectId,
-      headId,
+      threadId,
       text,
       context,
     });
     invalidateProjectAiState(ctx, projectId, {
-      headId: result.head.id,
+      threadId: result.thread.id,
+      runId: result.run.id,
+      candidateParentNodeId: result.userNode.id,
     });
-    ctx.invalidate(rpcTags.aiGenerationAttempts(projectId));
     return result;
   } catch (error) {
-    invalidateProjectAiState(ctx, projectId, { headId });
-    ctx.invalidate(rpcTags.aiGenerationAttempts(projectId));
+    invalidateProjectAiState(ctx, projectId, { threadId });
     throw error;
   }
 });
@@ -864,22 +774,47 @@ export const retryProjectAssistantMessage = mutation<
   RetryProjectAssistantMessageInput,
   ProjectAssistantRetryResult,
   RpcTagList
->(async ({ projectId, headId, triggerMessageId, context }, ctx) => {
+>(async ({ projectId, threadId, triggerNodeId, context }, ctx) => {
   try {
     const result = await getProjectAssistantService().retryProjectAssistantMessage({
       projectId,
-      headId,
-      triggerMessageId,
+      threadId,
+      triggerNodeId,
       context,
     });
     invalidateProjectAiState(ctx, projectId, {
-      headId: result.head.id,
+      threadId: result.thread.id,
+      runId: result.run.id,
+      candidateParentNodeId: triggerNodeId,
     });
-    ctx.invalidate(rpcTags.aiGenerationAttempts(projectId));
     return result;
   } catch (error) {
-    invalidateProjectAiState(ctx, projectId, { headId });
-    ctx.invalidate(rpcTags.aiGenerationAttempts(projectId));
+    invalidateProjectAiState(ctx, projectId, { threadId });
+    throw error;
+  }
+});
+
+export const editProjectAssistantMessage = mutation<
+  EditProjectAssistantMessageInput,
+  ProjectAssistantEditResult,
+  RpcTagList
+>(async ({ projectId, threadId, nodeId, text, context }, ctx) => {
+  try {
+    const result = await getProjectAssistantService().editProjectAssistantMessage({
+      projectId,
+      threadId,
+      nodeId,
+      text,
+      context,
+    });
+    invalidateProjectAiState(ctx, projectId, {
+      threadId: result.thread.id,
+      runId: result.run.id,
+      candidateParentNodeId: result.replacementNode.parentNodeId,
+    });
+    return result;
+  } catch (error) {
+    invalidateProjectAiState(ctx, projectId, { threadId });
     throw error;
   }
 });

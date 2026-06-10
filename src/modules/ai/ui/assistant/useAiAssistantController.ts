@@ -1,27 +1,25 @@
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { AiProjectHeadView, ProjectAssistantContextSnapshot } from "@/modules/ai/domain/types";
+import type { AgentThreadView, ProjectAssistantContextSnapshot } from "@/modules/ai/domain/types";
 import { rpc } from "@/rpc/client";
 
 import {
-  applyRetryResultToState,
-  applySendResultToState,
   canSendAssistantMessage,
   EMPTY_ASSISTANT_STATE,
-  EMPTY_HEADS,
-  type AssistantMutationContext,
-  type EditingHeadState,
-  selectPendingAttempt,
-  selectRetryableAttempt,
+  EMPTY_THREADS,
+  type EditingThreadState,
+  getCandidateGroupForNode,
+  selectPendingRun,
+  selectRetryableRun,
   type PendingAssistantAction,
 } from "./assistantState";
 
 export type SessionListRow =
   | {
       key: string;
-      type: "head";
-      head: AiProjectHeadView;
+      type: "thread";
+      thread: AgentThreadView;
       className?: string;
     }
   | {
@@ -31,47 +29,50 @@ export type SessionListRow =
     };
 
 export function buildSessionRows({
-  unarchivedHeads,
-  archivedHeads,
-  showArchivedHeads,
+  unarchivedThreads,
+  archivedThreads,
+  showArchivedThreads,
 }: {
-  unarchivedHeads: AiProjectHeadView[];
-  archivedHeads: AiProjectHeadView[];
-  showArchivedHeads: boolean;
+  unarchivedThreads: AgentThreadView[];
+  archivedThreads: AgentThreadView[];
+  showArchivedThreads: boolean;
 }): SessionListRow[] {
   const rows: SessionListRow[] = [];
 
   rows.push(
-    ...unarchivedHeads.map((head) => ({
-      key: head.id,
-      type: "head" as const,
-      head,
+    ...unarchivedThreads.map((thread) => ({
+      key: thread.id,
+      type: "thread" as const,
+      thread,
     })),
   );
 
-  if (archivedHeads.length === 0) {
+  if (archivedThreads.length === 0) {
     return rows;
   }
 
   rows.push({
     key: "archived-toggle",
     type: "archived-toggle",
-    count: archivedHeads.length,
+    count: archivedThreads.length,
   });
 
-  if (!showArchivedHeads) {
+  if (!showArchivedThreads) {
     return rows;
   }
 
-  archivedHeads.forEach((head, index) => {
-    const classNames = [index === 0 ? "mt-1" : "", index === archivedHeads.length - 1 ? "pb-1" : ""]
+  archivedThreads.forEach((thread, index) => {
+    const classNames = [
+      index === 0 ? "mt-1" : "",
+      index === archivedThreads.length - 1 ? "pb-1" : "",
+    ]
       .filter(Boolean)
       .join(" ");
 
     rows.push({
-      key: head.id,
-      type: "head",
-      head,
+      key: thread.id,
+      type: "thread",
+      thread,
       className: classNames || undefined,
     });
   });
@@ -79,24 +80,24 @@ export function buildSessionRows({
   return rows;
 }
 
-export function resolveExpectedActiveHeadAfterArchiveToggle({
-  activeHeadId,
-  head,
+export function resolveExpectedActiveThreadAfterArchiveToggle({
+  activeThreadId,
+  thread,
   archived,
-  unarchivedHeads,
+  unarchivedThreads,
 }: {
-  activeHeadId: string | null;
-  head: AiProjectHeadView;
+  activeThreadId: string | null;
+  thread: AgentThreadView;
   archived: boolean;
-  unarchivedHeads: AiProjectHeadView[];
+  unarchivedThreads: AgentThreadView[];
 }) {
-  if (archived && head.id === activeHeadId) {
-    const fallbackHead = unarchivedHeads.find((current) => current.id !== head.id) ?? null;
-    return fallbackHead?.id ?? "";
+  if (archived && thread.id === activeThreadId) {
+    const fallbackThread = unarchivedThreads.find((current) => current.id !== thread.id) ?? null;
+    return fallbackThread?.id ?? "";
   }
 
-  if (!archived && activeHeadId == null) {
-    return head.id;
+  if (!archived && activeThreadId == null) {
+    return thread.id;
   }
 
   return null;
@@ -111,121 +112,94 @@ export function useAiAssistantController(
   const [draft, setDraft] = useState("");
   const [selectionHydrated, setSelectionHydrated] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAssistantAction | null>(null);
-  const [editingHead, setEditingHead] = useState<EditingHeadState | null>(null);
-  const [showArchivedHeads, setShowArchivedHeads] = useState(false);
-  const [expectedActiveHeadId, setExpectedActiveHeadId] = useState<string | null>(null);
+  const [editingThread, setEditingThread] = useState<EditingThreadState | null>(null);
+  const [showArchivedThreads, setShowArchivedThreads] = useState(false);
+  const [expectedActiveThreadId, setExpectedActiveThreadId] = useState<string | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
 
   const storedSelectionQuery = rpc.useQuery("config.getAiAssistantModelSelection");
-  const projectHeadsQuery = rpc.useQuery("ai.listProjectHeads", { projectId });
-  const assistantStateQuery = rpc.useQuery("ai.getProjectAssistantState", { projectId });
+  const assistantOverviewQuery = rpc.useQuery("ai.getProjectAssistantState", { projectId });
   const saveSelection = rpc.useMutation("config.setAiAssistantModelSelection", {
     onSuccess: (selection) => {
       rpc.setQueryData("config.getAiAssistantModelSelection", undefined, selection);
     },
   });
-  const createSession = rpc.useMutation("ai.createProjectAssistantSession");
-  const setActiveHead = rpc.useMutation("ai.setProjectAssistantActiveHead");
-  const renameProjectHead = rpc.useMutation("ai.renameProjectHead");
-  const archiveProjectHead = rpc.useMutation("ai.archiveHead");
-  const sendMessage = rpc.useMutation<"ai.sendProjectAssistantMessage", AssistantMutationContext>(
-    "ai.sendProjectAssistantMessage",
-    {
-      onMutate: () => ({
-        previousState: rpc.getQueryData("ai.getProjectAssistantState", { projectId }),
-      }),
-      onSuccess: (result) => {
-        const previousState = rpc.getQueryData("ai.getProjectAssistantState", { projectId });
-        rpc.setQueryData(
-          "ai.getProjectAssistantState",
-          { projectId },
-          applySendResultToState(previousState, result),
-        );
-      },
-      onError: (_, __, context) => {
-        if (context?.previousState) {
-          rpc.setQueryData("ai.getProjectAssistantState", { projectId }, context.previousState);
-        }
-      },
-    },
-  );
-  const retryMessage = rpc.useMutation<"ai.retryProjectAssistantMessage", AssistantMutationContext>(
-    "ai.retryProjectAssistantMessage",
-    {
-      onMutate: () => ({
-        previousState: rpc.getQueryData("ai.getProjectAssistantState", { projectId }),
-      }),
-      onSuccess: (result) => {
-        const previousState = rpc.getQueryData("ai.getProjectAssistantState", { projectId });
-        rpc.setQueryData(
-          "ai.getProjectAssistantState",
-          { projectId },
-          applyRetryResultToState(previousState, result),
-        );
-      },
-      onError: (_, __, context) => {
-        if (context?.previousState) {
-          rpc.setQueryData("ai.getProjectAssistantState", { projectId }, context.previousState);
-        }
-      },
-    },
-  );
+
+  const createThread = rpc.useMutation("ai.createProjectAssistantThread");
+  const setActiveThread = rpc.useMutation("ai.setProjectAssistantActiveThread");
+  const renameThread = rpc.useMutation("ai.renameProjectAssistantThread");
+  const archiveThread = rpc.useMutation("ai.archiveProjectAssistantThread");
+  const selectThreadTip = rpc.useMutation("ai.selectThreadTip");
+  const sendMessage = rpc.useMutation("ai.sendProjectAssistantMessage");
+  const retryMessage = rpc.useMutation("ai.retryProjectAssistantMessage");
 
   const isLoadingSelection = !selectionHydrated;
-  const assistantState = assistantStateQuery.data ?? EMPTY_ASSISTANT_STATE;
-  const activeHeadId = assistantState.head?.id ?? null;
-  const heads = projectHeadsQuery.data ?? EMPTY_HEADS;
-  const unarchivedHeads = useMemo(() => heads.filter((head) => !head.isArchived), [heads]);
-  const archivedHeads = useMemo(() => heads.filter((head) => head.isArchived), [heads]);
+  const overview = assistantOverviewQuery.data ?? {
+    activeThreadId: null,
+    threads: EMPTY_THREADS,
+    state: EMPTY_ASSISTANT_STATE,
+  };
+  const assistantState = overview.state;
+  const activeThreadId = overview.activeThreadId;
+  const threads = overview.threads;
+  const unarchivedThreads = useMemo(
+    () => threads.filter((thread) => thread.archivedAt == null),
+    [threads],
+  );
+  const archivedThreads = useMemo(
+    () => threads.filter((thread) => thread.archivedAt != null),
+    [threads],
+  );
   const sessionOverlayState =
-    projectHeadsQuery.isInitialLoading && heads.length === 0
+    assistantOverviewQuery.isInitialLoading && threads.length === 0
       ? ("loading" as const)
-      : unarchivedHeads.length === 0
+      : unarchivedThreads.length === 0
         ? ("empty" as const)
         : null;
   const sessionRows = useMemo(
     () =>
       buildSessionRows({
-        unarchivedHeads,
-        archivedHeads,
-        showArchivedHeads,
+        unarchivedThreads,
+        archivedThreads,
+        showArchivedThreads,
       }),
-    [archivedHeads, showArchivedHeads, unarchivedHeads],
+    [archivedThreads, showArchivedThreads, unarchivedThreads],
   );
-  const retryableAttempt = selectRetryableAttempt(assistantStateQuery.data);
-  const pendingAttempt = selectPendingAttempt(assistantStateQuery.data);
+  const retryableRun = selectRetryableRun(assistantState);
+  const pendingRun = selectPendingRun(assistantState);
   const isGenerating = sendMessage.isPending || retryMessage.isPending;
-  const isSessionMutating =
-    createSession.isPending ||
-    setActiveHead.isPending ||
-    renameProjectHead.isPending ||
-    archiveProjectHead.isPending;
-  const isSessionBusy = isSessionMutating || expectedActiveHeadId !== null;
-  const isBusy = isGenerating || isSessionBusy;
+  const isThreadMutating =
+    createThread.isPending ||
+    setActiveThread.isPending ||
+    renameThread.isPending ||
+    archiveThread.isPending ||
+    selectThreadTip.isPending;
+  const isThreadBusy = isThreadMutating || expectedActiveThreadId !== null;
+  const isBusy = isGenerating || isThreadBusy;
   const canSubmit = canSendAssistantMessage({
     draft,
-    headId: activeHeadId,
+    threadId: activeThreadId,
     selectedConnectionId,
     selectedModelId,
     selectionHydrated,
     isBusy,
-    hasPendingAttempt: pendingAttempt != null,
+    hasPendingRun: pendingRun != null,
   });
-  const messages = assistantState.messages;
+  const messages = assistantState.activePath;
   const showEmptyState = messages.length === 0 && pendingAction?.kind !== "send";
 
   useEffect(() => {
-    if (expectedActiveHeadId === null) {
+    if (expectedActiveThreadId === null) {
       return;
     }
 
     if (
-      (expectedActiveHeadId === "" && activeHeadId === null) ||
-      expectedActiveHeadId === activeHeadId
+      (expectedActiveThreadId === "" && activeThreadId === null) ||
+      expectedActiveThreadId === activeThreadId
     ) {
-      setExpectedActiveHeadId(null);
+      setExpectedActiveThreadId(null);
     }
-  }, [activeHeadId, expectedActiveHeadId]);
+  }, [activeThreadId, expectedActiveThreadId]);
 
   useEffect(() => {
     if (selectionHydrated) {
@@ -266,7 +240,7 @@ export function useAiAssistantController(
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!canSubmit || !activeHeadId) {
+      if (!canSubmit || !activeThreadId) {
         return;
       }
 
@@ -278,7 +252,7 @@ export function useAiAssistantController(
       try {
         await sendMessage.mutate({
           projectId,
-          headId: activeHeadId,
+          threadId: activeThreadId,
           text,
           context: contextSnapshot,
         });
@@ -289,23 +263,23 @@ export function useAiAssistantController(
         setPendingAction(null);
       }
     },
-    [activeHeadId, canSubmit, contextSnapshot, draft, projectId, sendMessage],
+    [activeThreadId, canSubmit, contextSnapshot, draft, projectId, sendMessage],
   );
 
   const handleRetry = useCallback(
-    async (triggerMessageId: string) => {
-      if (!activeHeadId) {
+    async (triggerNodeId: string) => {
+      if (!activeThreadId) {
         return;
       }
 
       setComposerError(null);
-      setPendingAction({ kind: "retry", triggerMessageId });
+      setPendingAction({ kind: "retry", triggerNodeId });
 
       try {
         await retryMessage.mutate({
           projectId,
-          headId: activeHeadId,
-          triggerMessageId,
+          threadId: activeThreadId,
+          triggerNodeId,
           context: contextSnapshot,
         });
       } catch (error) {
@@ -314,117 +288,140 @@ export function useAiAssistantController(
         setPendingAction(null);
       }
     },
-    [activeHeadId, contextSnapshot, projectId, retryMessage],
+    [activeThreadId, contextSnapshot, projectId, retryMessage],
   );
 
-  const handleCreateSession = useCallback(async () => {
+  const handleCreateThread = useCallback(async () => {
     setComposerError(null);
-    setEditingHead(null);
+    setEditingThread(null);
 
     try {
-      const head = await createSession.mutate({ projectId });
-      setExpectedActiveHeadId(head.id);
+      const thread = await createThread.mutate({ projectId });
+      setExpectedActiveThreadId(thread.id);
     } catch (error) {
       setComposerError(error instanceof Error ? error.message : "新建会话失败。");
     }
-  }, [createSession, projectId]);
+  }, [createThread, projectId]);
 
-  const handleActivateHead = useCallback(
-    async (headId: string) => {
-      if (headId === activeHeadId || isSessionBusy) {
+  const handleActivateThread = useCallback(
+    async (threadId: string) => {
+      if (threadId === activeThreadId || isThreadBusy) {
         return;
       }
 
       setComposerError(null);
-      setEditingHead(null);
-      setExpectedActiveHeadId(headId);
+      setEditingThread(null);
+      setExpectedActiveThreadId(threadId);
 
       try {
-        await setActiveHead.mutate({ projectId, headId });
+        await setActiveThread.mutate({ projectId, threadId });
       } catch (error) {
-        setExpectedActiveHeadId(null);
+        setExpectedActiveThreadId(null);
         setComposerError(error instanceof Error ? error.message : "切换会话失败。");
       }
     },
-    [activeHeadId, isSessionBusy, projectId, setActiveHead],
+    [activeThreadId, isThreadBusy, projectId, setActiveThread],
   );
 
-  const handleRenameStart = useCallback((head: AiProjectHeadView) => {
-    setEditingHead({ headId: head.id, name: head.name });
+  const handleRenameStart = useCallback((thread: AgentThreadView) => {
+    setEditingThread({ threadId: thread.id, title: thread.title });
   }, []);
 
   const handleRenameCancel = useCallback(() => {
-    setEditingHead(null);
+    setEditingThread(null);
   }, []);
 
-  const handleEditingHeadNameChange = useCallback((headId: string, value: string) => {
-    setEditingHead({ headId, name: value });
+  const handleEditingThreadTitleChange = useCallback((threadId: string, value: string) => {
+    setEditingThread({ threadId, title: value });
   }, []);
 
   const handleRenameSubmit = useCallback(async () => {
-    if (!editingHead) {
+    if (!editingThread) {
       return;
     }
 
-    const normalizedName = editingHead.name.trim();
-    const currentHead = heads.find((head) => head.id === editingHead.headId) ?? null;
-    if (currentHead && normalizedName === currentHead.name.trim()) {
-      setEditingHead(null);
+    const normalizedTitle = editingThread.title.trim();
+    const currentThread = threads.find((thread) => thread.id === editingThread.threadId) ?? null;
+    if (currentThread && normalizedTitle === currentThread.title.trim()) {
+      setEditingThread(null);
       return;
     }
 
     setComposerError(null);
 
     try {
-      await renameProjectHead.mutate({
-        headId: editingHead.headId,
-        name: normalizedName,
+      await renameThread.mutate({
+        threadId: editingThread.threadId,
+        title: normalizedTitle,
       });
-      setEditingHead(null);
+      setEditingThread(null);
     } catch (error) {
       setComposerError(error instanceof Error ? error.message : "重命名会话失败。");
     }
-  }, [editingHead, heads, renameProjectHead]);
+  }, [editingThread, renameThread, threads]);
 
   const handleArchiveToggle = useCallback(
-    async (head: AiProjectHeadView, archived: boolean) => {
+    async (thread: AgentThreadView, archived: boolean) => {
       setComposerError(null);
-      setEditingHead((current) => (current?.headId === head.id ? null : current));
+      setEditingThread((current) => (current?.threadId === thread.id ? null : current));
 
-      const nextExpectedActiveHeadId = resolveExpectedActiveHeadAfterArchiveToggle({
-        activeHeadId,
-        head,
+      const nextExpectedActiveThreadId = resolveExpectedActiveThreadAfterArchiveToggle({
+        activeThreadId,
+        thread,
         archived,
-        unarchivedHeads,
+        unarchivedThreads,
       });
-      if (nextExpectedActiveHeadId !== null) {
-        setExpectedActiveHeadId(nextExpectedActiveHeadId);
+      if (nextExpectedActiveThreadId !== null) {
+        setExpectedActiveThreadId(nextExpectedActiveThreadId);
       }
 
       try {
-        await archiveProjectHead.mutate({ headId: head.id, archived });
+        await archiveThread.mutate({ threadId: thread.id, archived });
       } catch (error) {
-        setExpectedActiveHeadId(null);
+        setExpectedActiveThreadId(null);
         setComposerError(error instanceof Error ? error.message : "更新会话状态失败。");
       }
     },
-    [activeHeadId, archiveProjectHead, unarchivedHeads],
+    [activeThreadId, archiveThread, unarchivedThreads],
+  );
+
+  const handleSelectCandidate = useCallback(
+    async (tipNodeId: string) => {
+      const threadId = assistantState.thread?.id;
+      if (!threadId || isThreadBusy) {
+        return;
+      }
+
+      setComposerError(null);
+      try {
+        await selectThreadTip.mutate({
+          threadId,
+          tipNodeId,
+        });
+      } catch (error) {
+        setComposerError(error instanceof Error ? error.message : "切换候选失败。");
+      }
+    },
+    [assistantState.thread?.id, isThreadBusy, selectThreadTip],
   );
 
   return {
-    activeHeadId,
+    activeThreadId,
     canSubmit,
     composerError,
     draft,
-    editingHead,
-    handleActivateHead,
+    editingThread,
+    getCandidateGroupForNode: (node: (typeof messages)[number]) =>
+      getCandidateGroupForNode(assistantState.candidateGroups, node),
+    handleActivateThread,
     handleArchiveToggle,
-    handleCreateSession,
-    handleEditingHeadNameChange,
+    handleCreateThread,
+    handleEditingThreadTitleChange,
     handleRenameCancel,
     handleRenameStart,
     handleRenameSubmit,
     handleRetry,
+    handleSelectCandidate,
     handleSelectionChange,
     handleSelectionCommit,
     handleSubmit,
@@ -432,22 +429,22 @@ export function useAiAssistantController(
     isGenerating,
     isLoadingSelection,
     isRetrying: retryMessage.isPending,
-    isSessionBusy,
-    isSessionMutating,
+    isThreadBusy,
+    isThreadMutating,
     messages,
     pendingAction,
-    pendingAttempt,
-    retryableAttempt,
+    pendingRun,
+    retryableRun,
     selectedConnectionId,
     selectedModelId,
     selectionHydrated,
     sessionOverlayState,
     sessionRows,
     setDraft,
-    showArchivedHeads,
-    setShowArchivedHeads,
+    showArchivedThreads,
+    setShowArchivedThreads,
     showEmptyState,
-    assistantStateIsInitialLoading: assistantStateQuery.isInitialLoading,
+    assistantStateIsInitialLoading: assistantOverviewQuery.isInitialLoading,
     contextSnapshot,
     hasDraft: draft.trim().length > 0,
   };

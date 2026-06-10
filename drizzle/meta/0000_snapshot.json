@@ -1,9 +1,1184 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "28a30d87-6915-42b2-9400-563214a2eae8",
+  "id": "d5e91585-a864-4932-8398-7ba38cef5fb6",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
+    "agent_artifacts": {
+      "name": "agent_artifacts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "step_id": {
+          "name": "step_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "artifact_kind": {
+          "name": "artifact_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "content_json": {
+          "name": "content_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "summary_text": {
+          "name": "summary_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "agent_artifacts_run_idx": {
+          "name": "agent_artifacts_run_idx",
+          "columns": ["run_id"],
+          "isUnique": false
+        },
+        "agent_artifacts_step_idx": {
+          "name": "agent_artifacts_step_idx",
+          "columns": ["step_id"],
+          "isUnique": false
+        },
+        "agent_artifacts_kind_idx": {
+          "name": "agent_artifacts_kind_idx",
+          "columns": ["artifact_kind"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_artifacts_run_id_agent_runs_id_fk": {
+          "name": "agent_artifacts_run_id_agent_runs_id_fk",
+          "tableFrom": "agent_artifacts",
+          "tableTo": "agent_runs",
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_artifacts_step_id_agent_run_steps_id_fk": {
+          "name": "agent_artifacts_step_id_agent_run_steps_id_fk",
+          "tableFrom": "agent_artifacts",
+          "tableTo": "agent_run_steps",
+          "columnsFrom": ["step_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "agent_artifacts_kind_valid": {
+          "name": "agent_artifacts_kind_valid",
+          "value": "\"agent_artifacts\".\"artifact_kind\" IN ('prepared-model-messages', 'response-messages', 'request-body', 'response-body', 'provider-metadata', 'tool-input', 'tool-output', 'reasoning-raw', 'ui-projection', 'error')"
+        },
+        "agent_artifacts_visibility_valid": {
+          "name": "agent_artifacts_visibility_valid",
+          "value": "\"agent_artifacts\".\"visibility\" IN ('public', 'hidden', 'internal')"
+        }
+      }
+    },
+    "agent_project_state": {
+      "name": "agent_project_state",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "agent_profile": {
+          "name": "agent_profile",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "active_thread_id": {
+          "name": "active_thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "agent_project_state_unique_idx": {
+          "name": "agent_project_state_unique_idx",
+          "columns": ["project_id", "agent_profile"],
+          "isUnique": true
+        },
+        "agent_project_state_active_thread_idx": {
+          "name": "agent_project_state_active_thread_idx",
+          "columns": ["active_thread_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_project_state_project_id_projects_id_fk": {
+          "name": "agent_project_state_project_id_projects_id_fk",
+          "tableFrom": "agent_project_state",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_project_state_active_thread_id_agent_threads_id_fk": {
+          "name": "agent_project_state_active_thread_id_agent_threads_id_fk",
+          "tableFrom": "agent_project_state",
+          "tableTo": "agent_threads",
+          "columnsFrom": ["active_thread_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "agent_project_state_profile_nonempty": {
+          "name": "agent_project_state_profile_nonempty",
+          "value": "length(\"agent_project_state\".\"agent_profile\") > 0"
+        }
+      }
+    },
+    "agent_run_events": {
+      "name": "agent_run_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "step_id": {
+          "name": "step_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "seq": {
+          "name": "seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "event_kind": {
+          "name": "event_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "related_tool_call_id": {
+          "name": "related_tool_call_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "related_run_id": {
+          "name": "related_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "summary_text": {
+          "name": "summary_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "payload_artifact_id": {
+          "name": "payload_artifact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "agent_run_events_run_seq_idx": {
+          "name": "agent_run_events_run_seq_idx",
+          "columns": ["run_id", "seq"],
+          "isUnique": true
+        },
+        "agent_run_events_step_idx": {
+          "name": "agent_run_events_step_idx",
+          "columns": ["step_id"],
+          "isUnique": false
+        },
+        "agent_run_events_node_idx": {
+          "name": "agent_run_events_node_idx",
+          "columns": ["node_id"],
+          "isUnique": false
+        },
+        "agent_run_events_related_run_idx": {
+          "name": "agent_run_events_related_run_idx",
+          "columns": ["related_run_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_run_events_run_id_agent_runs_id_fk": {
+          "name": "agent_run_events_run_id_agent_runs_id_fk",
+          "tableFrom": "agent_run_events",
+          "tableTo": "agent_runs",
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_run_events_step_id_agent_run_steps_id_fk": {
+          "name": "agent_run_events_step_id_agent_run_steps_id_fk",
+          "tableFrom": "agent_run_events",
+          "tableTo": "agent_run_steps",
+          "columnsFrom": ["step_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_run_events_node_id_agent_thread_nodes_id_fk": {
+          "name": "agent_run_events_node_id_agent_thread_nodes_id_fk",
+          "tableFrom": "agent_run_events",
+          "tableTo": "agent_thread_nodes",
+          "columnsFrom": ["node_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_run_events_related_run_id_agent_runs_id_fk": {
+          "name": "agent_run_events_related_run_id_agent_runs_id_fk",
+          "tableFrom": "agent_run_events",
+          "tableTo": "agent_runs",
+          "columnsFrom": ["related_run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_run_events_payload_artifact_id_agent_artifacts_id_fk": {
+          "name": "agent_run_events_payload_artifact_id_agent_artifacts_id_fk",
+          "tableFrom": "agent_run_events",
+          "tableTo": "agent_artifacts",
+          "columnsFrom": ["payload_artifact_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "agent_run_events_kind_valid": {
+          "name": "agent_run_events_kind_valid",
+          "value": "\"agent_run_events\".\"event_kind\" IN ('run-started', 'step-started', 'provider-requested', 'provider-responded', 'tool-call-started', 'tool-call-finished', 'tool-call-failed', 'node-materialized', 'active-tip-moved', 'child-run-started', 'run-failed', 'run-succeeded')"
+        }
+      }
+    },
+    "agent_run_steps": {
+      "name": "agent_run_steps",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "step_index": {
+          "name": "step_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_id": {
+          "name": "model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "finish_reason": {
+          "name": "finish_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "raw_finish_reason": {
+          "name": "raw_finish_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "system_json": {
+          "name": "system_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "prepared_messages_artifact_id": {
+          "name": "prepared_messages_artifact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "response_messages_artifact_id": {
+          "name": "response_messages_artifact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "request_body_artifact_id": {
+          "name": "request_body_artifact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "response_body_artifact_id": {
+          "name": "response_body_artifact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "provider_metadata_artifact_id": {
+          "name": "provider_metadata_artifact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "usage_json": {
+          "name": "usage_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "agent_run_steps_run_step_idx": {
+          "name": "agent_run_steps_run_step_idx",
+          "columns": ["run_id", "step_index"],
+          "isUnique": true
+        },
+        "agent_run_steps_run_idx": {
+          "name": "agent_run_steps_run_idx",
+          "columns": ["run_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_run_steps_run_id_agent_runs_id_fk": {
+          "name": "agent_run_steps_run_id_agent_runs_id_fk",
+          "tableFrom": "agent_run_steps",
+          "tableTo": "agent_runs",
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_run_steps_prepared_messages_artifact_id_agent_artifacts_id_fk": {
+          "name": "agent_run_steps_prepared_messages_artifact_id_agent_artifacts_id_fk",
+          "tableFrom": "agent_run_steps",
+          "tableTo": "agent_artifacts",
+          "columnsFrom": ["prepared_messages_artifact_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_run_steps_response_messages_artifact_id_agent_artifacts_id_fk": {
+          "name": "agent_run_steps_response_messages_artifact_id_agent_artifacts_id_fk",
+          "tableFrom": "agent_run_steps",
+          "tableTo": "agent_artifacts",
+          "columnsFrom": ["response_messages_artifact_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_run_steps_request_body_artifact_id_agent_artifacts_id_fk": {
+          "name": "agent_run_steps_request_body_artifact_id_agent_artifacts_id_fk",
+          "tableFrom": "agent_run_steps",
+          "tableTo": "agent_artifacts",
+          "columnsFrom": ["request_body_artifact_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_run_steps_response_body_artifact_id_agent_artifacts_id_fk": {
+          "name": "agent_run_steps_response_body_artifact_id_agent_artifacts_id_fk",
+          "tableFrom": "agent_run_steps",
+          "tableTo": "agent_artifacts",
+          "columnsFrom": ["response_body_artifact_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_run_steps_provider_metadata_artifact_id_agent_artifacts_id_fk": {
+          "name": "agent_run_steps_provider_metadata_artifact_id_agent_artifacts_id_fk",
+          "tableFrom": "agent_run_steps",
+          "tableTo": "agent_artifacts",
+          "columnsFrom": ["provider_metadata_artifact_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "agent_run_steps_provider_nonempty": {
+          "name": "agent_run_steps_provider_nonempty",
+          "value": "length(\"agent_run_steps\".\"provider\") > 0"
+        },
+        "agent_run_steps_model_nonempty": {
+          "name": "agent_run_steps_model_nonempty",
+          "value": "length(\"agent_run_steps\".\"model_id\") > 0"
+        }
+      }
+    },
+    "agent_runs": {
+      "name": "agent_runs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parent_run_id": {
+          "name": "parent_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "parent_event_id": {
+          "name": "parent_event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "trigger_node_id": {
+          "name": "trigger_node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "base_tip_node_id": {
+          "name": "base_tip_node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "run_mode": {
+          "name": "run_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "agent_profile": {
+          "name": "agent_profile",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "selection_snapshot_json": {
+          "name": "selection_snapshot_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "context_snapshot_json": {
+          "name": "context_snapshot_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_artifact_id": {
+          "name": "error_artifact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "agent_runs_thread_idx": {
+          "name": "agent_runs_thread_idx",
+          "columns": ["thread_id"],
+          "isUnique": false
+        },
+        "agent_runs_parent_run_idx": {
+          "name": "agent_runs_parent_run_idx",
+          "columns": ["parent_run_id"],
+          "isUnique": false
+        },
+        "agent_runs_trigger_node_idx": {
+          "name": "agent_runs_trigger_node_idx",
+          "columns": ["trigger_node_id"],
+          "isUnique": false
+        },
+        "agent_runs_thread_status_idx": {
+          "name": "agent_runs_thread_status_idx",
+          "columns": ["thread_id", "status"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_runs_thread_id_agent_threads_id_fk": {
+          "name": "agent_runs_thread_id_agent_threads_id_fk",
+          "tableFrom": "agent_runs",
+          "tableTo": "agent_threads",
+          "columnsFrom": ["thread_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_runs_parent_run_id_agent_runs_id_fk": {
+          "name": "agent_runs_parent_run_id_agent_runs_id_fk",
+          "tableFrom": "agent_runs",
+          "tableTo": "agent_runs",
+          "columnsFrom": ["parent_run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_runs_parent_event_id_agent_run_events_id_fk": {
+          "name": "agent_runs_parent_event_id_agent_run_events_id_fk",
+          "tableFrom": "agent_runs",
+          "tableTo": "agent_run_events",
+          "columnsFrom": ["parent_event_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_runs_trigger_node_id_agent_thread_nodes_id_fk": {
+          "name": "agent_runs_trigger_node_id_agent_thread_nodes_id_fk",
+          "tableFrom": "agent_runs",
+          "tableTo": "agent_thread_nodes",
+          "columnsFrom": ["trigger_node_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_runs_base_tip_node_id_agent_thread_nodes_id_fk": {
+          "name": "agent_runs_base_tip_node_id_agent_thread_nodes_id_fk",
+          "tableFrom": "agent_runs",
+          "tableTo": "agent_thread_nodes",
+          "columnsFrom": ["base_tip_node_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_runs_error_artifact_id_agent_artifacts_id_fk": {
+          "name": "agent_runs_error_artifact_id_agent_artifacts_id_fk",
+          "tableFrom": "agent_runs",
+          "tableTo": "agent_artifacts",
+          "columnsFrom": ["error_artifact_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "agent_runs_mode_valid": {
+          "name": "agent_runs_mode_valid",
+          "value": "\"agent_runs\".\"run_mode\" IN ('send', 'retry', 'regenerate', 'edit_regenerate', 'subagent')"
+        },
+        "agent_runs_status_valid": {
+          "name": "agent_runs_status_valid",
+          "value": "\"agent_runs\".\"status\" IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')"
+        },
+        "agent_runs_profile_nonempty": {
+          "name": "agent_runs_profile_nonempty",
+          "value": "length(\"agent_runs\".\"agent_profile\") > 0"
+        }
+      }
+    },
+    "agent_thread_node_parts": {
+      "name": "agent_thread_node_parts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "part_index": {
+          "name": "part_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "part_kind": {
+          "name": "part_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'public'"
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'done'"
+        },
+        "provider_options_json": {
+          "name": "provider_options_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "provider_metadata_json": {
+          "name": "provider_metadata_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "payload_json": {
+          "name": "payload_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "agent_thread_node_parts_node_idx": {
+          "name": "agent_thread_node_parts_node_idx",
+          "columns": ["node_id", "part_index"],
+          "isUnique": true
+        },
+        "agent_thread_node_parts_kind_idx": {
+          "name": "agent_thread_node_parts_kind_idx",
+          "columns": ["part_kind"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_thread_node_parts_node_id_agent_thread_nodes_id_fk": {
+          "name": "agent_thread_node_parts_node_id_agent_thread_nodes_id_fk",
+          "tableFrom": "agent_thread_node_parts",
+          "tableTo": "agent_thread_nodes",
+          "columnsFrom": ["node_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "agent_thread_node_parts_kind_valid": {
+          "name": "agent_thread_node_parts_kind_valid",
+          "value": "\"agent_thread_node_parts\".\"part_kind\" IN ('text', 'reasoning', 'tool-call', 'tool-result', 'tool-error', 'file', 'source-url', 'source-document', 'data', 'step-start')"
+        },
+        "agent_thread_node_parts_visibility_valid": {
+          "name": "agent_thread_node_parts_visibility_valid",
+          "value": "\"agent_thread_node_parts\".\"visibility\" IN ('public', 'hidden', 'internal')"
+        },
+        "agent_thread_node_parts_state_valid": {
+          "name": "agent_thread_node_parts_state_valid",
+          "value": "\"agent_thread_node_parts\".\"state\" IN ('streaming', 'done')"
+        }
+      }
+    },
+    "agent_thread_nodes": {
+      "name": "agent_thread_nodes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parent_node_id": {
+          "name": "parent_node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by_run_id": {
+          "name": "created_by_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_step_id": {
+          "name": "source_step_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "summary_text": {
+          "name": "summary_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "message_json": {
+          "name": "message_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "agent_thread_nodes_thread_idx": {
+          "name": "agent_thread_nodes_thread_idx",
+          "columns": ["thread_id"],
+          "isUnique": false
+        },
+        "agent_thread_nodes_parent_idx": {
+          "name": "agent_thread_nodes_parent_idx",
+          "columns": ["parent_node_id"],
+          "isUnique": false
+        },
+        "agent_thread_nodes_run_idx": {
+          "name": "agent_thread_nodes_run_idx",
+          "columns": ["created_by_run_id"],
+          "isUnique": false
+        },
+        "agent_thread_nodes_step_idx": {
+          "name": "agent_thread_nodes_step_idx",
+          "columns": ["source_step_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_thread_nodes_thread_id_agent_threads_id_fk": {
+          "name": "agent_thread_nodes_thread_id_agent_threads_id_fk",
+          "tableFrom": "agent_thread_nodes",
+          "tableTo": "agent_threads",
+          "columnsFrom": ["thread_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_thread_nodes_parent_node_id_agent_thread_nodes_id_fk": {
+          "name": "agent_thread_nodes_parent_node_id_agent_thread_nodes_id_fk",
+          "tableFrom": "agent_thread_nodes",
+          "tableTo": "agent_thread_nodes",
+          "columnsFrom": ["parent_node_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_thread_nodes_created_by_run_id_agent_runs_id_fk": {
+          "name": "agent_thread_nodes_created_by_run_id_agent_runs_id_fk",
+          "tableFrom": "agent_thread_nodes",
+          "tableTo": "agent_runs",
+          "columnsFrom": ["created_by_run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_thread_nodes_source_step_id_agent_run_steps_id_fk": {
+          "name": "agent_thread_nodes_source_step_id_agent_run_steps_id_fk",
+          "tableFrom": "agent_thread_nodes",
+          "tableTo": "agent_run_steps",
+          "columnsFrom": ["source_step_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "agent_thread_nodes_parent_not_self": {
+          "name": "agent_thread_nodes_parent_not_self",
+          "value": "\"agent_thread_nodes\".\"parent_node_id\" IS NULL OR \"agent_thread_nodes\".\"parent_node_id\" <> \"agent_thread_nodes\".\"id\""
+        },
+        "agent_thread_nodes_role_valid": {
+          "name": "agent_thread_nodes_role_valid",
+          "value": "\"agent_thread_nodes\".\"role\" IN ('system', 'user', 'assistant', 'tool')"
+        },
+        "agent_thread_nodes_source_kind_valid": {
+          "name": "agent_thread_nodes_source_kind_valid",
+          "value": "\"agent_thread_nodes\".\"source_kind\" IN ('user_input', 'model_response', 'tool_result', 'system_seed', 'edit_rewrite')"
+        }
+      }
+    },
+    "agent_threads": {
+      "name": "agent_threads",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "agent_profile": {
+          "name": "agent_profile",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "active_tip_node_id": {
+          "name": "active_tip_node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "agent_threads_project_idx": {
+          "name": "agent_threads_project_idx",
+          "columns": ["project_id"],
+          "isUnique": false
+        },
+        "agent_threads_project_profile_idx": {
+          "name": "agent_threads_project_profile_idx",
+          "columns": ["project_id", "agent_profile"],
+          "isUnique": false
+        },
+        "agent_threads_project_archived_idx": {
+          "name": "agent_threads_project_archived_idx",
+          "columns": ["project_id", "archived_at"],
+          "isUnique": false
+        },
+        "agent_threads_active_tip_idx": {
+          "name": "agent_threads_active_tip_idx",
+          "columns": ["active_tip_node_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_threads_project_id_projects_id_fk": {
+          "name": "agent_threads_project_id_projects_id_fk",
+          "tableFrom": "agent_threads",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_threads_active_tip_node_id_agent_thread_nodes_id_fk": {
+          "name": "agent_threads_active_tip_node_id_agent_thread_nodes_id_fk",
+          "tableFrom": "agent_threads",
+          "tableTo": "agent_thread_nodes",
+          "columnsFrom": ["active_tip_node_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "agent_threads_profile_nonempty": {
+          "name": "agent_threads_profile_nonempty",
+          "value": "length(\"agent_threads\".\"agent_profile\") > 0"
+        },
+        "agent_threads_title_nonempty": {
+          "name": "agent_threads_title_nonempty",
+          "value": "length(\"agent_threads\".\"title\") > 0"
+        }
+      }
+    },
     "ai_catalog_models": {
       "name": "ai_catalog_models",
       "columns": {
@@ -1116,6 +2291,51 @@
         "content_nodes_next_sibling_not_self": {
           "name": "content_nodes_next_sibling_not_self",
           "value": "\"content_nodes\".\"next_sibling_id\" IS NULL OR \"content_nodes\".\"next_sibling_id\" <> \"content_nodes\".\"id\""
+        }
+      }
+    },
+    "global_config_options": {
+      "name": "global_config_options",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value_json": {
+          "name": "value_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "global_config_options_key_nonempty": {
+          "name": "global_config_options_key_nonempty",
+          "value": "length(\"global_config_options\".\"key\") > 0"
         }
       }
     },

@@ -12,8 +12,8 @@ import {
 import { AiAssistantSheetLayout } from "./AiAssistantSheetLayout";
 import {
   getAssistantToolTrace,
-  getAttemptErrorMessage,
   getMessageText,
+  getRunErrorMessage,
   listAssistantContextDetails,
 } from "./assistantState";
 import { useAiAssistantController } from "./useAiAssistantController";
@@ -41,8 +41,8 @@ export function AiSidebar({
         </span>
         <button
           type="button"
-          onClick={() => void controller.handleCreateSession()}
-          disabled={controller.isSessionMutating}
+          onClick={() => void controller.handleCreateThread()}
+          disabled={controller.isThreadMutating}
           className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
         >
           <span className="icon-[material-symbols--add]" />
@@ -61,38 +61,38 @@ export function AiSidebar({
                     <ArchivedSectionToggleRow
                       key={row.key}
                       count={row.count}
-                      expanded={controller.showArchivedHeads}
+                      expanded={controller.showArchivedThreads}
                       onToggle={() =>
-                        controller.setShowArchivedHeads((current: boolean) => !current)
+                        controller.setShowArchivedThreads((current: boolean) => !current)
                       }
                     />
                   ) : (
                     <AnimatedHeadRow
                       key={row.key}
-                      head={row.head}
-                      isActive={row.head.id === controller.activeHeadId}
-                      isEditing={controller.editingHead?.headId === row.head.id}
+                      thread={row.thread}
+                      isActive={row.thread.id === controller.activeThreadId}
+                      isEditing={controller.editingThread?.threadId === row.thread.id}
                       editingName={
-                        controller.editingHead?.headId === row.head.id
-                          ? controller.editingHead.name
+                        controller.editingThread?.threadId === row.thread.id
+                          ? controller.editingThread.title
                           : ""
                       }
-                      isBusy={controller.isSessionMutating}
+                      isBusy={controller.isThreadMutating}
                       className={row.className}
                       onActivate={() => {
                         if (layout.sheetState === "expanded") {
                           layout.setSheetState("peek");
                         }
-                        void controller.handleActivateHead(row.head.id);
+                        void controller.handleActivateThread(row.thread.id);
                       }}
                       onEditingNameChange={(value) =>
-                        controller.handleEditingHeadNameChange(row.head.id, value)
+                        controller.handleEditingThreadTitleChange(row.thread.id, value)
                       }
-                      onRenameStart={() => controller.handleRenameStart(row.head)}
+                      onRenameStart={() => controller.handleRenameStart(row.thread)}
                       onRenameCancel={controller.handleRenameCancel}
                       onRenameSubmit={() => void controller.handleRenameSubmit()}
-                      onArchive={() => void controller.handleArchiveToggle(row.head, true)}
-                      onRestore={() => void controller.handleArchiveToggle(row.head, false)}
+                      onArchive={() => void controller.handleArchiveToggle(row.thread, true)}
+                      onRestore={() => void controller.handleArchiveToggle(row.thread, false)}
                     />
                   ),
                 )}
@@ -121,11 +121,11 @@ export function AiSidebar({
                 <div className="mb-2 flex items-center gap-2 text-[12px] text-foreground-muted">
                   <span className="icon-[material-symbols--auto-awesome] text-sm text-accent-foreground" />
                   <span>
-                    {controller.activeHeadId ? "这个会话还没有对话内容" : "还没有当前会话"}
+                    {controller.activeThreadId ? "这个会话还没有对话内容" : "还没有当前会话"}
                   </span>
                 </div>
                 <p className="text-[12px] leading-5 text-foreground-muted">
-                  {controller.activeHeadId
+                  {controller.activeThreadId
                     ? "选择模型后可以直接开始对话。"
                     : "先新建一个会话，或从上方切换到已有会话。"}
                 </p>
@@ -133,14 +133,15 @@ export function AiSidebar({
             ) : null}
 
             {controller.messages.map((message) => {
-              const text = getMessageText(message.content);
-              const toolTrace = getAssistantToolTrace(message.metadata);
+              const text = getMessageText(message);
+              const toolTrace = getAssistantToolTrace(message);
               const isUser = message.role === "user";
-              const showRetryError = controller.retryableAttempt?.triggerMessageId === message.id;
-              const showServerPending = controller.pendingAttempt?.triggerMessageId === message.id;
+              const candidateGroup = controller.getCandidateGroupForNode(message);
+              const showRetryError = controller.retryableRun?.triggerNodeId === message.id;
+              const showServerPending = controller.pendingRun?.triggerNodeId === message.id;
               const showLocalRetryPending =
                 controller.pendingAction?.kind === "retry" &&
-                controller.pendingAction.triggerMessageId === message.id;
+                controller.pendingAction.triggerNodeId === message.id;
 
               return (
                 <div key={message.id}>
@@ -158,7 +159,7 @@ export function AiSidebar({
 
                   {showRetryError ? (
                     <AttemptErrorCard
-                      message={getAttemptErrorMessage(controller.retryableAttempt?.error)}
+                      message={getRunErrorMessage()}
                       canRetry={!controller.isBusy}
                       isRetrying={controller.isRetrying}
                       onRetry={() => void controller.handleRetry(message.id)}
@@ -185,6 +186,31 @@ export function AiSidebar({
                           {entry.summary}
                         </div>
                       ))}
+                    </div>
+                  ) : null}
+
+                  {candidateGroup ? (
+                    <div className="mt-2 flex items-center gap-1.5 px-1">
+                      {candidateGroup.nodes.map((candidate, index) => {
+                        const active = candidate.id === candidateGroup.activeNodeId;
+                        return (
+                          <button
+                            key={candidate.id}
+                            type="button"
+                            disabled={active || controller.isThreadBusy}
+                            onClick={() =>
+                              void controller.handleSelectCandidate(candidate.tipNodeId)
+                            }
+                            className={`rounded-md border px-2 py-1 text-[11px] leading-4 ${
+                              active
+                                ? "border-accent-foreground bg-accent-foreground/10 text-accent-foreground"
+                                : "border-border bg-editor-background text-foreground-muted hover:text-foreground"
+                            }`}
+                          >
+                            候选 {index + 1}
+                          </button>
+                        );
+                      })}
                     </div>
                   ) : null}
                 </div>
@@ -231,7 +257,7 @@ export function AiSidebar({
                     controller.isLoadingSelection ||
                     !controller.selectedModelId ||
                     !controller.selectedConnectionId ||
-                    controller.activeHeadId == null ||
+                    controller.activeThreadId == null ||
                     controller.isBusy
                   }
                   rows={3}
@@ -239,7 +265,7 @@ export function AiSidebar({
                   placeholder={
                     controller.isLoadingSelection
                       ? "加载模型选择中..."
-                      : controller.activeHeadId == null
+                      : controller.activeThreadId == null
                         ? "先新建或切换到一个会话..."
                         : controller.selectedConnectionId && controller.selectedModelId
                           ? "输入消息..."
@@ -279,14 +305,14 @@ export function AiSidebar({
               >
                 <ModelHint
                   canSend={controller.canSubmit}
-                  hasActiveHead={controller.activeHeadId != null}
+                  hasActiveHead={controller.activeThreadId != null}
                   selectedConnectionId={controller.selectedConnectionId}
                   selectedModelId={controller.selectedModelId}
                   hasDraft={controller.hasDraft}
                   isLoadingSelection={controller.isLoadingSelection}
                   isGenerating={controller.isGenerating}
-                  isSessionBusy={controller.isSessionBusy}
-                  hasPendingAttempt={controller.pendingAttempt != null}
+                  isSessionBusy={controller.isThreadBusy}
+                  hasPendingAttempt={controller.pendingRun != null}
                   errorMessage={controller.composerError}
                 />
               </div>

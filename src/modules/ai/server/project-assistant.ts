@@ -1,31 +1,45 @@
+import type { ModelMessage } from "ai";
 import { generateText, stepCountIs } from "ai";
 import { eq } from "drizzle-orm";
 
 import { db, schema } from "@/db";
-import { listResolvedModelsForConnection } from "@/modules/ai/domain/catalog";
 import {
-  appendMessage,
-  completeGenerationAttemptError,
-  completeGenerationAttemptSuccess,
-  getHeadOrThrowView,
-  hasPendingGenerationAttempt,
-  listHeadGenerationAttempts,
-  recordGenerationAttempt,
-  resolveActiveAssistantHead,
-  resolveHeadMessages,
-  setActiveAssistantHead,
+  appendRunEvent,
+  appendUserNode,
+  archiveThread,
+  buildThreadModelMessages,
+  createArtifact,
+  createReplacementNode,
+  createRun,
+  createRunStep,
+  createThread,
+  getNodeCandidates,
+  getRunTrace,
+  getThreadView,
+  hasPendingRun,
+  listChildRuns,
+  listThreads,
+  markRunFailed,
+  markRunSucceeded,
+  materializeResponseMessages,
+  PROJECT_ASSISTANT_AGENT_PROFILE,
+  renameThread,
+  resolveActiveThread,
+  selectActiveTip,
+  setActiveThread,
 } from "@/modules/ai/domain/logs";
 import type {
-  AiAssistantMessageMetadata,
+  AgentRunTraceView,
+  AgentRunView,
+  AgentThreadNodeView,
+  AgentThreadStateView,
+  AgentThreadView,
   AiConnectionRow,
-  AiProjectGenerationAttemptView,
-  AiProjectHeadView,
-  AiProjectMessageView,
   AiResolvedModelView,
-  ProjectAssistantContextSnapshot,
-  ProjectAssistantToolTraceEntry,
   AiSelectionSnapshotInput,
+  ProjectAssistantContextSnapshot,
 } from "@/modules/ai/domain/types";
+import { listResolvedModelsForConnection } from "@/modules/ai/domain/catalog";
 import {
   getAiAssistantModelSelection,
   type AiAssistantModelSelection,
@@ -35,30 +49,38 @@ import { invariant } from "@/shared/lib/domain";
 import { createAssistantReadOnlyTools } from "./assistant-tools";
 import { createLanguageModelForConnection } from "./provider-factories";
 
-export interface AiAssistantTextMessageContent {
-  text: string;
-}
-
-export interface ProjectAssistantStateView {
-  head: AiProjectHeadView | null;
-  messages: AiProjectMessageView[];
-  attempts: AiProjectGenerationAttemptView[];
-}
+export interface ProjectAssistantStateView extends AgentThreadStateView {}
 
 export interface ProjectAssistantSendResult {
-  head: AiProjectHeadView;
-  userMessage: AiProjectMessageView;
-  assistantMessage: AiProjectMessageView;
-  attempt: AiProjectGenerationAttemptView;
+  thread: AgentThreadView;
+  userNode: AgentThreadNodeView;
+  assistantNode: AgentThreadNodeView | null;
+  run: AgentRunView;
+  state: AgentThreadStateView;
 }
 
 export interface ProjectAssistantRetryResult {
-  head: AiProjectHeadView;
-  assistantMessage: AiProjectMessageView;
-  attempt: AiProjectGenerationAttemptView;
+  thread: AgentThreadView;
+  assistantNode: AgentThreadNodeView | null;
+  run: AgentRunView;
+  state: AgentThreadStateView;
 }
 
-export const PROJECT_ASSISTANT_SYSTEM_PROMPT_ID = "writing-assistant-v1";
+export interface ProjectAssistantEditResult {
+  thread: AgentThreadView;
+  replacementNode: AgentThreadNodeView;
+  assistantNode: AgentThreadNodeView | null;
+  run: AgentRunView;
+  state: AgentThreadStateView;
+}
+
+export interface ProjectAssistantOverview {
+  activeThreadId: string | null;
+  threads: AgentThreadView[];
+  state: AgentThreadStateView;
+}
+
+export const PROJECT_ASSISTANT_SYSTEM_PROMPT_ID = "writing-assistant-v2";
 
 const PROJECT_ASSISTANT_SYSTEM_PROMPT = [
   "你是一个小说写作助手。",
@@ -83,17 +105,36 @@ interface GenerateAssistantTextInput {
   system: string;
   toolMode: "none" | "auto-read-only";
   context: ProjectAssistantContextSnapshot | null;
-  messages: Array<{
-    role: "system" | "user" | "assistant";
-    content: string;
-  }>;
+  messages: ModelMessage[];
+}
+
+interface GeneratedAssistantStep {
+  stepNumber: number;
+  model: {
+    provider: string;
+    modelId: string;
+  };
+  finishReason: string | undefined;
+  rawFinishReason: string | undefined;
+  usage: unknown;
+  request: {
+    body?: unknown;
+  };
+  response: {
+    body?: unknown;
+    messages: ModelMessage[];
+  };
+  providerMetadata: unknown;
+  toolCalls: Array<Record<string, unknown>>;
+  toolResults: Array<Record<string, unknown>>;
 }
 
 interface GenerateAssistantTextResult {
   text: string;
-  usage: unknown;
   finishReason: string | undefined;
-  toolTrace: ProjectAssistantToolTraceEntry[];
+  usage: unknown;
+  preparedMessagesByStep: ModelMessage[][];
+  steps: GeneratedAssistantStep[];
 }
 
 interface ProjectAssistantDependencies {
@@ -113,60 +154,51 @@ function defaultGenerateAssistantText({
   messages,
 }: GenerateAssistantTextInput): Promise<GenerateAssistantTextResult> {
   const model = createLanguageModelForConnection({ connection, modelId });
-
-  if (toolMode === "auto-read-only") {
-    const tools = createAssistantReadOnlyTools({
-      projectId,
-      context,
-    });
-
-    return generateText({
-      model,
-      system,
-      messages,
-      tools,
-      stopWhen: stepCountIs(5),
-    }).then((result) => ({
-      text: result.text,
-      usage: result.totalUsage,
-      finishReason: result.finishReason,
-      toolTrace: collectToolTrace(result.steps),
-    }));
-  }
+  const preparedMessagesByStep: ModelMessage[][] = [];
+  const tools =
+    toolMode === "auto-read-only"
+      ? createAssistantReadOnlyTools({
+          projectId,
+          context,
+        })
+      : undefined;
 
   return generateText({
     model,
     system,
     messages,
+    tools,
+    stopWhen: stepCountIs(5),
+    prepareStep: ({ messages: stepMessages, stepNumber }) => {
+      preparedMessagesByStep[stepNumber] = stepMessages;
+      return undefined;
+    },
   }).then((result) => ({
     text: result.text,
-    usage: result.totalUsage,
     finishReason: result.finishReason,
-    toolTrace: [],
+    usage: result.totalUsage,
+    preparedMessagesByStep,
+    steps: result.steps.map((step) => ({
+      stepNumber: step.stepNumber,
+      model: step.model,
+      finishReason: step.finishReason,
+      rawFinishReason: step.rawFinishReason,
+      usage: step.usage,
+      request: step.request,
+      response: {
+        body: step.response.body,
+        messages: step.response.messages as ModelMessage[],
+      },
+      providerMetadata: step.providerMetadata,
+      toolCalls: step.toolCalls as Array<Record<string, unknown>>,
+      toolResults: step.toolResults as Array<Record<string, unknown>>,
+    })),
   }));
-}
-
-function getTextMessageContent(content: unknown): string {
-  invariant(content != null && typeof content === "object", "AI 消息内容格式不支持。");
-  const text = Reflect.get(content as Record<string, unknown>, "text");
-  invariant(typeof text === "string", "AI 消息内容缺少文本字段。");
-  return text;
-}
-
-function buildSummaryText(text: string) {
-  const summary = text.trim().replace(/\s+/g, " ");
-  return summary.length <= 80 ? summary : `${summary.slice(0, 80)}…`;
 }
 
 function normalizeUserText(text: string) {
   const normalized = text.trim();
   invariant(normalized.length > 0, "消息不能为空。");
-  return normalized;
-}
-
-function normalizeAssistantText(text: string) {
-  const normalized = text.trim();
-  invariant(normalized.length > 0, "AI 没有返回可显示的文本。");
   return normalized;
 }
 
@@ -222,113 +254,6 @@ function buildProjectAssistantSystemPrompt({
   return [PROJECT_ASSISTANT_SYSTEM_PROMPT, modeInstruction, buildContextSection(context)].join(
     "\n\n",
   );
-}
-
-function buildToolTraceSummary({ toolName, output }: { toolName: string; output: unknown }) {
-  const envelope =
-    output && typeof output === "object" ? (output as Record<string, unknown>) : undefined;
-  const ok = envelope?.ok === true;
-  const data =
-    envelope && typeof envelope.data === "object"
-      ? (envelope.data as Record<string, unknown>)
-      : undefined;
-  const error = typeof envelope?.error === "string" ? envelope.error : null;
-
-  if (!ok) {
-    return {
-      status: "error" as const,
-      summary: error ? `${toolName} 失败：${error}` : `${toolName} 失败`,
-    };
-  }
-
-  switch (toolName) {
-    case "read_current_writing_context": {
-      const contentNode =
-        data?.contentNode && typeof data.contentNode === "object"
-          ? (data.contentNode as Record<string, unknown>)
-          : undefined;
-      const title = typeof contentNode?.title === "string" ? contentNode.title : "当前正文";
-      return {
-        status: "success" as const,
-        summary: `读取写作上下文：${title}`,
-      };
-    }
-    case "read_content_subtree": {
-      const rootNodeId = typeof data?.rootNodeId === "string" ? data.rootNodeId : null;
-      return {
-        status: "success" as const,
-        summary: rootNodeId ? `读取正文子树：${rootNodeId}` : "读取正文结构",
-      };
-    }
-    case "list_timeline_points": {
-      const points = Array.isArray(data?.points) ? data.points : [];
-      return {
-        status: "success" as const,
-        summary: `读取时间线：${points.length} 个时间点`,
-      };
-    }
-    case "list_aux_dir": {
-      const path = typeof data?.path === "string" ? data.path : "/";
-      return {
-        status: "success" as const,
-        summary: `读取辅助目录：${path}`,
-      };
-    }
-    case "read_aux_path": {
-      const path = typeof data?.path === "string" ? data.path : "当前辅助资料";
-      return {
-        status: "success" as const,
-        summary: `读取辅助资料：${path}`,
-      };
-    }
-    default:
-      return {
-        status: "success" as const,
-        summary: `调用工具：${toolName}`,
-      };
-  }
-}
-
-function collectToolTrace(
-  steps: Array<{
-    toolResults: Array<{
-      toolName: string;
-      output: unknown;
-    }>;
-  }>,
-): ProjectAssistantToolTraceEntry[] {
-  return steps.flatMap((step) =>
-    step.toolResults.map((toolResult) => {
-      const summary = buildToolTraceSummary({
-        toolName: toolResult.toolName,
-        output: toolResult.output,
-      });
-      return {
-        toolName: toolResult.toolName,
-        summary: summary.summary,
-        status: summary.status,
-      };
-    }),
-  );
-}
-
-function buildAssistantMessageMetadata({
-  finishReason,
-  toolTrace,
-}: {
-  finishReason: string | undefined;
-  toolTrace: ProjectAssistantToolTraceEntry[];
-}): AiAssistantMessageMetadata | undefined {
-  const metadata: AiAssistantMessageMetadata = {};
-
-  if (finishReason) {
-    metadata.finishReason = finishReason;
-  }
-  if (toolTrace.length > 0) {
-    metadata.toolTrace = toolTrace;
-  }
-
-  return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
 function normalizeError(error: unknown) {
@@ -392,66 +317,243 @@ function resolveProjectAssistantModelSelection(
   };
 }
 
-function getHeadState(head: AiProjectHeadView | null): ProjectAssistantStateView {
-  if (!head) {
-    return {
-      head: null,
-      messages: [],
-      attempts: [],
-    };
+function buildUserTextMessage(text: string): ModelMessage {
+  return {
+    role: "user",
+    content: [{ type: "text", text }],
+  };
+}
+
+function extractAssistantText(node: AgentThreadNodeView | null) {
+  if (!node) {
+    return null;
+  }
+  const content = (node.message as { content?: unknown }).content;
+  if (typeof content === "string") {
+    return content.trim();
+  }
+  if (!Array.isArray(content)) {
+    return null;
+  }
+  const text = content
+    .flatMap((part) => {
+      if (!part || typeof part !== "object") {
+        return [];
+      }
+      return Reflect.get(part as Record<string, unknown>, "type") === "text"
+        ? [Reflect.get(part as Record<string, unknown>, "text")]
+        : [];
+    })
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  return text?.trim() ?? null;
+}
+
+function summarizeToolCall(toolCall: Record<string, unknown>) {
+  const toolName = Reflect.get(toolCall, "toolName");
+  return typeof toolName === "string" ? `调用工具：${toolName}` : "调用工具";
+}
+
+function summarizeToolResult(toolResult: Record<string, unknown>) {
+  const toolName = Reflect.get(toolResult, "toolName");
+  const toolCallId = Reflect.get(toolResult, "toolCallId");
+  const output = Reflect.get(toolResult, "output");
+  const isError =
+    output &&
+    typeof output === "object" &&
+    Reflect.get(output as Record<string, unknown>, "ok") === false;
+  const prefix = typeof toolName === "string" ? toolName : "工具";
+  const suffix = isError ? "失败" : "完成";
+  const detail = typeof toolCallId === "string" ? ` (${toolCallId})` : "";
+  return `${prefix}${detail}${suffix}`;
+}
+
+async function persistRunExecution({
+  run,
+  thread,
+  system,
+  result,
+}: {
+  run: AgentRunView;
+  thread: AgentThreadView;
+  system: string;
+  result: GenerateAssistantTextResult;
+}) {
+  let currentParentId = run.baseTipNodeId;
+  let lastAssistantNode: AgentThreadNodeView | null = null;
+
+  for (const step of result.steps) {
+    const preparedMessagesArtifact = createArtifact({
+      runId: run.id,
+      artifactKind: "prepared-model-messages",
+      visibility: "internal",
+      content: result.preparedMessagesByStep[step.stepNumber] ?? [],
+      summaryText: `step ${step.stepNumber} 输入消息`,
+    });
+    const responseMessagesArtifact = createArtifact({
+      runId: run.id,
+      artifactKind: "response-messages",
+      visibility: "internal",
+      content: step.response.messages,
+      summaryText: `step ${step.stepNumber} 响应消息`,
+    });
+    const requestBodyArtifact = createArtifact({
+      runId: run.id,
+      artifactKind: "request-body",
+      visibility: "internal",
+      content: step.request.body ?? null,
+      summaryText: `step ${step.stepNumber} provider request`,
+    });
+    const responseBodyArtifact = createArtifact({
+      runId: run.id,
+      artifactKind: "response-body",
+      visibility: "internal",
+      content: step.response.body ?? null,
+      summaryText: `step ${step.stepNumber} provider response`,
+    });
+    const providerMetadataArtifact = createArtifact({
+      runId: run.id,
+      artifactKind: "provider-metadata",
+      visibility: "internal",
+      content: step.providerMetadata ?? null,
+      summaryText: `step ${step.stepNumber} provider metadata`,
+    });
+
+    const stepRecord = createRunStep({
+      runId: run.id,
+      stepIndex: step.stepNumber,
+      provider: step.model.provider,
+      modelId: step.model.modelId,
+      finishReason: step.finishReason ?? null,
+      rawFinishReason: step.rawFinishReason ?? null,
+      system,
+      preparedMessagesArtifactId: preparedMessagesArtifact.id,
+      responseMessagesArtifactId: responseMessagesArtifact.id,
+      requestBodyArtifactId: requestBodyArtifact.id,
+      responseBodyArtifactId: responseBodyArtifact.id,
+      providerMetadataArtifactId: providerMetadataArtifact.id,
+      usage: step.usage ?? null,
+    });
+
+    appendRunEvent({
+      runId: run.id,
+      stepId: stepRecord.id,
+      eventKind: "step-started",
+      summaryText: `step ${step.stepNumber} started`,
+    });
+    appendRunEvent({
+      runId: run.id,
+      stepId: stepRecord.id,
+      eventKind: "provider-requested",
+      summaryText: `step ${step.stepNumber} provider request`,
+      payloadArtifactId: requestBodyArtifact.id,
+    });
+    appendRunEvent({
+      runId: run.id,
+      stepId: stepRecord.id,
+      eventKind: "provider-responded",
+      summaryText: `step ${step.stepNumber} provider response`,
+      payloadArtifactId: responseBodyArtifact.id,
+    });
+
+    step.toolCalls.forEach((toolCall) => {
+      const payloadArtifact = createArtifact({
+        runId: run.id,
+        stepId: stepRecord.id,
+        artifactKind: "tool-input",
+        visibility: "internal",
+        content: toolCall,
+        summaryText: summarizeToolCall(toolCall),
+      });
+      appendRunEvent({
+        runId: run.id,
+        stepId: stepRecord.id,
+        eventKind: "tool-call-started",
+        relatedToolCallId:
+          typeof Reflect.get(toolCall, "toolCallId") === "string"
+            ? (Reflect.get(toolCall, "toolCallId") as string)
+            : null,
+        summaryText: summarizeToolCall(toolCall),
+        payloadArtifactId: payloadArtifact.id,
+      });
+    });
+
+    step.toolResults.forEach((toolResult) => {
+      const payloadArtifact = createArtifact({
+        runId: run.id,
+        stepId: stepRecord.id,
+        artifactKind: "tool-output",
+        visibility: "internal",
+        content: toolResult,
+        summaryText: summarizeToolResult(toolResult),
+      });
+      const output = Reflect.get(toolResult, "output");
+      const eventKind =
+        output &&
+        typeof output === "object" &&
+        Reflect.get(output as Record<string, unknown>, "ok") === false
+          ? "tool-call-failed"
+          : "tool-call-finished";
+      appendRunEvent({
+        runId: run.id,
+        stepId: stepRecord.id,
+        eventKind,
+        relatedToolCallId:
+          typeof Reflect.get(toolResult, "toolCallId") === "string"
+            ? (Reflect.get(toolResult, "toolCallId") as string)
+            : null,
+        summaryText: summarizeToolResult(toolResult),
+        payloadArtifactId: payloadArtifact.id,
+      });
+    });
+
+    const materialized = materializeResponseMessages({
+      threadId: thread.id,
+      parentNodeId: currentParentId,
+      runId: run.id,
+      stepId: stepRecord.id,
+      messages: step.response.messages,
+    });
+    materialized.nodes.forEach((node) => {
+      appendRunEvent({
+        runId: run.id,
+        stepId: stepRecord.id,
+        eventKind: "node-materialized",
+        nodeId: node.id,
+        summaryText: node.summaryText ?? `${node.role} node`,
+      });
+      if (node.role === "assistant" && extractAssistantText(node)) {
+        lastAssistantNode = node;
+      }
+    });
+    currentParentId = materialized.tipNodeId;
   }
 
-  return {
-    head,
-    messages: resolveHeadMessages(head.id),
-    attempts: listHeadGenerationAttempts(head.id),
-  };
-}
+  if (currentParentId) {
+    selectActiveTip(thread.id, currentParentId);
+    appendRunEvent({
+      runId: run.id,
+      eventKind: "active-tip-moved",
+      nodeId: currentParentId,
+      summaryText: "切换到新的 active tip",
+    });
+  }
 
-function toPromptMessages(messages: AiProjectMessageView[]) {
-  return messages.map((message) => {
-    invariant(message.role !== "tool", "当前版本不支持包含工具消息的对话。");
-    return {
-      role: message.role,
-      content: getTextMessageContent(message.content),
-    };
+  const completedRun = markRunSucceeded(run.id);
+  appendRunEvent({
+    runId: run.id,
+    eventKind: "run-succeeded",
+    summaryText: completedRun.completedAt ? "run succeeded" : "run completed",
   });
-}
 
-function buildAttemptRequest({
-  mode,
-  headId,
-  triggerMessageId,
-  selection,
-  toolMode,
-  context,
-}: {
-  mode: "send" | "retry";
-  headId: string;
-  triggerMessageId: string;
-  selection: AssistantModelSelection;
-  toolMode: "none" | "auto-read-only";
-  context: ProjectAssistantContextSnapshot | null;
-}) {
   return {
-    mode,
-    triggerMessageId,
-    headId,
-    systemPromptId: PROJECT_ASSISTANT_SYSTEM_PROMPT_ID,
-    toolMode,
-    contextMode: context ? ("editor-selection" as const) : ("none" as const),
-    contextSnapshot: context,
-    modelSelection: {
-      connectionId: selection.connection.id,
-      resolvedModelId: selection.storedSelection.modelId,
-      providerModelId: selection.resolvedModel.modelId,
-      modelOrigin: selection.resolvedModel.origin,
-    },
+    run: completedRun,
+    tipNodeId: currentParentId,
+    lastAssistantNode,
   };
 }
 
-function assertNoPendingAttempt(head: AiProjectHeadView) {
-  invariant(!hasPendingGenerationAttempt(head.id), "当前会话正在生成回复，请稍后再试。");
+function assertNoPendingRunForThread(thread: AgentThreadView) {
+  invariant(!hasPendingRun(thread.id), "当前会话正在生成回复，请稍后再试。");
 }
 
 export function createProjectAssistantService(
@@ -462,53 +564,101 @@ export function createProjectAssistantService(
   const readStoredSelection = dependencies.readStoredSelection ?? getAiAssistantModelSelection;
 
   return {
-    getProjectAssistantState(projectId: string): ProjectAssistantStateView {
-      return getHeadState(resolveActiveAssistantHead(projectId));
+    getProjectAssistantState(projectId: string): ProjectAssistantOverview {
+      const threads = listThreads(projectId, {
+        agentProfile: PROJECT_ASSISTANT_AGENT_PROFILE,
+      });
+      const activeThread = resolveActiveThread(projectId, PROJECT_ASSISTANT_AGENT_PROFILE);
+      return {
+        activeThreadId: activeThread?.id ?? null,
+        threads,
+        state: activeThread
+          ? getThreadView(activeThread.id)
+          : { thread: null, activePath: [], candidateGroups: [], latestRuns: [] },
+      };
+    },
+
+    createProjectAssistantThread(projectId: string) {
+      return createThread({
+        projectId,
+        agentProfile: PROJECT_ASSISTANT_AGENT_PROFILE,
+      });
+    },
+
+    setProjectAssistantActiveThread(projectId: string, threadId: string) {
+      return setActiveThread(projectId, threadId);
+    },
+
+    renameProjectAssistantThread(threadId: string, title: string) {
+      return renameThread(threadId, title);
+    },
+
+    archiveProjectAssistantThread(threadId: string, archived: boolean) {
+      return archiveThread(threadId, archived);
+    },
+
+    getThreadView(threadId: string) {
+      return getThreadView(threadId);
+    },
+
+    getRunTrace(runId: string): AgentRunTraceView {
+      return getRunTrace(runId);
+    },
+
+    getNodeCandidates(parentNodeId: string) {
+      return getNodeCandidates(parentNodeId);
+    },
+
+    getChildRuns(runId: string) {
+      return listChildRuns(runId);
+    },
+
+    selectThreadTip(threadId: string, tipNodeId: string) {
+      return selectActiveTip(threadId, tipNodeId);
     },
 
     async sendProjectAssistantMessage({
       projectId,
-      headId,
+      threadId,
       text,
       context,
     }: {
       projectId: string;
-      headId: string;
+      threadId: string;
       text: string;
       context?: ProjectAssistantContextSnapshot | null;
     }): Promise<ProjectAssistantSendResult> {
       const selection = resolveProjectAssistantModelSelection(readStoredSelection);
       const normalizedContext = normalizeAssistantContextSnapshot(context);
       const toolMode = selection.resolvedModel.supportsToolUse ? "auto-read-only" : "none";
-      const head = getHeadOrThrowView(headId);
-      invariant(head.projectId === projectId, "AI 会话不属于当前项目。");
-      invariant(!head.isArchived, "不能向已归档会话发送消息。");
-      assertNoPendingAttempt(head);
+      const threadView = getThreadView(threadId);
+      const thread = threadView.thread;
+      invariant(thread, "未找到当前会话。");
+      invariant(thread.projectId === projectId, "AI 会话不属于当前项目。");
+      invariant(thread.archivedAt == null, "不能向已归档会话发送消息。");
+      assertNoPendingRunForThread(thread);
 
       const normalizedText = normalizeUserText(text);
-      const userMessage = appendMessage({
-        projectId,
-        headId: head.id,
-        prevMessageId: head.currentMessageId,
-        role: "user",
-        content: { text: normalizedText },
-        summaryText: buildSummaryText(normalizedText),
-        aiSelection: selection.snapshot,
+      const userNode = appendUserNode({
+        threadId: thread.id,
+        parentNodeId: thread.activeTipNodeId,
+        message: buildUserTextMessage(normalizedText),
+        sourceKind: "user_input",
       });
-
-      const attempt = recordGenerationAttempt({
-        projectId,
-        headId: head.id,
-        triggerMessageId: userMessage.id,
-        request: buildAttemptRequest({
-          mode: "send",
-          headId: head.id,
-          triggerMessageId: userMessage.id,
-          selection,
-          toolMode,
-          context: normalizedContext,
-        }),
-        aiSelection: selection.snapshot,
+      const run = createRun({
+        threadId: thread.id,
+        triggerNodeId: userNode.id,
+        baseTipNodeId: userNode.id,
+        runMode: "send",
+        agentProfile: PROJECT_ASSISTANT_AGENT_PROFILE,
+        selectionSnapshot: selection.snapshot,
+        contextSnapshot: normalizedContext,
+      });
+      appendRunEvent({
+        runId: run.id,
+        eventKind: "run-started",
+        nodeId: userNode.id,
+        summaryText: "用户消息触发新 run",
       });
 
       try {
@@ -522,39 +672,41 @@ export function createProjectAssistantService(
           }),
           toolMode,
           context: normalizedContext,
-          messages: toPromptMessages(resolveHeadMessages(head.id)),
+          messages: buildThreadModelMessages(thread.id, userNode.id),
         });
-        const assistantText = normalizeAssistantText(result.text);
-        const assistantMessage = appendMessage({
-          projectId,
-          headId: head.id,
-          prevMessageId: userMessage.id,
-          role: "assistant",
-          content: { text: assistantText },
-          summaryText: buildSummaryText(assistantText),
-          aiSelection: selection.snapshot,
-          metadata: buildAssistantMessageMetadata({
-            finishReason: result.finishReason,
-            toolTrace: result.toolTrace,
+
+        const persisted = await persistRunExecution({
+          run,
+          thread,
+          system: buildProjectAssistantSystemPrompt({
+            toolMode,
+            context: normalizedContext,
           }),
+          result,
         });
-        const completedAttempt = completeGenerationAttemptSuccess({
-          attemptId: attempt.id,
-          assistantMessageId: assistantMessage.id,
-          usage: result.usage,
-        });
-        const activeHead = setActiveAssistantHead(projectId, head.id);
 
         return {
-          head: activeHead,
-          userMessage,
-          assistantMessage,
-          attempt: completedAttempt,
+          thread: getThreadView(thread.id).thread!,
+          userNode,
+          assistantNode: persisted.lastAssistantNode,
+          run: persisted.run,
+          state: getThreadView(thread.id),
         };
       } catch (error) {
-        completeGenerationAttemptError({
-          attemptId: attempt.id,
-          error: normalizeError(error),
+        const errorArtifact = createArtifact({
+          runId: run.id,
+          artifactKind: "error",
+          visibility: "internal",
+          content: normalizeError(error),
+          summaryText: error instanceof Error ? error.message : "run failed",
+        });
+        const failedRun = markRunFailed(run.id, errorArtifact.id);
+        appendRunEvent({
+          runId: failedRun.id,
+          eventKind: "run-failed",
+          nodeId: userNode.id,
+          summaryText: error instanceof Error ? error.message : "run failed",
+          payloadArtifactId: errorArtifact.id,
         });
         throw error;
       }
@@ -562,42 +714,43 @@ export function createProjectAssistantService(
 
     async retryProjectAssistantMessage({
       projectId,
-      headId,
-      triggerMessageId,
+      threadId,
+      triggerNodeId,
       context,
     }: {
       projectId: string;
-      headId: string;
-      triggerMessageId: string;
+      threadId: string;
+      triggerNodeId: string;
       context?: ProjectAssistantContextSnapshot | null;
     }): Promise<ProjectAssistantRetryResult> {
       const selection = resolveProjectAssistantModelSelection(readStoredSelection);
       const normalizedContext = normalizeAssistantContextSnapshot(context);
       const toolMode = selection.resolvedModel.supportsToolUse ? "auto-read-only" : "none";
-      const head = getHeadOrThrowView(headId);
-      invariant(head.projectId === projectId, "AI 会话不属于当前项目。");
-      invariant(!head.isArchived, "不能重试已归档会话。");
-      assertNoPendingAttempt(head);
-      invariant(head.currentMessageId === triggerMessageId, "当前版本只能重试会话末尾的失败请求。");
+      const threadView = getThreadView(threadId);
+      const thread = threadView.thread;
+      invariant(thread, "未找到当前会话。");
+      invariant(thread.projectId === projectId, "AI 会话不属于当前项目。");
+      invariant(thread.archivedAt == null, "不能重试已归档会话。");
+      assertNoPendingRunForThread(thread);
 
-      const messages = resolveHeadMessages(head.id);
-      const triggerMessage = messages.at(-1);
-      invariant(triggerMessage?.id === triggerMessageId, "未找到要重试的触发消息。");
-      invariant(triggerMessage.role === "user", "当前版本只能重试用户消息的回复。");
+      const triggerNode = threadView.activePath.find((node) => node.id === triggerNodeId);
+      invariant(triggerNode, "当前只支持重试 active path 上的节点。");
+      invariant(triggerNode.role === "user", "当前版本只能重试用户消息的回复。");
 
-      const attempt = recordGenerationAttempt({
-        projectId,
-        headId: head.id,
-        triggerMessageId,
-        request: buildAttemptRequest({
-          mode: "retry",
-          headId: head.id,
-          triggerMessageId,
-          selection,
-          toolMode,
-          context: normalizedContext,
-        }),
-        aiSelection: selection.snapshot,
+      const run = createRun({
+        threadId: thread.id,
+        triggerNodeId,
+        baseTipNodeId: triggerNodeId,
+        runMode: "retry",
+        agentProfile: PROJECT_ASSISTANT_AGENT_PROFILE,
+        selectionSnapshot: selection.snapshot,
+        contextSnapshot: normalizedContext,
+      });
+      appendRunEvent({
+        runId: run.id,
+        eventKind: "run-started",
+        nodeId: triggerNodeId,
+        summaryText: "重试 assistant 候选",
       });
 
       try {
@@ -611,38 +764,134 @@ export function createProjectAssistantService(
           }),
           toolMode,
           context: normalizedContext,
-          messages: toPromptMessages(messages),
+          messages: buildThreadModelMessages(thread.id, triggerNodeId),
         });
-        const assistantText = normalizeAssistantText(result.text);
-        const assistantMessage = appendMessage({
-          projectId,
-          headId: head.id,
-          prevMessageId: triggerMessageId,
-          role: "assistant",
-          content: { text: assistantText },
-          summaryText: buildSummaryText(assistantText),
-          aiSelection: selection.snapshot,
-          metadata: buildAssistantMessageMetadata({
-            finishReason: result.finishReason,
-            toolTrace: result.toolTrace,
+
+        const persisted = await persistRunExecution({
+          run,
+          thread,
+          system: buildProjectAssistantSystemPrompt({
+            toolMode,
+            context: normalizedContext,
           }),
+          result,
         });
-        const completedAttempt = completeGenerationAttemptSuccess({
-          attemptId: attempt.id,
-          assistantMessageId: assistantMessage.id,
-          usage: result.usage,
-        });
-        const activeHead = setActiveAssistantHead(projectId, head.id);
 
         return {
-          head: activeHead,
-          assistantMessage,
-          attempt: completedAttempt,
+          thread: getThreadView(thread.id).thread!,
+          assistantNode: persisted.lastAssistantNode,
+          run: persisted.run,
+          state: getThreadView(thread.id),
         };
       } catch (error) {
-        completeGenerationAttemptError({
-          attemptId: attempt.id,
-          error: normalizeError(error),
+        const errorArtifact = createArtifact({
+          runId: run.id,
+          artifactKind: "error",
+          visibility: "internal",
+          content: normalizeError(error),
+          summaryText: error instanceof Error ? error.message : "retry failed",
+        });
+        const failedRun = markRunFailed(run.id, errorArtifact.id);
+        appendRunEvent({
+          runId: failedRun.id,
+          eventKind: "run-failed",
+          nodeId: triggerNodeId,
+          summaryText: error instanceof Error ? error.message : "retry failed",
+          payloadArtifactId: errorArtifact.id,
+        });
+        throw error;
+      }
+    },
+
+    async editProjectAssistantMessage({
+      projectId,
+      threadId,
+      nodeId,
+      text,
+      context,
+    }: {
+      projectId: string;
+      threadId: string;
+      nodeId: string;
+      text: string;
+      context?: ProjectAssistantContextSnapshot | null;
+    }): Promise<ProjectAssistantEditResult> {
+      const selection = resolveProjectAssistantModelSelection(readStoredSelection);
+      const normalizedContext = normalizeAssistantContextSnapshot(context);
+      const toolMode = selection.resolvedModel.supportsToolUse ? "auto-read-only" : "none";
+      const threadView = getThreadView(threadId);
+      const thread = threadView.thread;
+      invariant(thread, "未找到当前会话。");
+      invariant(thread.projectId === projectId, "AI 会话不属于当前项目。");
+      invariant(thread.archivedAt == null, "不能修改已归档会话。");
+      assertNoPendingRunForThread(thread);
+
+      const replacementNode = createReplacementNode({
+        threadId: thread.id,
+        nodeId,
+        message: buildUserTextMessage(normalizeUserText(text)),
+      });
+      const run = createRun({
+        threadId: thread.id,
+        triggerNodeId: replacementNode.id,
+        baseTipNodeId: replacementNode.id,
+        runMode: "edit_regenerate",
+        agentProfile: PROJECT_ASSISTANT_AGENT_PROFILE,
+        selectionSnapshot: selection.snapshot,
+        contextSnapshot: normalizedContext,
+      });
+      appendRunEvent({
+        runId: run.id,
+        eventKind: "run-started",
+        nodeId: replacementNode.id,
+        summaryText: "编辑消息并重新生成",
+      });
+
+      try {
+        const result = await generateAssistantTextImpl({
+          projectId,
+          connection: selection.connection,
+          modelId: selection.resolvedModel.modelId,
+          system: buildProjectAssistantSystemPrompt({
+            toolMode,
+            context: normalizedContext,
+          }),
+          toolMode,
+          context: normalizedContext,
+          messages: buildThreadModelMessages(thread.id, replacementNode.id),
+        });
+        const persisted = await persistRunExecution({
+          run,
+          thread,
+          system: buildProjectAssistantSystemPrompt({
+            toolMode,
+            context: normalizedContext,
+          }),
+          result,
+        });
+
+        return {
+          thread: getThreadView(thread.id).thread!,
+          replacementNode,
+          assistantNode: persisted.lastAssistantNode,
+          run: persisted.run,
+          state: getThreadView(thread.id),
+        };
+      } catch (error) {
+        const errorArtifact = createArtifact({
+          runId: run.id,
+          artifactKind: "error",
+          visibility: "internal",
+          content: normalizeError(error),
+          summaryText: error instanceof Error ? error.message : "edit regenerate failed",
+        });
+        const failedRun = markRunFailed(run.id, errorArtifact.id);
+        appendRunEvent({
+          runId: failedRun.id,
+          eventKind: "run-failed",
+          nodeId: replacementNode.id,
+          summaryText: error instanceof Error ? error.message : "edit regenerate failed",
+          payloadArtifactId: errorArtifact.id,
         });
         throw error;
       }

@@ -1,20 +1,18 @@
 import type {
-  AiAssistantMessageMetadata,
-  AiProjectGenerationAttemptView,
-  AiProjectHeadView,
-  AiProjectMessageView,
+  AgentCandidateGroupView,
+  AgentRunView,
+  AgentThreadNodeView,
+  AgentThreadStateView,
+  AgentThreadView,
+  AgentToolSummaryEntry,
   ProjectAssistantContextSnapshot,
-  ProjectAssistantToolTraceEntry,
 } from "@/modules/ai/domain/types";
 
-export type AssistantState = {
-  head: AiProjectHeadView | null;
-  messages: AiProjectMessageView[];
-  attempts: AiProjectGenerationAttemptView[];
-};
+export type AssistantState = AgentThreadStateView;
 
-export type AssistantMutationContext = {
-  previousState?: AssistantState;
+export type EditingThreadState = {
+  threadId: string;
+  title: string;
 };
 
 export type PendingAssistantAction =
@@ -24,89 +22,108 @@ export type PendingAssistantAction =
     }
   | {
       kind: "retry";
-      triggerMessageId: string;
+      triggerNodeId: string;
     };
 
-export type EditingHeadState = {
-  headId: string;
-  name: string;
-};
-
 export const EMPTY_ASSISTANT_STATE: AssistantState = {
-  head: null,
-  messages: [],
-  attempts: [],
+  thread: null,
+  activePath: [],
+  candidateGroups: [],
+  latestRuns: [],
 };
 
-export const EMPTY_HEADS: AiProjectHeadView[] = [];
+export const EMPTY_THREADS: AgentThreadView[] = [];
 
-function appendUniqueMessage(messages: AiProjectMessageView[], message: AiProjectMessageView) {
-  if (messages.some((current) => current.id === message.id)) {
-    return messages;
+export function getMessageText(node: AgentThreadNodeView | null | undefined) {
+  const content = (node?.message as { content?: unknown } | undefined)?.content;
+  if (typeof content === "string") {
+    return content;
   }
-
-  return [...messages, message];
-}
-
-function upsertAttempt(
-  attempts: AiProjectGenerationAttemptView[],
-  attempt: AiProjectGenerationAttemptView,
-) {
-  const filtered = attempts.filter((current) => current.id !== attempt.id);
-  return [...filtered, attempt].sort((left, right) => left.createdAt - right.createdAt);
-}
-
-export function getMessageText(content: unknown) {
-  if (!content || typeof content !== "object") {
+  if (!Array.isArray(content)) {
     return "";
   }
-
-  const text = Reflect.get(content as Record<string, unknown>, "text");
-  return typeof text === "string" ? text : "";
+  return content
+    .flatMap((part) => {
+      if (!part || typeof part !== "object") {
+        return [];
+      }
+      return Reflect.get(part as Record<string, unknown>, "type") === "text"
+        ? [Reflect.get(part as Record<string, unknown>, "text")]
+        : [];
+    })
+    .filter((value): value is string => typeof value === "string")
+    .join("\n");
 }
 
-export function getAssistantMessageMetadata(metadata: unknown): AiAssistantMessageMetadata | null {
-  if (!metadata || typeof metadata !== "object") {
-    return null;
+function summarizeToolPayload(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== "object") {
+    return fallback;
   }
-
-  const rawToolTrace = Reflect.get(metadata as Record<string, unknown>, "toolTrace");
-  const toolTrace = Array.isArray(rawToolTrace)
-    ? rawToolTrace.flatMap((entry): ProjectAssistantToolTraceEntry[] => {
-        if (!entry || typeof entry !== "object") {
-          return [];
-        }
-
-        const toolName = Reflect.get(entry as Record<string, unknown>, "toolName");
-        const summary = Reflect.get(entry as Record<string, unknown>, "summary");
-        const status = Reflect.get(entry as Record<string, unknown>, "status");
-        if (
-          typeof toolName !== "string" ||
-          typeof summary !== "string" ||
-          (status !== "success" && status !== "error")
-        ) {
-          return [];
-        }
-
-        return [
-          {
-            toolName,
-            summary,
-            status,
-          },
-        ];
-      })
-    : [];
-  const finishReason = Reflect.get(metadata as Record<string, unknown>, "finishReason");
-
-  return {
-    finishReason: typeof finishReason === "string" ? finishReason : undefined,
-    toolTrace,
-  };
+  const toolName = Reflect.get(payload as Record<string, unknown>, "toolName");
+  if (typeof toolName === "string" && toolName.trim().length > 0) {
+    return fallback.replace("{tool}", toolName);
+  }
+  return fallback.replace("{tool}", "工具");
 }
 
-export function getAssistantToolTrace(metadata: unknown) {
-  return getAssistantMessageMetadata(metadata)?.toolTrace ?? [];
+export function getAssistantToolTrace(node: AgentThreadNodeView | null | undefined) {
+  return (node?.parts ?? []).flatMap<AgentToolSummaryEntry>((part) => {
+    if (part.partKind === "tool-call") {
+      return [
+        {
+          toolCallId:
+            typeof (part.payload as Record<string, unknown>)?.toolCallId === "string"
+              ? ((part.payload as Record<string, unknown>).toolCallId as string)
+              : null,
+          toolName:
+            typeof (part.payload as Record<string, unknown>)?.toolName === "string"
+              ? ((part.payload as Record<string, unknown>).toolName as string)
+              : "tool",
+          summary: summarizeToolPayload(part.payload, "调用 {tool}"),
+          status: "success" as const,
+          nodeId: node?.id ?? "",
+          runId: node?.createdByRunId ?? null,
+        },
+      ];
+    }
+    if (part.partKind === "tool-result") {
+      return [
+        {
+          toolCallId:
+            typeof (part.payload as Record<string, unknown>)?.toolCallId === "string"
+              ? ((part.payload as Record<string, unknown>).toolCallId as string)
+              : null,
+          toolName:
+            typeof (part.payload as Record<string, unknown>)?.toolName === "string"
+              ? ((part.payload as Record<string, unknown>).toolName as string)
+              : "tool",
+          summary: summarizeToolPayload(part.payload, "{tool} 返回结果"),
+          status: "success" as const,
+          nodeId: node?.id ?? "",
+          runId: node?.createdByRunId ?? null,
+        },
+      ];
+    }
+    if (part.partKind === "tool-error") {
+      return [
+        {
+          toolCallId:
+            typeof (part.payload as Record<string, unknown>)?.toolCallId === "string"
+              ? ((part.payload as Record<string, unknown>).toolCallId as string)
+              : null,
+          toolName:
+            typeof (part.payload as Record<string, unknown>)?.toolName === "string"
+              ? ((part.payload as Record<string, unknown>).toolName as string)
+              : "tool",
+          summary: summarizeToolPayload(part.payload, "{tool} 执行失败"),
+          status: "error" as const,
+          nodeId: node?.id ?? "",
+          runId: node?.createdByRunId ?? null,
+        },
+      ];
+    }
+    return [];
+  });
 }
 
 export function listAssistantContextDetails(context: ProjectAssistantContextSnapshot) {
@@ -126,99 +143,61 @@ export function listAssistantContextDetails(context: ProjectAssistantContextSnap
   ];
 }
 
-export function selectRetryableAttempt(
-  state: AssistantState | null | undefined,
-): AiProjectGenerationAttemptView | null {
-  const latest = state?.attempts.at(-1) ?? null;
-  if (!latest || latest.status !== "error" || !latest.triggerMessageId) {
+export function selectRetryableRun(state: AssistantState | null | undefined): AgentRunView | null {
+  const latest = state?.latestRuns[0] ?? null;
+  if (!latest || latest.status !== "failed" || !latest.triggerNodeId) {
     return null;
   }
-
   return latest;
 }
 
-export function selectPendingAttempt(
-  state: AssistantState | null | undefined,
-): AiProjectGenerationAttemptView | null {
-  const latest = state?.attempts.at(-1) ?? null;
-  if (!latest || latest.status !== "pending" || !latest.triggerMessageId) {
+export function selectPendingRun(state: AssistantState | null | undefined): AgentRunView | null {
+  const latest = state?.latestRuns[0] ?? null;
+  if (
+    !latest ||
+    (latest.status !== "running" && latest.status !== "queued") ||
+    !latest.triggerNodeId
+  ) {
     return null;
   }
-
   return latest;
 }
 
 export function canSendAssistantMessage({
   draft,
-  headId,
+  threadId,
   selectedConnectionId,
   selectedModelId,
   selectionHydrated,
   isBusy,
-  hasPendingAttempt,
+  hasPendingRun,
 }: {
   draft: string;
-  headId: string | null;
+  threadId: string | null;
   selectedConnectionId: string;
   selectedModelId: string;
   selectionHydrated: boolean;
   isBusy: boolean;
-  hasPendingAttempt: boolean;
+  hasPendingRun: boolean;
 }) {
   return (
     selectionHydrated &&
-    headId != null &&
+    threadId != null &&
     selectedConnectionId.length > 0 &&
     selectedModelId.length > 0 &&
     draft.trim().length > 0 &&
     !isBusy &&
-    !hasPendingAttempt
+    !hasPendingRun
   );
 }
 
-export function applySendResultToState(
-  state: AssistantState | null | undefined,
-  result: {
-    head: AiProjectHeadView;
-    userMessage: AiProjectMessageView;
-    assistantMessage: AiProjectMessageView;
-    attempt: AiProjectGenerationAttemptView;
-  },
-): AssistantState {
-  const base = state?.head?.id === result.head.id ? state : EMPTY_ASSISTANT_STATE;
-
-  return {
-    head: result.head,
-    messages: appendUniqueMessage(
-      appendUniqueMessage(base.messages, result.userMessage),
-      result.assistantMessage,
-    ),
-    attempts: upsertAttempt(base.attempts, result.attempt),
-  };
+export function getCandidateGroupForNode(
+  candidateGroups: AgentCandidateGroupView[],
+  node: AgentThreadNodeView,
+) {
+  return candidateGroups.find((group) => group.activeNodeId === node.id) ?? null;
 }
 
-export function applyRetryResultToState(
-  state: AssistantState | null | undefined,
-  result: {
-    head: AiProjectHeadView;
-    assistantMessage: AiProjectMessageView;
-    attempt: AiProjectGenerationAttemptView;
-  },
-): AssistantState {
-  const base = state?.head?.id === result.head.id ? state : EMPTY_ASSISTANT_STATE;
-
-  return {
-    head: result.head,
-    messages: appendUniqueMessage(base.messages, result.assistantMessage),
-    attempts: upsertAttempt(base.attempts, result.attempt),
-  };
-}
-
-export function getAttemptErrorMessage(error: unknown) {
-  if (!error || typeof error !== "object") {
-    return "AI 回复失败。";
-  }
-
-  const message = Reflect.get(error as Record<string, unknown>, "message");
-  return typeof message === "string" && message.trim().length > 0 ? message : "AI 回复失败。";
+export function getRunErrorMessage() {
+  return "AI 回复失败。";
 }

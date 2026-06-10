@@ -21,30 +21,64 @@ function useService(service: ProjectAssistantService) {
   setProjectAssistantServiceForTests(service);
 }
 
-test("getProjectAssistantState watches project heads, attempts, and active head messages", async () => {
+test("getProjectAssistantState watches overview, threads, and the active thread view", async () => {
   useService({
     getProjectAssistantState: () => ({
-      head: {
-        id: "ai_head_state",
-        projectId: "rpc_assistant_state",
-        name: "主会话",
-        currentMessageId: null,
-        forkedFromHeadId: null,
-        forkedFromMessageId: null,
-        isArchived: false,
-        createdAt: 1,
-        updatedAt: 1,
+      activeThreadId: "thread_state",
+      threads: [],
+      state: {
+        thread: {
+          id: "thread_state",
+          projectId: "rpc_assistant_state",
+          agentProfile: "project-assistant",
+          title: "主会话",
+          activeTipNodeId: null,
+          archivedAt: null,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        activePath: [],
+        candidateGroups: [],
+        latestRuns: [],
       },
-      messages: [],
-      attempts: [],
     }),
+    createProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    setProjectAssistantActiveThread: () => {
+      throw new Error("unused");
+    },
+    renameProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    archiveProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    getThreadView: () => {
+      throw new Error("unused");
+    },
+    getRunTrace: () => {
+      throw new Error("unused");
+    },
+    getNodeCandidates: () => {
+      throw new Error("unused");
+    },
+    getChildRuns: () => {
+      throw new Error("unused");
+    },
+    selectThreadTip: () => {
+      throw new Error("unused");
+    },
     sendProjectAssistantMessage: async () => {
       throw new Error("unused");
     },
     retryProjectAssistantMessage: async () => {
       throw new Error("unused");
     },
-  });
+    editProjectAssistantMessage: async () => {
+      throw new Error("unused");
+    },
+  } as unknown as ProjectAssistantService);
 
   const result = await handlers.getProjectAssistantState.handler(
     { projectId: "rpc_assistant_state" },
@@ -52,219 +86,124 @@ test("getProjectAssistantState watches project heads, attempts, and active head 
   );
 
   expect(result.watch).toEqual([
-    rpcTags.aiProjectAssistantState("rpc_assistant_state"),
-    rpcTags.aiProjectHeads("rpc_assistant_state"),
-    rpcTags.aiGenerationAttempts("rpc_assistant_state"),
-    rpcTags.aiHeadMessages("ai_head_state"),
+    rpcTags.aiProjectAssistantOverview("rpc_assistant_state"),
+    rpcTags.aiProjectThreads("rpc_assistant_state"),
+    rpcTags.aiThreadView("thread_state"),
   ]);
 });
 
-test("sendProjectAssistantMessage invalidates head messages and attempts on success", async () => {
+test("sendProjectAssistantMessage invalidates overview, thread view, candidates, and run trace", async () => {
   useService({
     getProjectAssistantState: () => ({
-      head: null,
-      messages: [],
-      attempts: [],
+      activeThreadId: null,
+      threads: [],
+      state: {
+        thread: null,
+        activePath: [],
+        candidateGroups: [],
+        latestRuns: [],
+      },
     }),
+    createProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    setProjectAssistantActiveThread: () => {
+      throw new Error("unused");
+    },
+    renameProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    archiveProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    getThreadView: () => {
+      throw new Error("unused");
+    },
+    getRunTrace: () => {
+      throw new Error("unused");
+    },
+    getNodeCandidates: () => {
+      throw new Error("unused");
+    },
+    getChildRuns: () => {
+      throw new Error("unused");
+    },
+    selectThreadTip: () => {
+      throw new Error("unused");
+    },
     sendProjectAssistantMessage: async () => ({
-      head: {
-        id: "ai_head_send",
+      thread: {
+        id: "thread_send",
         projectId: "rpc_assistant_send",
-        name: "主会话",
-        currentMessageId: "msg_assistant",
-        forkedFromHeadId: null,
-        forkedFromMessageId: null,
-        isArchived: false,
+        agentProfile: "project-assistant",
+        title: "主会话",
+        activeTipNodeId: "node_assistant",
+        archivedAt: null,
         createdAt: 1,
         updatedAt: 2,
       },
-      userMessage: {
-        id: "msg_user",
-        projectId: "rpc_assistant_send",
-        prevMessageId: null,
+      userNode: {
+        id: "node_user",
+        threadId: "thread_send",
+        parentNodeId: null,
         role: "user",
-        content: { text: "Hello" },
+        createdByRunId: null,
+        sourceStepId: null,
+        sourceKind: "user_input",
         summaryText: "Hello",
-        selection: {
-          connectionId: null,
-          catalogModelId: null,
-          customModelId: null,
-          connectionName: null,
-          sdkPackage: null,
-          baseUrl: null,
-          modelOrigin: null,
-          modelId: null,
-          modelDisplayName: null,
-          modelFamily: null,
-          capabilities: null,
-          pricing: null,
-        },
-        metadata: null,
+        message: { role: "user", content: [{ type: "text", text: "Hello" }] },
+        parts: [],
         createdAt: 1,
       },
-      assistantMessage: {
-        id: "msg_assistant",
-        projectId: "rpc_assistant_send",
-        prevMessageId: "msg_user",
-        role: "assistant",
-        content: { text: "Hi" },
-        summaryText: "Hi",
-        selection: {
-          connectionId: null,
-          catalogModelId: null,
-          customModelId: null,
-          connectionName: null,
-          sdkPackage: null,
-          baseUrl: null,
-          modelOrigin: null,
-          modelId: null,
-          modelDisplayName: null,
-          modelFamily: null,
-          capabilities: null,
-          pricing: null,
-        },
-        metadata: null,
-        createdAt: 2,
-      },
-      attempt: {
-        id: "attempt_send",
-        projectId: "rpc_assistant_send",
-        headId: "ai_head_send",
-        triggerMessageId: "msg_user",
-        assistantMessageId: "msg_assistant",
-        status: "success",
-        request: { mode: "send" },
-        usage: null,
-        error: null,
-        selection: {
-          connectionId: null,
-          catalogModelId: null,
-          customModelId: null,
-          connectionName: null,
-          sdkPackage: null,
-          baseUrl: null,
-          modelOrigin: null,
-          modelId: null,
-          modelDisplayName: null,
-          modelFamily: null,
-          capabilities: null,
-          pricing: null,
-        },
-        createdAt: 1,
+      assistantNode: null,
+      run: {
+        id: "run_send",
+        threadId: "thread_send",
+        parentRunId: null,
+        parentEventId: null,
+        triggerNodeId: "node_user",
+        baseTipNodeId: "node_user",
+        runMode: "send",
+        status: "succeeded",
+        agentProfile: "project-assistant",
+        selectionSnapshot: {},
+        contextSnapshot: null,
+        errorArtifactId: null,
+        startedAt: 1,
         completedAt: 2,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      state: {
+        thread: null,
+        activePath: [],
+        candidateGroups: [],
+        latestRuns: [],
       },
     }),
     retryProjectAssistantMessage: async () => {
       throw new Error("unused");
     },
-  });
+    editProjectAssistantMessage: async () => {
+      throw new Error("unused");
+    },
+  } as unknown as ProjectAssistantService);
 
   const result = await handlers.sendProjectAssistantMessage.handler(
     {
       projectId: "rpc_assistant_send",
-      headId: "ai_head_send",
+      threadId: "thread_send",
       text: "Hello",
     },
     requestCtx,
   );
 
   expect(result.invalidate).toEqual([
-    rpcTags.aiProjectAssistantState("rpc_assistant_send"),
-    rpcTags.aiProjectHeads("rpc_assistant_send"),
-    rpcTags.aiHeadMessages("ai_head_send"),
-    rpcTags.aiGenerationAttempts("rpc_assistant_send"),
-  ]);
-});
-
-test("retryProjectAssistantMessage invalidates head messages and attempts on success", async () => {
-  useService({
-    getProjectAssistantState: () => ({
-      head: null,
-      messages: [],
-      attempts: [],
-    }),
-    sendProjectAssistantMessage: async () => {
-      throw new Error("unused");
-    },
-    retryProjectAssistantMessage: async () => ({
-      head: {
-        id: "ai_head_retry",
-        projectId: "rpc_assistant_retry",
-        name: "主会话",
-        currentMessageId: "msg_assistant_retry",
-        forkedFromHeadId: null,
-        forkedFromMessageId: null,
-        isArchived: false,
-        createdAt: 1,
-        updatedAt: 3,
-      },
-      assistantMessage: {
-        id: "msg_assistant_retry",
-        projectId: "rpc_assistant_retry",
-        prevMessageId: "msg_user_retry",
-        role: "assistant",
-        content: { text: "Retry ok" },
-        summaryText: "Retry ok",
-        selection: {
-          connectionId: null,
-          catalogModelId: null,
-          customModelId: null,
-          connectionName: null,
-          sdkPackage: null,
-          baseUrl: null,
-          modelOrigin: null,
-          modelId: null,
-          modelDisplayName: null,
-          modelFamily: null,
-          capabilities: null,
-          pricing: null,
-        },
-        metadata: null,
-        createdAt: 3,
-      },
-      attempt: {
-        id: "attempt_retry",
-        projectId: "rpc_assistant_retry",
-        headId: "ai_head_retry",
-        triggerMessageId: "msg_user_retry",
-        assistantMessageId: "msg_assistant_retry",
-        status: "success",
-        request: { mode: "retry" },
-        usage: null,
-        error: null,
-        selection: {
-          connectionId: null,
-          catalogModelId: null,
-          customModelId: null,
-          connectionName: null,
-          sdkPackage: null,
-          baseUrl: null,
-          modelOrigin: null,
-          modelId: null,
-          modelDisplayName: null,
-          modelFamily: null,
-          capabilities: null,
-          pricing: null,
-        },
-        createdAt: 2,
-        completedAt: 3,
-      },
-    }),
-  });
-
-  const result = await handlers.retryProjectAssistantMessage.handler(
-    {
-      projectId: "rpc_assistant_retry",
-      headId: "ai_head_retry",
-      triggerMessageId: "msg_user_retry",
-    },
-    requestCtx,
-  );
-
-  expect(result.invalidate).toEqual([
-    rpcTags.aiProjectAssistantState("rpc_assistant_retry"),
-    rpcTags.aiProjectHeads("rpc_assistant_retry"),
-    rpcTags.aiHeadMessages("ai_head_retry"),
-    rpcTags.aiGenerationAttempts("rpc_assistant_retry"),
+    rpcTags.aiProjectAssistantOverview("rpc_assistant_send"),
+    rpcTags.aiProjectThreads("rpc_assistant_send"),
+    rpcTags.aiThreadView("thread_send"),
+    rpcTags.aiNodeCandidates("node_user"),
+    rpcTags.aiRunTrace("run_send"),
+    rpcTags.aiChildRuns("run_send"),
   ]);
 });

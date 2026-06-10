@@ -1,5 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 
+import type { ModelMessage } from "ai";
+
 import type { schema } from "@/db";
 
 export type AiCatalogProviderRow = InferSelectModel<typeof schema.aiCatalogProviders>;
@@ -10,17 +12,63 @@ export type AiConnectionCatalogOverrideRow = InferSelectModel<
 >;
 export type AiConnectionCustomModelRow = InferSelectModel<typeof schema.aiConnectionCustomModels>;
 export type AiRegistryStateRow = InferSelectModel<typeof schema.aiRegistryState>;
-export type AiProjectMessageRow = InferSelectModel<typeof schema.aiProjectMessages>;
-export type AiProjectHeadRow = InferSelectModel<typeof schema.aiProjectHeads>;
-export type AiProjectAssistantStateRow = InferSelectModel<typeof schema.aiProjectAssistantState>;
-export type AiProjectGenerationAttemptRow = InferSelectModel<
-  typeof schema.aiProjectGenerationAttempts
->;
+export type AgentThreadRow = InferSelectModel<typeof schema.agentThreads>;
+export type AgentProjectStateRow = InferSelectModel<typeof schema.agentProjectState>;
+export type AgentThreadNodeRow = InferSelectModel<typeof schema.agentThreadNodes>;
+export type AgentThreadNodePartRow = InferSelectModel<typeof schema.agentThreadNodeParts>;
+export type AgentRunRow = InferSelectModel<typeof schema.agentRuns>;
+export type AgentRunStepRow = InferSelectModel<typeof schema.agentRunSteps>;
+export type AgentRunEventRow = InferSelectModel<typeof schema.agentRunEvents>;
+export type AgentArtifactRow = InferSelectModel<typeof schema.agentArtifacts>;
 
-export type AiProjectMessageRole = "system" | "user" | "assistant" | "tool";
-export type AiGenerationAttemptStatus = "pending" | "success" | "error";
+export type AgentThreadRole = "system" | "user" | "assistant" | "tool";
+export type AgentThreadNodeSourceKind =
+  | "user_input"
+  | "model_response"
+  | "tool_result"
+  | "system_seed"
+  | "edit_rewrite";
+export type AgentThreadNodePartKind =
+  | "text"
+  | "reasoning"
+  | "tool-call"
+  | "tool-result"
+  | "tool-error"
+  | "file"
+  | "source-url"
+  | "source-document"
+  | "data"
+  | "step-start";
+export type AgentVisibility = "public" | "hidden" | "internal";
+export type AgentPartState = "streaming" | "done";
+export type AgentRunMode = "send" | "retry" | "regenerate" | "edit_regenerate" | "subagent";
+export type AgentRunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type AgentRunEventKind =
+  | "run-started"
+  | "step-started"
+  | "provider-requested"
+  | "provider-responded"
+  | "tool-call-started"
+  | "tool-call-finished"
+  | "tool-call-failed"
+  | "node-materialized"
+  | "active-tip-moved"
+  | "child-run-started"
+  | "run-failed"
+  | "run-succeeded";
+export type AgentArtifactKind =
+  | "prepared-model-messages"
+  | "response-messages"
+  | "request-body"
+  | "response-body"
+  | "provider-metadata"
+  | "tool-input"
+  | "tool-output"
+  | "reasoning-raw"
+  | "ui-projection"
+  | "error";
 export type AiSelectionSnapshotOrigin = "catalog" | "custom";
-export type ProjectAssistantToolTraceStatus = "success" | "error";
+export type AgentToolTraceStatus = "success" | "error";
 
 export interface ProjectAssistantContextSnapshot {
   workspaceId: string | null;
@@ -32,15 +80,13 @@ export interface ProjectAssistantContextSnapshot {
   activeTimelineLabel: string | null;
 }
 
-export interface ProjectAssistantToolTraceEntry {
+export interface AgentToolSummaryEntry {
+  toolCallId: string | null;
   toolName: string;
+  status: AgentToolTraceStatus;
   summary: string;
-  status: ProjectAssistantToolTraceStatus;
-}
-
-export interface AiAssistantMessageMetadata {
-  finishReason?: string;
-  toolTrace?: ProjectAssistantToolTraceEntry[];
+  nodeId: string;
+  runId: string | null;
 }
 
 export interface AiSelectionCapabilitySnapshot {
@@ -85,50 +131,146 @@ export interface AiSelectionSnapshotView {
   pricing: AiSelectionPricingSnapshot | null;
 }
 
-export interface AiProjectMessageView {
+export interface AgentThreadView {
   id: string;
   projectId: string;
-  prevMessageId: string | null;
-  role: AiProjectMessageRole;
+  agentProfile: string;
+  title: string;
+  activeTipNodeId: string | null;
+  archivedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AgentProjectStateView {
+  id: string;
+  projectId: string;
+  agentProfile: string;
+  activeThreadId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AgentThreadNodePartView {
+  id: string;
+  nodeId: string;
+  partIndex: number;
+  partKind: AgentThreadNodePartKind;
+  visibility: AgentVisibility;
+  state: AgentPartState;
+  providerOptions: unknown | null;
+  providerMetadata: unknown | null;
+  payload: unknown;
+  createdAt: number;
+}
+
+export interface AgentThreadNodeView {
+  id: string;
+  threadId: string;
+  parentNodeId: string | null;
+  role: AgentThreadRole;
+  createdByRunId: string | null;
+  sourceStepId: string | null;
+  sourceKind: AgentThreadNodeSourceKind;
+  summaryText: string | null;
+  message: ModelMessage;
+  parts: AgentThreadNodePartView[];
+  createdAt: number;
+}
+
+export interface AgentCandidateNodeView {
+  id: string;
+  tipNodeId: string;
+  role: AgentThreadRole;
+  summaryText: string | null;
+  createdAt: number;
+  createdByRunId: string | null;
+}
+
+export interface AgentCandidateGroupView {
+  parentNodeId: string | null;
+  activeNodeId: string;
+  nodes: AgentCandidateNodeView[];
+}
+
+export interface AgentArtifactView {
+  id: string;
+  runId: string | null;
+  stepId: string | null;
+  artifactKind: AgentArtifactKind;
+  visibility: AgentVisibility;
+  mimeType: string | null;
   content: unknown;
   summaryText: string | null;
-  selection: AiSelectionSnapshotView;
-  metadata: unknown | null;
   createdAt: number;
 }
 
-export interface AiProjectHeadView {
+export interface AgentRunView {
   id: string;
-  projectId: string;
-  name: string;
-  currentMessageId: string | null;
-  forkedFromHeadId: string | null;
-  forkedFromMessageId: string | null;
-  isArchived: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface AiProjectAssistantStateView {
-  projectId: string;
-  activeHeadId: string | null;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface AiProjectGenerationAttemptView {
-  id: string;
-  projectId: string;
-  headId: string | null;
-  triggerMessageId: string | null;
-  assistantMessageId: string | null;
-  status: AiGenerationAttemptStatus;
-  request: unknown;
-  usage: unknown | null;
-  error: unknown | null;
-  selection: AiSelectionSnapshotView;
-  createdAt: number;
+  threadId: string;
+  parentRunId: string | null;
+  parentEventId: string | null;
+  triggerNodeId: string | null;
+  baseTipNodeId: string | null;
+  runMode: AgentRunMode;
+  status: AgentRunStatus;
+  agentProfile: string;
+  selectionSnapshot: unknown;
+  contextSnapshot: ProjectAssistantContextSnapshot | null;
+  errorArtifactId: string | null;
+  startedAt: number;
   completedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AgentRunStepView {
+  id: string;
+  runId: string;
+  stepIndex: number;
+  provider: string;
+  modelId: string;
+  finishReason: string | null;
+  rawFinishReason: string | null;
+  system: unknown | null;
+  preparedMessagesArtifactId: string | null;
+  responseMessagesArtifactId: string | null;
+  requestBodyArtifactId: string | null;
+  responseBodyArtifactId: string | null;
+  providerMetadataArtifactId: string | null;
+  usage: unknown | null;
+  startedAt: number;
+  completedAt: number;
+  createdAt: number;
+}
+
+export interface AgentRunEventView {
+  id: string;
+  runId: string;
+  stepId: string | null;
+  seq: number;
+  eventKind: AgentRunEventKind;
+  nodeId: string | null;
+  relatedToolCallId: string | null;
+  relatedRunId: string | null;
+  summaryText: string | null;
+  payloadArtifactId: string | null;
+  createdAt: number;
+}
+
+export interface AgentRunTraceView {
+  run: AgentRunView;
+  steps: AgentRunStepView[];
+  events: AgentRunEventView[];
+  artifacts: AgentArtifactView[];
+  childRuns: AgentRunView[];
+}
+
+export interface AgentThreadStateView {
+  thread: AgentThreadView | null;
+  activePath: AgentThreadNodeView[];
+  candidateGroups: AgentCandidateGroupView[];
+  latestRuns: AgentRunView[];
 }
 
 export interface AiCatalogProviderView {

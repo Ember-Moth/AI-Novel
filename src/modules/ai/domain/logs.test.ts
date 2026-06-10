@@ -3,60 +3,34 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
 
-const tempDir = mkdtempSync(join(tmpdir(), "novel-evolver-ai-logs-domain-"));
-const dbPath = join(tempDir, "ai-logs-domain.sqlite");
+const tempDir = mkdtempSync(join(tmpdir(), "novel-evolver-agent-logs-"));
+const dbPath = join(tempDir, "agent-logs.sqlite");
 process.env.DATABASE_URL = dbPath;
 
 const { db, schema } = await import("@/db");
 const logs = await import("./logs");
 
-function seedProject(projectId: string, updatedAt = 1) {
+function seedProject(projectId: string) {
   db.insert(schema.projects)
     .values({
       id: projectId,
       name: `Project ${projectId}`,
       description: null,
-      createdAt: updatedAt,
-      updatedAt,
-    })
-    .run();
-}
-
-function seedCustomConnection(params: {
-  connectionId: string;
-  modelId: string;
-  modelRowId: string;
-}) {
-  db.insert(schema.aiConnections)
-    .values({
-      id: params.connectionId,
-      kind: "custom",
-      name: "Primary Connection",
-      sdkPackage: "@ai-sdk/openai-compatible",
-      baseUrl: "https://example.test/v1",
-      apiKey: "sk-test",
-      configJson: "{}",
-      isEnabled: true,
-    })
-    .run();
-  db.insert(schema.aiConnectionCustomModels)
-    .values({
-      id: params.modelRowId,
-      connectionId: params.connectionId,
-      modelId: params.modelId,
-      displayName: "Story Model",
-      supportsToolUse: true,
-      supportsReasoning: true,
-      inputPricePer1m: 1.25,
-      outputPricePer1m: 4.5,
-      isEnabled: true,
     })
     .run();
 }
 
 beforeEach(() => {
+  db.run("PRAGMA foreign_keys = OFF;");
+  db.delete(schema.agentRunEvents).run();
+  db.delete(schema.agentThreadNodeParts).run();
+  db.delete(schema.agentThreadNodes).run();
+  db.delete(schema.agentRunSteps).run();
+  db.delete(schema.agentArtifacts).run();
+  db.delete(schema.agentRuns).run();
+  db.delete(schema.agentProjectState).run();
+  db.delete(schema.agentThreads).run();
   db.delete(schema.aiConnectionCatalogOverrides).run();
   db.delete(schema.aiConnectionCustomModels).run();
   db.delete(schema.aiConnections).run();
@@ -69,281 +43,161 @@ beforeEach(() => {
   db.delete(schema.auxNodes).run();
   db.delete(schema.workspaces).run();
   db.delete(schema.projects).run();
+  db.run("PRAGMA foreign_keys = ON;");
 });
 
 afterAll(() => {
   rmSync(tempDir, { recursive: true, force: true });
 });
 
-test("create head, append messages, and resolve the active chain in order", () => {
-  seedProject("project_ai_chain");
-
-  const head = logs.createHead({
-    projectId: "project_ai_chain",
-    name: "Main",
-    initialMessage: {
+test("createThread activates the new thread and appendUserNode extends the active path", () => {
+  seedProject("project_agent_thread");
+  const thread = logs.createThread({
+    projectId: "project_agent_thread",
+  });
+  const node = logs.appendUserNode({
+    threadId: thread.id,
+    parentNodeId: null,
+    message: {
       role: "user",
-      content: { text: "Hello" },
-      summaryText: "Hello",
+      content: [{ type: "text", text: "Hello world" }],
     },
   });
 
-  const initialMessages = logs.resolveHeadMessages(head.id);
-  expect(initialMessages).toHaveLength(1);
-  expect(initialMessages[0]?.content).toEqual({ text: "Hello" });
+  const activeThread = logs.resolveActiveThread("project_agent_thread");
+  const threadView = logs.getThreadView(thread.id);
 
-  const appended = logs.appendMessage({
-    projectId: "project_ai_chain",
-    headId: head.id,
-    prevMessageId: head.currentMessageId,
-    role: "assistant",
-    content: { text: "Hi there" },
-    summaryText: "Hi there",
-  });
-
-  const resolved = logs.resolveHeadMessages(head.id);
-  expect(resolved.map((message) => message.role)).toEqual(["user", "assistant"]);
-  expect(resolved.at(-1)?.id).toBe(appended.id);
-
-  const project = db
-    .select()
-    .from(schema.projects)
-    .where(eq(schema.projects.id, "project_ai_chain"))
-    .get();
-  expect(project?.updatedAt).toBeGreaterThan(1);
-});
-
-test("forking from a historical message creates a sibling revision without copying the tail", () => {
-  seedProject("project_ai_fork");
-
-  const head = logs.createHead({
-    projectId: "project_ai_fork",
-    name: "Draft",
-    initialMessage: {
-      role: "system",
-      content: { text: "root" },
-      summaryText: "root",
+  expect(activeThread?.id).toBe(thread.id);
+  expect(threadView.activePath.map((current) => current.id)).toEqual([node.id]);
+  expect(logs.buildThreadModelMessages(thread.id)).toEqual([
+    {
+      role: "user",
+      content: [{ type: "text", text: "Hello world" }],
     },
-  });
-  const originalRoot = logs.resolveHeadMessages(head.id)[0]!;
-  const middle = logs.appendMessage({
-    projectId: "project_ai_fork",
-    headId: head.id,
-    prevMessageId: head.currentMessageId,
-    role: "user",
-    content: { text: "version-a" },
-    summaryText: "version-a",
-  });
-  logs.appendMessage({
-    projectId: "project_ai_fork",
-    headId: head.id,
-    prevMessageId: middle.id,
-    role: "assistant",
-    content: { text: "tail-a" },
-    summaryText: "tail-a",
-  });
-
-  const forkedHead = logs.forkHeadFromMessage({
-    projectId: "project_ai_fork",
-    sourceHeadId: head.id,
-    sourceMessageId: middle.id,
-    name: "Draft v2",
-    role: "user",
-    content: { text: "version-b" },
-    summaryText: "version-b",
-  });
-
-  expect(logs.resolveHeadMessages(head.id).map((message) => message.summaryText)).toEqual([
-    "root",
-    "version-a",
-    "tail-a",
   ]);
-  expect(logs.resolveHeadMessages(forkedHead.id).map((message) => message.summaryText)).toEqual([
-    "root",
-    "version-b",
-  ]);
-
-  const rootChildren = logs.listHeadChildren("project_ai_fork", originalRoot.id);
-  expect(rootChildren.map((message) => message.summaryText)).toEqual(["version-a", "version-b"]);
-  expect(
-    logs.listHeadChildren("project_ai_fork", middle.id).map((message) => message.summaryText),
-  ).toEqual(["tail-a"]);
 });
 
-test("append rejects stale prevMessageId for a moved head", () => {
-  seedProject("project_ai_stale");
-
-  const head = logs.createHead({
-    projectId: "project_ai_stale",
-    initialMessage: {
+test("retry candidates remain siblings and selectActiveTip switches the displayed branch", () => {
+  seedProject("project_candidates");
+  const thread = logs.createThread({
+    projectId: "project_candidates",
+  });
+  const userNode = logs.appendUserNode({
+    threadId: thread.id,
+    parentNodeId: null,
+    message: {
       role: "user",
-      content: { text: "draft" },
-      summaryText: "draft",
+      content: [{ type: "text", text: "Need help" }],
     },
   });
-  const firstLeaf = head.currentMessageId;
-  const next = logs.appendMessage({
-    projectId: "project_ai_stale",
-    headId: head.id,
-    prevMessageId: firstLeaf,
-    role: "assistant",
-    content: { text: "reply" },
-    summaryText: "reply",
+  const runA = logs.createRun({
+    threadId: thread.id,
+    triggerNodeId: userNode.id,
+    baseTipNodeId: userNode.id,
+    runMode: "retry",
+    agentProfile: "project-assistant",
   });
-
-  expect(next.prevMessageId).toBe(firstLeaf);
-  expect(() =>
-    logs.appendMessage({
-      projectId: "project_ai_stale",
-      headId: head.id,
-      prevMessageId: firstLeaf,
-      role: "assistant",
-      content: { text: "stale" },
-      summaryText: "stale",
-    }),
-  ).toThrow("AI 分支已经推进，请基于最新叶子继续对话。");
-});
-
-test("message snapshots stay readable after referenced connection and model are deleted", () => {
-  seedProject("project_ai_snapshot");
-  seedCustomConnection({
-    connectionId: "conn_snapshot",
-    modelId: "story-model",
-    modelRowId: "cmodel_snapshot",
+  const stepA = logs.createRunStep({
+    runId: runA.id,
+    stepIndex: 0,
+    provider: "openai",
+    modelId: "gpt-test",
   });
-
-  const head = logs.createHead({
-    projectId: "project_ai_snapshot",
-    initialMessage: {
-      role: "user",
-      content: { text: "snapshot" },
-      summaryText: "snapshot",
-      aiSelection: {
-        customModelId: "cmodel_snapshot",
+  const branchA = logs.materializeResponseMessages({
+    threadId: thread.id,
+    parentNodeId: userNode.id,
+    runId: runA.id,
+    stepId: stepA.id,
+    messages: [
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Candidate A" }],
       },
-    },
+    ],
+  });
+  logs.selectActiveTip(thread.id, branchA.tipNodeId!);
+
+  const runB = logs.createRun({
+    threadId: thread.id,
+    triggerNodeId: userNode.id,
+    baseTipNodeId: userNode.id,
+    runMode: "retry",
+    agentProfile: "project-assistant",
+  });
+  const stepB = logs.createRunStep({
+    runId: runB.id,
+    stepIndex: 0,
+    provider: "openai",
+    modelId: "gpt-test",
+  });
+  const branchB = logs.materializeResponseMessages({
+    threadId: thread.id,
+    parentNodeId: userNode.id,
+    runId: runB.id,
+    stepId: stepB.id,
+    messages: [
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Candidate B" }],
+      },
+    ],
   });
 
-  db.delete(schema.aiConnections).where(eq(schema.aiConnections.id, "conn_snapshot")).run();
+  const candidates = logs.getNodeCandidates(userNode.id);
+  expect(candidates).toHaveLength(2);
+  expect(candidates.map((candidate) => candidate.tipNodeId)).toEqual([
+    branchA.tipNodeId!,
+    branchB.tipNodeId!,
+  ]);
 
-  const [message] = logs.resolveHeadMessages(head.id);
-  expect(message?.selection.connectionId).toBeNull();
-  expect(message?.selection.customModelId).toBeNull();
-  expect(message?.selection.connectionName).toBe("Primary Connection");
-  expect(message?.selection.modelDisplayName).toBe("Story Model");
-  expect(message?.selection.capabilities).toEqual({
-    supportsVision: false,
-    supportsToolUse: true,
-    supportsReasoning: true,
-    supportsTemperature: false,
-  });
+  logs.selectActiveTip(thread.id, branchB.tipNodeId!);
+  expect(logs.getThreadView(thread.id).activePath.at(-1)?.summaryText).toBe("Candidate B");
 });
 
-test("generation attempts can be completed with success or error payloads", () => {
-  seedProject("project_ai_attempts");
-
-  const head = logs.createHead({
-    projectId: "project_ai_attempts",
-    initialMessage: {
+test("run trace keeps steps, artifacts, and events", () => {
+  seedProject("project_trace");
+  const thread = logs.createThread({
+    projectId: "project_trace",
+  });
+  const userNode = logs.appendUserNode({
+    threadId: thread.id,
+    parentNodeId: null,
+    message: {
       role: "user",
-      content: { text: "trigger" },
-      summaryText: "trigger",
+      content: [{ type: "text", text: "Hello trace" }],
     },
   });
-  const triggerMessage = logs.resolveHeadMessages(head.id)[0]!;
-
-  const pending = logs.recordGenerationAttempt({
-    projectId: "project_ai_attempts",
-    headId: head.id,
-    triggerMessageId: triggerMessage.id,
-    request: { prompt: "go" },
+  const run = logs.createRun({
+    threadId: thread.id,
+    triggerNodeId: userNode.id,
+    baseTipNodeId: userNode.id,
+    runMode: "send",
+    agentProfile: "project-assistant",
   });
-  expect(pending.status).toBe("pending");
-
-  const assistant = logs.appendMessage({
-    projectId: "project_ai_attempts",
-    headId: head.id,
-    prevMessageId: head.currentMessageId,
-    role: "assistant",
-    content: { text: "done" },
-    summaryText: "done",
+  const requestArtifact = logs.createArtifact({
+    runId: run.id,
+    artifactKind: "request-body",
+    visibility: "internal",
+    content: { prompt: "Hello trace" },
   });
-  const success = logs.completeGenerationAttemptSuccess({
-    attemptId: pending.id,
-    assistantMessageId: assistant.id,
-    usage: { totalTokens: 42 },
+  const step = logs.createRunStep({
+    runId: run.id,
+    stepIndex: 0,
+    provider: "openai",
+    modelId: "gpt-test",
+    requestBodyArtifactId: requestArtifact.id,
   });
-  expect(success.status).toBe("success");
-  expect(success.assistantMessageId).toBe(assistant.id);
-  expect(success.usage).toEqual({ totalTokens: 42 });
-
-  const failedPending = logs.recordGenerationAttempt({
-    projectId: "project_ai_attempts",
-    headId: head.id,
-    triggerMessageId: assistant.id,
-    request: { prompt: "retry" },
-  });
-  const failed = logs.completeGenerationAttemptError({
-    attemptId: failedPending.id,
-    error: { message: "rate limited" },
-  });
-  expect(failed.status).toBe("error");
-  expect(failed.error).toEqual({ message: "rate limited" });
-});
-
-test("resolveActiveAssistantHead falls back to the latest unarchived head and persists assistant state", () => {
-  seedProject("project_ai_active_fallback");
-
-  const older = logs.createHead({
-    projectId: "project_ai_active_fallback",
-    name: "Older",
-  });
-  const newer = logs.createHead({
-    projectId: "project_ai_active_fallback",
-    name: "Newer",
+  logs.appendRunEvent({
+    runId: run.id,
+    stepId: step.id,
+    eventKind: "provider-requested",
+    summaryText: "provider request",
+    payloadArtifactId: requestArtifact.id,
   });
 
-  db.update(schema.aiProjectHeads)
-    .set({ updatedAt: newer.updatedAt + 5_000 })
-    .where(eq(schema.aiProjectHeads.id, older.id))
-    .run();
-
-  const active = logs.resolveActiveAssistantHead("project_ai_active_fallback");
-  const assistantState = logs.getProjectAssistantStateView("project_ai_active_fallback");
-
-  expect(active?.id).toBe(older.id);
-  expect(assistantState?.activeHeadId).toBe(older.id);
-});
-
-test("createAssistantSession activates the new head and renameHead trims whitespace", () => {
-  seedProject("project_ai_assistant_session");
-
-  const head = logs.createAssistantSession("project_ai_assistant_session");
-  expect(head.name).toBe("新会话 1");
-  expect(logs.resolveActiveAssistantHead("project_ai_assistant_session")?.id).toBe(head.id);
-
-  const renamed = logs.renameHead(head.id, "  第一轮脑暴  ");
-  expect(renamed.name).toBe("第一轮脑暴");
-  expect(() => logs.renameHead(head.id, "   ")).toThrow("名称不能为空。");
-});
-
-test("archiving the active head switches to another unarchived head and restoring only auto-activates when none exists", () => {
-  seedProject("project_ai_archive_active");
-
-  const headA = logs.createAssistantSession("project_ai_archive_active");
-  const headB = logs.createAssistantSession("project_ai_archive_active");
-  logs.setActiveAssistantHead("project_ai_archive_active", headA.id);
-
-  logs.archiveHead(headA.id, true);
-  expect(logs.resolveActiveAssistantHead("project_ai_archive_active")?.id).toBe(headB.id);
-
-  logs.archiveHead(headA.id, false);
-  expect(logs.resolveActiveAssistantHead("project_ai_archive_active")?.id).toBe(headB.id);
-
-  logs.archiveHead(headA.id, true);
-  logs.archiveHead(headB.id, true);
-  expect(logs.resolveActiveAssistantHead("project_ai_archive_active")).toBeNull();
-
-  logs.archiveHead(headA.id, false);
-  expect(logs.resolveActiveAssistantHead("project_ai_archive_active")?.id).toBe(headA.id);
+  const trace = logs.getRunTrace(run.id);
+  expect(trace.run.id).toBe(run.id);
+  expect(trace.steps).toHaveLength(1);
+  expect(trace.events).toHaveLength(1);
+  expect(trace.artifacts).toHaveLength(1);
 });

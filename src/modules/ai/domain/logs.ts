@@ -1,70 +1,116 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import type { ModelMessage } from "ai";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import { type DatabaseExecutor, db, schema } from "@/db";
 import { createId, invariant, now } from "@/shared/lib/domain";
+
 import type {
-  AiGenerationAttemptStatus,
-  AiProjectGenerationAttemptRow,
-  AiProjectGenerationAttemptView,
-  AiProjectAssistantStateRow,
-  AiProjectAssistantStateView,
-  AiProjectHeadRow,
-  AiProjectHeadView,
-  AiProjectMessageRole,
-  AiProjectMessageRow,
-  AiProjectMessageView,
-  AiSelectionCapabilitySnapshot,
-  AiSelectionPricingSnapshot,
-  AiSelectionSnapshotInput,
-  AiSelectionSnapshotOrigin,
-  AiSelectionSnapshotView,
+  AgentArtifactKind,
+  AgentArtifactRow,
+  AgentArtifactView,
+  AgentCandidateGroupView,
+  AgentCandidateNodeView,
+  AgentPartState,
+  AgentProjectStateRow,
+  AgentProjectStateView,
+  AgentRunEventKind,
+  AgentRunEventRow,
+  AgentRunEventView,
+  AgentRunMode,
+  AgentRunRow,
+  AgentRunStatus,
+  AgentRunStepRow,
+  AgentRunStepView,
+  AgentRunTraceView,
+  AgentRunView,
+  AgentThreadNodePartKind,
+  AgentThreadNodePartRow,
+  AgentThreadNodePartView,
+  AgentThreadRole,
+  AgentThreadNodeRow,
+  AgentThreadNodeSourceKind,
+  AgentThreadNodeView,
+  AgentThreadRow,
+  AgentThreadStateView,
+  AgentThreadView,
+  AgentVisibility,
+  ProjectAssistantContextSnapshot,
 } from "./types";
 
-interface MessagePayloadInput {
-  role: AiProjectMessageRole;
+export const PROJECT_ASSISTANT_AGENT_PROFILE = "project-assistant";
+
+interface CreateThreadInput {
+  projectId: string;
+  agentProfile?: string;
+  title?: string | null;
+}
+
+interface CreateNodeInput {
+  threadId: string;
+  parentNodeId: string | null;
+  message: ModelMessage;
+  sourceKind: AgentThreadNodeSourceKind;
+  createdByRunId?: string | null;
+  sourceStepId?: string | null;
+  summaryText?: string | null;
+}
+
+interface CreateRunInput {
+  threadId: string;
+  parentRunId?: string | null;
+  parentEventId?: string | null;
+  triggerNodeId?: string | null;
+  baseTipNodeId?: string | null;
+  runMode: AgentRunMode;
+  status?: AgentRunStatus;
+  agentProfile: string;
+  selectionSnapshot?: unknown;
+  contextSnapshot?: ProjectAssistantContextSnapshot | null;
+}
+
+interface CreateArtifactInput {
+  runId?: string | null;
+  stepId?: string | null;
+  artifactKind: AgentArtifactKind;
+  visibility: AgentVisibility;
+  mimeType?: string | null;
   content: unknown;
   summaryText?: string | null;
-  aiSelection?: AiSelectionSnapshotInput | null;
-  metadata?: unknown;
 }
 
-interface CreateHeadInput {
-  projectId: string;
-  name?: string | null;
-  initialMessage?: MessagePayloadInput | null;
-}
-
-interface AppendMessageInput extends MessagePayloadInput {
-  projectId: string;
-  headId: string;
-  prevMessageId: string | null;
-}
-
-interface ForkHeadFromMessageInput extends MessagePayloadInput {
-  projectId: string;
-  sourceHeadId: string;
-  sourceMessageId: string;
-  name?: string | null;
-}
-
-interface RecordGenerationAttemptInput {
-  projectId: string;
-  headId?: string | null;
-  triggerMessageId?: string | null;
-  request: unknown;
-  aiSelection?: AiSelectionSnapshotInput | null;
-}
-
-interface CompleteGenerationAttemptSuccessInput {
-  attemptId: string;
-  assistantMessageId?: string | null;
+interface CreateRunStepInput {
+  runId: string;
+  stepIndex: number;
+  provider: string;
+  modelId: string;
+  finishReason?: string | null;
+  rawFinishReason?: string | null;
+  system?: unknown;
+  preparedMessagesArtifactId?: string | null;
+  responseMessagesArtifactId?: string | null;
+  requestBodyArtifactId?: string | null;
+  responseBodyArtifactId?: string | null;
+  providerMetadataArtifactId?: string | null;
   usage?: unknown;
 }
 
-interface CompleteGenerationAttemptErrorInput {
-  attemptId: string;
-  error: unknown;
-  usage?: unknown;
+interface CreateRunEventInput {
+  runId: string;
+  stepId?: string | null;
+  eventKind: AgentRunEventKind;
+  nodeId?: string | null;
+  relatedToolCallId?: string | null;
+  relatedRunId?: string | null;
+  summaryText?: string | null;
+  payloadArtifactId?: string | null;
+}
+
+interface MaterializeResponseMessagesInput {
+  threadId: string;
+  parentNodeId: string | null;
+  runId: string;
+  stepId: string;
+  messages: ModelMessage[];
 }
 
 function trimOptionalString(value: string | null | undefined) {
@@ -72,8 +118,8 @@ function trimOptionalString(value: string | null | undefined) {
   return trimmed ? trimmed : null;
 }
 
-function normalizeHeadName(name: string | null | undefined, fallback = "未命名分支") {
-  return trimOptionalString(name) ?? fallback;
+function normalizeThreadTitle(title: string | null | undefined, fallback: string) {
+  return trimOptionalString(title) ?? fallback;
 }
 
 function normalizeSummaryText(summaryText: string | null | undefined) {
@@ -95,54 +141,111 @@ function serializeOptionalJson(value: unknown) {
   return serialized;
 }
 
-function parseStoredJson(raw: string | null): unknown | null {
+function parseStoredJson<T>(raw: string | null): T | null {
   if (raw == null) {
     return null;
   }
-  return JSON.parse(raw);
+  return JSON.parse(raw) as T;
 }
 
-function normalizeCapabilities(
-  capabilities: Partial<AiSelectionCapabilitySnapshot> | null | undefined,
-  fallback?: Partial<AiSelectionCapabilitySnapshot> | null,
-): AiSelectionCapabilitySnapshot | null {
-  const source = capabilities ?? fallback;
-  if (!source) {
-    return null;
-  }
-  return {
-    supportsVision: Boolean(source.supportsVision),
-    supportsToolUse: Boolean(source.supportsToolUse),
-    supportsReasoning: Boolean(source.supportsReasoning),
-    supportsTemperature: Boolean(source.supportsTemperature),
-  };
-}
-
-function normalizePricing(
-  pricing: Partial<AiSelectionPricingSnapshot> | null | undefined,
-  fallback?: Partial<AiSelectionPricingSnapshot> | null,
-): AiSelectionPricingSnapshot | null {
-  const source = pricing ?? fallback;
-  if (!source) {
-    return null;
-  }
-  return {
-    inputPricePer1m: source.inputPricePer1m ?? null,
-    outputPricePer1m: source.outputPricePer1m ?? null,
-  };
-}
-
-function assertRole(role: string): asserts role is AiProjectMessageRole {
+function assertThreadRole(role: string): asserts role is AgentThreadRole {
   invariant(
     role === "system" || role === "user" || role === "assistant" || role === "tool",
-    "不支持的消息角色。",
+    "不支持的线程节点角色。",
   );
 }
 
-function assertAttemptStatus(status: string): asserts status is AiGenerationAttemptStatus {
+function assertRunMode(mode: string): asserts mode is AgentRunMode {
   invariant(
-    status === "pending" || status === "success" || status === "error",
-    "不支持的尝试状态。",
+    mode === "send" ||
+      mode === "retry" ||
+      mode === "regenerate" ||
+      mode === "edit_regenerate" ||
+      mode === "subagent",
+    "不支持的 run 模式。",
+  );
+}
+
+function assertRunStatus(status: string): asserts status is AgentRunStatus {
+  invariant(
+    status === "queued" ||
+      status === "running" ||
+      status === "succeeded" ||
+      status === "failed" ||
+      status === "cancelled",
+    "不支持的 run 状态。",
+  );
+}
+
+function assertPartKind(kind: string): asserts kind is AgentThreadNodePartKind {
+  invariant(
+    kind === "text" ||
+      kind === "reasoning" ||
+      kind === "tool-call" ||
+      kind === "tool-result" ||
+      kind === "tool-error" ||
+      kind === "file" ||
+      kind === "source-url" ||
+      kind === "source-document" ||
+      kind === "data" ||
+      kind === "step-start",
+    "不支持的节点 part 类型。",
+  );
+}
+
+function assertVisibility(visibility: string): asserts visibility is AgentVisibility {
+  invariant(
+    visibility === "public" || visibility === "hidden" || visibility === "internal",
+    "不支持的可见性。",
+  );
+}
+
+function assertPartState(state: string): asserts state is AgentPartState {
+  invariant(state === "streaming" || state === "done", "不支持的 part 状态。");
+}
+
+function assertEventKind(kind: string): asserts kind is AgentRunEventKind {
+  invariant(
+    kind === "run-started" ||
+      kind === "step-started" ||
+      kind === "provider-requested" ||
+      kind === "provider-responded" ||
+      kind === "tool-call-started" ||
+      kind === "tool-call-finished" ||
+      kind === "tool-call-failed" ||
+      kind === "node-materialized" ||
+      kind === "active-tip-moved" ||
+      kind === "child-run-started" ||
+      kind === "run-failed" ||
+      kind === "run-succeeded",
+    "不支持的 run 事件类型。",
+  );
+}
+
+function assertArtifactKind(kind: string): asserts kind is AgentArtifactKind {
+  invariant(
+    kind === "prepared-model-messages" ||
+      kind === "response-messages" ||
+      kind === "request-body" ||
+      kind === "response-body" ||
+      kind === "provider-metadata" ||
+      kind === "tool-input" ||
+      kind === "tool-output" ||
+      kind === "reasoning-raw" ||
+      kind === "ui-projection" ||
+      kind === "error",
+    "不支持的 artifact 类型。",
+  );
+}
+
+function assertSourceKind(kind: string): asserts kind is AgentThreadNodeSourceKind {
+  invariant(
+    kind === "user_input" ||
+      kind === "model_response" ||
+      kind === "tool_result" ||
+      kind === "system_seed" ||
+      kind === "edit_rewrite",
+    "不支持的节点来源类型。",
   );
 }
 
@@ -164,698 +267,1083 @@ function touchProject(executor: DatabaseExecutor, projectId: string) {
     .run();
 }
 
-function getHeadOrThrow(executor: DatabaseExecutor, headId: string) {
-  const head = executor
+function getThreadOrThrow(executor: DatabaseExecutor, threadId: string) {
+  const thread = executor
     .select()
-    .from(schema.aiProjectHeads)
-    .where(eq(schema.aiProjectHeads.id, headId))
+    .from(schema.agentThreads)
+    .where(eq(schema.agentThreads.id, threadId))
     .get();
-  invariant(head, "未找到 AI 分支。");
-  return head;
+  invariant(thread, "未找到 agent thread。");
+  return thread;
 }
 
-function getAssistantStateRow(executor: DatabaseExecutor, projectId: string) {
+function getNodeOrThrow(executor: DatabaseExecutor, nodeId: string) {
+  const node = executor
+    .select()
+    .from(schema.agentThreadNodes)
+    .where(eq(schema.agentThreadNodes.id, nodeId))
+    .get();
+  invariant(node, "未找到 agent 节点。");
+  return node;
+}
+
+function getRunOrThrow(executor: DatabaseExecutor, runId: string) {
+  const run = executor.select().from(schema.agentRuns).where(eq(schema.agentRuns.id, runId)).get();
+  invariant(run, "未找到 agent run。");
+  return run;
+}
+
+function getStepOrThrow(executor: DatabaseExecutor, stepId: string) {
+  const step = executor
+    .select()
+    .from(schema.agentRunSteps)
+    .where(eq(schema.agentRunSteps.id, stepId))
+    .get();
+  invariant(step, "未找到 run step。");
+  return step;
+}
+
+function getArtifactOrThrow(executor: DatabaseExecutor, artifactId: string) {
+  const artifact = executor
+    .select()
+    .from(schema.agentArtifacts)
+    .where(eq(schema.agentArtifacts.id, artifactId))
+    .get();
+  invariant(artifact, "未找到 artifact。");
+  return artifact;
+}
+
+function getProjectStateRow(executor: DatabaseExecutor, projectId: string, agentProfile: string) {
   return executor
     .select()
-    .from(schema.aiProjectAssistantState)
-    .where(eq(schema.aiProjectAssistantState.projectId, projectId))
+    .from(schema.agentProjectState)
+    .where(
+      and(
+        eq(schema.agentProjectState.projectId, projectId),
+        eq(schema.agentProjectState.agentProfile, agentProfile),
+      ),
+    )
     .get();
 }
 
-function getMessageById(executor: DatabaseExecutor, messageId: string) {
-  return executor
-    .select()
-    .from(schema.aiProjectMessages)
-    .where(eq(schema.aiProjectMessages.id, messageId))
-    .get();
-}
-
-function getMessageOrThrow(executor: DatabaseExecutor, messageId: string) {
-  const message = getMessageById(executor, messageId);
-  invariant(message, "未找到 AI 消息。");
-  return message;
-}
-
-function getProjectMessageOrThrow(
+function getNodeRowsByThread(
   executor: DatabaseExecutor,
-  projectId: string,
-  messageId: string,
+  threadId: string,
+  parentNodeId: string | null,
 ) {
-  const message = getMessageOrThrow(executor, messageId);
-  invariant(message.projectId === projectId, "AI 消息不属于当前项目。");
-  return message;
-}
-
-function getAttemptOrThrow(executor: DatabaseExecutor, attemptId: string) {
-  const attempt = executor
+  return executor
     .select()
-    .from(schema.aiProjectGenerationAttempts)
-    .where(eq(schema.aiProjectGenerationAttempts.id, attemptId))
-    .get();
-  invariant(attempt, "未找到 AI 生成尝试。");
-  return attempt;
+    .from(schema.agentThreadNodes)
+    .where(
+      parentNodeId == null
+        ? and(
+            eq(schema.agentThreadNodes.threadId, threadId),
+            isNull(schema.agentThreadNodes.parentNodeId),
+          )
+        : and(
+            eq(schema.agentThreadNodes.threadId, threadId),
+            eq(schema.agentThreadNodes.parentNodeId, parentNodeId),
+          ),
+    )
+    .orderBy(schema.agentThreadNodes.createdAt)
+    .all();
 }
 
-function mapSelectionFromRow(row: {
-  connectionId: string | null;
-  catalogModelId: string | null;
-  customModelId: string | null;
-  snapshotConnectionName: string | null;
-  snapshotSdkPackage: string | null;
-  snapshotBaseUrl: string | null;
-  snapshotModelOrigin: string | null;
-  snapshotModelId: string | null;
-  snapshotModelDisplayName: string | null;
-  snapshotModelFamily: string | null;
-  snapshotCapabilitiesJson: string | null;
-  snapshotPricingJson: string | null;
-}): AiSelectionSnapshotView {
-  return {
-    connectionId: row.connectionId,
-    catalogModelId: row.catalogModelId,
-    customModelId: row.customModelId,
-    connectionName: row.snapshotConnectionName,
-    sdkPackage: row.snapshotSdkPackage,
-    baseUrl: row.snapshotBaseUrl,
-    modelOrigin: (row.snapshotModelOrigin as AiSelectionSnapshotOrigin | null) ?? null,
-    modelId: row.snapshotModelId,
-    modelDisplayName: row.snapshotModelDisplayName,
-    modelFamily: row.snapshotModelFamily,
-    capabilities:
-      (parseStoredJson(row.snapshotCapabilitiesJson) as AiSelectionCapabilitySnapshot | null) ??
-      null,
-    pricing:
-      (parseStoredJson(row.snapshotPricingJson) as AiSelectionPricingSnapshot | null) ?? null,
-  };
+function inferPartKind(rawPart: Record<string, unknown>): AgentThreadNodePartKind {
+  const type = rawPart.type;
+  if (type === "text") {
+    return "text";
+  }
+  if (type === "reasoning") {
+    return "reasoning";
+  }
+  if (type === "tool-call") {
+    return "tool-call";
+  }
+  if (type === "tool-result") {
+    return "tool-result";
+  }
+  if (type === "tool-error") {
+    return "tool-error";
+  }
+  if (type === "file") {
+    return "file";
+  }
+  if (type === "step-start") {
+    return "step-start";
+  }
+  if (type === "source") {
+    return typeof rawPart.url === "string" ? "source-url" : "source-document";
+  }
+  if (typeof type === "string" && type.startsWith("data-")) {
+    return "data";
+  }
+  return "data";
 }
 
-function mapMessageRow(row: AiProjectMessageRow): AiProjectMessageView {
-  assertRole(row.role);
+function inferVisibility(partKind: AgentThreadNodePartKind): AgentVisibility {
+  if (partKind === "reasoning") {
+    return "hidden";
+  }
+  if (partKind === "tool-call" || partKind === "tool-result" || partKind === "tool-error") {
+    return "internal";
+  }
+  return "public";
+}
+
+function normalizeMessageParts(message: ModelMessage) {
+  const role = message.role;
+  const rawContent = (message as { content?: unknown }).content;
+  const normalized =
+    typeof rawContent === "string"
+      ? [{ type: "text", text: rawContent }]
+      : Array.isArray(rawContent)
+        ? rawContent
+        : [];
+
+  return normalized.map((part, partIndex) => {
+    const rawPart =
+      part && typeof part === "object"
+        ? ({ ...(part as Record<string, unknown>) } satisfies Record<string, unknown>)
+        : { type: "text", text: String(part ?? "") };
+    const partKind =
+      role === "tool" && !("type" in rawPart) ? "tool-result" : inferPartKind(rawPart);
+    return {
+      partIndex,
+      partKind,
+      visibility: inferVisibility(partKind),
+      state:
+        Reflect.get(rawPart, "state") === "streaming" || Reflect.get(rawPart, "state") === "done"
+          ? (Reflect.get(rawPart, "state") as AgentPartState)
+          : ("done" as AgentPartState),
+      providerOptions: Reflect.get(rawPart, "providerOptions"),
+      providerMetadata: Reflect.get(rawPart, "providerMetadata"),
+      payload: rawPart,
+    };
+  });
+}
+
+function getTextishSummary(message: ModelMessage) {
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return null;
+  }
+
+  const texts = content.flatMap((part) => {
+    if (!part || typeof part !== "object") {
+      return [];
+    }
+    const type = Reflect.get(part as Record<string, unknown>, "type");
+    if (type === "text" || type === "reasoning") {
+      const text = Reflect.get(part as Record<string, unknown>, "text");
+      return typeof text === "string" ? [text] : [];
+    }
+    return [];
+  });
+
+  return texts.length > 0 ? texts.join(" ").trim() : null;
+}
+
+function buildMessageSummary(message: ModelMessage) {
+  const textSummary = getTextishSummary(message);
+  if (textSummary) {
+    const normalized = textSummary.replace(/\s+/g, " ").trim();
+    return normalized.length <= 80 ? normalized : `${normalized.slice(0, 80)}…`;
+  }
+
+  if (message.role === "tool") {
+    const content = (message as { content?: unknown }).content;
+    const first = Array.isArray(content) ? content[0] : null;
+    const toolName =
+      first && typeof first === "object"
+        ? Reflect.get(first as Record<string, unknown>, "toolName")
+        : null;
+    return typeof toolName === "string" ? `工具结果：${toolName}` : "工具结果";
+  }
+
+  if (message.role === "assistant") {
+    const content = (message as { content?: unknown }).content;
+    const first = Array.isArray(content) ? content[0] : null;
+    const toolName =
+      first && typeof first === "object"
+        ? Reflect.get(first as Record<string, unknown>, "toolName")
+        : null;
+    return typeof toolName === "string" ? `调用工具：${toolName}` : "助手回复";
+  }
+
+  return message.role === "system" ? "系统消息" : "消息";
+}
+
+function mapProjectStateRow(row: AgentProjectStateRow): AgentProjectStateView {
   return {
     id: row.id,
     projectId: row.projectId,
-    prevMessageId: row.prevMessageId,
+    agentProfile: row.agentProfile,
+    activeThreadId: row.activeThreadId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function mapThreadRow(row: AgentThreadRow): AgentThreadView {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    agentProfile: row.agentProfile,
+    title: row.title,
+    activeTipNodeId: row.activeTipNodeId,
+    archivedAt: row.archivedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function mapNodePartRow(row: AgentThreadNodePartRow): AgentThreadNodePartView {
+  assertPartKind(row.partKind);
+  assertVisibility(row.visibility);
+  assertPartState(row.state);
+  return {
+    id: row.id,
+    nodeId: row.nodeId,
+    partIndex: row.partIndex,
+    partKind: row.partKind,
+    visibility: row.visibility,
+    state: row.state,
+    providerOptions: parseStoredJson(row.providerOptionsJson),
+    providerMetadata: parseStoredJson(row.providerMetadataJson),
+    payload: JSON.parse(row.payloadJson),
+    createdAt: row.createdAt,
+  };
+}
+
+function listNodePartViews(executor: DatabaseExecutor, nodeId: string) {
+  return executor
+    .select()
+    .from(schema.agentThreadNodeParts)
+    .where(eq(schema.agentThreadNodeParts.nodeId, nodeId))
+    .orderBy(schema.agentThreadNodeParts.partIndex)
+    .all()
+    .map(mapNodePartRow);
+}
+
+function mapNodeRow(executor: DatabaseExecutor, row: AgentThreadNodeRow): AgentThreadNodeView {
+  assertThreadRole(row.role);
+  assertSourceKind(row.sourceKind);
+  return {
+    id: row.id,
+    threadId: row.threadId,
+    parentNodeId: row.parentNodeId,
     role: row.role,
+    createdByRunId: row.createdByRunId,
+    sourceStepId: row.sourceStepId,
+    sourceKind: row.sourceKind,
+    summaryText: row.summaryText,
+    message: JSON.parse(row.messageJson) as ModelMessage,
+    parts: listNodePartViews(executor, row.id),
+    createdAt: row.createdAt,
+  };
+}
+
+function mapArtifactRow(row: AgentArtifactRow): AgentArtifactView {
+  assertArtifactKind(row.artifactKind);
+  assertVisibility(row.visibility);
+  return {
+    id: row.id,
+    runId: row.runId,
+    stepId: row.stepId,
+    artifactKind: row.artifactKind,
+    visibility: row.visibility,
+    mimeType: row.mimeType,
     content: JSON.parse(row.contentJson),
     summaryText: row.summaryText,
-    selection: mapSelectionFromRow(row),
-    metadata: parseStoredJson(row.metadataJson),
     createdAt: row.createdAt,
   };
 }
 
-function mapHeadRow(row: AiProjectHeadRow): AiProjectHeadView {
+function mapRunRow(row: AgentRunRow): AgentRunView {
+  assertRunMode(row.runMode);
+  assertRunStatus(row.status);
   return {
     id: row.id,
-    projectId: row.projectId,
-    name: row.name,
-    currentMessageId: row.currentMessageId,
-    forkedFromHeadId: row.forkedFromHeadId,
-    forkedFromMessageId: row.forkedFromMessageId,
-    isArchived: row.isArchived,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-function mapAssistantStateRow(row: AiProjectAssistantStateRow): AiProjectAssistantStateView {
-  return {
-    projectId: row.projectId,
-    activeHeadId: row.activeHeadId,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-function mapAttemptRow(row: AiProjectGenerationAttemptRow): AiProjectGenerationAttemptView {
-  assertAttemptStatus(row.status);
-  return {
-    id: row.id,
-    projectId: row.projectId,
-    headId: row.headId,
-    triggerMessageId: row.triggerMessageId,
-    assistantMessageId: row.assistantMessageId,
+    threadId: row.threadId,
+    parentRunId: row.parentRunId,
+    parentEventId: row.parentEventId,
+    triggerNodeId: row.triggerNodeId,
+    baseTipNodeId: row.baseTipNodeId,
+    runMode: row.runMode,
     status: row.status,
-    request: JSON.parse(row.requestJson),
-    usage: parseStoredJson(row.usageJson),
-    error: parseStoredJson(row.errorJson),
-    selection: mapSelectionFromRow(row),
-    createdAt: row.createdAt,
+    agentProfile: row.agentProfile,
+    selectionSnapshot: JSON.parse(row.selectionSnapshotJson),
+    contextSnapshot: parseStoredJson<ProjectAssistantContextSnapshot>(row.contextSnapshotJson),
+    errorArtifactId: row.errorArtifactId,
+    startedAt: row.startedAt,
     completedAt: row.completedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
-function normalizeSelectionInput(
-  executor: DatabaseExecutor,
-  input: AiSelectionSnapshotInput | null | undefined,
-) {
-  const connectionId = trimOptionalString(input?.connectionId);
-  const catalogModelId = trimOptionalString(input?.catalogModelId);
-  const customModelId = trimOptionalString(input?.customModelId);
-  invariant(!(catalogModelId && customModelId), "目录模型和自定义模型引用不能同时存在。");
-
-  let connection = connectionId
-    ? executor
-        .select()
-        .from(schema.aiConnections)
-        .where(eq(schema.aiConnections.id, connectionId))
-        .get()
-    : null;
-  let catalogModel = catalogModelId
-    ? executor
-        .select()
-        .from(schema.aiCatalogModels)
-        .where(eq(schema.aiCatalogModels.id, catalogModelId))
-        .get()
-    : null;
-  let customModel = customModelId
-    ? executor
-        .select()
-        .from(schema.aiConnectionCustomModels)
-        .where(eq(schema.aiConnectionCustomModels.id, customModelId))
-        .get()
-    : null;
-
-  invariant(connectionId == null || connection, "未找到 AI 连接。");
-  invariant(catalogModelId == null || catalogModel, "未找到目录模型。");
-  invariant(customModelId == null || customModel, "未找到自定义模型。");
-
-  if (!connection && customModel) {
-    connection = executor
-      .select()
-      .from(schema.aiConnections)
-      .where(eq(schema.aiConnections.id, customModel.connectionId))
-      .get();
-    invariant(connection, "未找到 AI 连接。");
-  }
-
-  if (connection && catalogModel) {
-    invariant(connection.kind === "registry", "目录模型引用需要 registry 连接。");
-    invariant(connection.catalogProviderId === catalogModel.providerId, "目录模型不属于当前连接。");
-  }
-
-  if (connection && customModel) {
-    invariant(customModel.connectionId === connection.id, "自定义模型不属于当前连接。");
-  }
-
-  const modelOrigin =
-    input?.modelOrigin ?? (catalogModel ? "catalog" : customModel ? "custom" : null);
-  invariant(
-    modelOrigin == null || modelOrigin === "catalog" || modelOrigin === "custom",
-    "不支持的模型来源。",
-  );
-
-  if (catalogModel) {
-    invariant(modelOrigin !== "custom", "目录模型引用不能标记为 custom。");
-  }
-  if (customModel) {
-    invariant(modelOrigin !== "catalog", "自定义模型引用不能标记为 catalog。");
-  }
-
-  const capabilities = normalizeCapabilities(
-    input?.capabilities,
-    catalogModel ?? customModel ?? null,
-  );
-  const pricing = normalizePricing(input?.pricing, catalogModel ?? customModel ?? null);
-
+function mapRunStepRow(row: AgentRunStepRow): AgentRunStepView {
   return {
-    connectionId: connection?.id ?? null,
-    catalogModelId: catalogModel?.id ?? null,
-    customModelId: customModel?.id ?? null,
-    snapshotConnectionName: trimOptionalString(input?.connectionName) ?? connection?.name ?? null,
-    snapshotSdkPackage: trimOptionalString(input?.sdkPackage) ?? connection?.sdkPackage ?? null,
-    snapshotBaseUrl: trimOptionalString(input?.baseUrl) ?? connection?.baseUrl ?? null,
-    snapshotModelOrigin: modelOrigin,
-    snapshotModelId:
-      trimOptionalString(input?.modelId) ?? catalogModel?.modelId ?? customModel?.modelId ?? null,
-    snapshotModelDisplayName:
-      trimOptionalString(input?.modelDisplayName) ??
-      catalogModel?.displayName ??
-      customModel?.displayName ??
-      null,
-    snapshotModelFamily: trimOptionalString(input?.modelFamily) ?? catalogModel?.family ?? null,
-    snapshotCapabilitiesJson: capabilities
-      ? serializeRequiredJson(capabilities, "模型能力快照")
-      : null,
-    snapshotPricingJson: pricing ? serializeRequiredJson(pricing, "模型价格快照") : null,
+    id: row.id,
+    runId: row.runId,
+    stepIndex: row.stepIndex,
+    provider: row.provider,
+    modelId: row.modelId,
+    finishReason: row.finishReason,
+    rawFinishReason: row.rawFinishReason,
+    system: parseStoredJson(row.systemJson),
+    preparedMessagesArtifactId: row.preparedMessagesArtifactId,
+    responseMessagesArtifactId: row.responseMessagesArtifactId,
+    requestBodyArtifactId: row.requestBodyArtifactId,
+    responseBodyArtifactId: row.responseBodyArtifactId,
+    providerMetadataArtifactId: row.providerMetadataArtifactId,
+    usage: parseStoredJson(row.usageJson),
+    startedAt: row.startedAt,
+    completedAt: row.completedAt,
+    createdAt: row.createdAt,
   };
 }
 
-function insertMessage(
+function mapRunEventRow(row: AgentRunEventRow): AgentRunEventView {
+  assertEventKind(row.eventKind);
+  return {
+    id: row.id,
+    runId: row.runId,
+    stepId: row.stepId,
+    seq: row.seq,
+    eventKind: row.eventKind,
+    nodeId: row.nodeId,
+    relatedToolCallId: row.relatedToolCallId,
+    relatedRunId: row.relatedRunId,
+    summaryText: row.summaryText,
+    payloadArtifactId: row.payloadArtifactId,
+    createdAt: row.createdAt,
+  };
+}
+
+function upsertProjectState(
   executor: DatabaseExecutor,
-  input: {
-    projectId: string;
-    prevMessageId: string | null;
-  } & MessagePayloadInput,
+  projectId: string,
+  agentProfile: string,
+  activeThreadId: string | null,
 ) {
-  const selection = normalizeSelectionInput(executor, input.aiSelection);
-  const id = createId("ai_msg");
+  getProjectOrThrow(executor, projectId);
+  const stateId = `${projectId}:${agentProfile}`;
+  const timestamp = now();
+  const existing = getProjectStateRow(executor, projectId, agentProfile);
+
+  if (existing) {
+    executor
+      .update(schema.agentProjectState)
+      .set({
+        activeThreadId,
+        updatedAt: timestamp,
+      })
+      .where(eq(schema.agentProjectState.id, existing.id))
+      .run();
+  } else {
+    executor
+      .insert(schema.agentProjectState)
+      .values({
+        id: stateId,
+        projectId,
+        agentProfile,
+        activeThreadId,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
+  }
+
+  return mapProjectStateRow(getProjectStateRow(executor, projectId, agentProfile)!);
+}
+
+function touchThread(executor: DatabaseExecutor, threadId: string) {
+  executor
+    .update(schema.agentThreads)
+    .set({ updatedAt: now() })
+    .where(eq(schema.agentThreads.id, threadId))
+    .run();
+}
+
+function insertNode(executor: DatabaseExecutor, input: CreateNodeInput) {
+  const thread = getThreadOrThrow(executor, input.threadId);
+  if (input.parentNodeId) {
+    const parent = getNodeOrThrow(executor, input.parentNodeId);
+    invariant(parent.threadId === thread.id, "父节点不属于当前 thread。");
+  }
+  if (input.createdByRunId) {
+    const run = getRunOrThrow(executor, input.createdByRunId);
+    invariant(run.threadId === thread.id, "节点来源 run 不属于当前 thread。");
+  }
+  if (input.sourceStepId) {
+    const step = getStepOrThrow(executor, input.sourceStepId);
+    const run = getRunOrThrow(executor, step.runId);
+    invariant(run.threadId === thread.id, "节点来源 step 不属于当前 thread。");
+  }
+
+  const id = createId("agent_node");
   const createdAt = now();
   executor
-    .insert(schema.aiProjectMessages)
+    .insert(schema.agentThreadNodes)
     .values({
       id,
-      projectId: input.projectId,
-      prevMessageId: input.prevMessageId,
-      role: input.role,
-      contentJson: serializeRequiredJson(input.content, "消息内容"),
-      summaryText: normalizeSummaryText(input.summaryText),
-      ...selection,
-      metadataJson: serializeOptionalJson(input.metadata),
+      threadId: thread.id,
+      parentNodeId: input.parentNodeId,
+      role: input.message.role,
+      createdByRunId: trimOptionalString(input.createdByRunId),
+      sourceStepId: trimOptionalString(input.sourceStepId),
+      sourceKind: input.sourceKind,
+      summaryText: normalizeSummaryText(input.summaryText) ?? buildMessageSummary(input.message),
+      messageJson: serializeRequiredJson(input.message, "线程消息"),
       createdAt,
     })
     .run();
 
-  return mapMessageRow(getProjectMessageOrThrow(executor, input.projectId, id));
+  const parts = normalizeMessageParts(input.message);
+  parts.forEach((part) => {
+    executor
+      .insert(schema.agentThreadNodeParts)
+      .values({
+        id: createId("agent_part"),
+        nodeId: id,
+        partIndex: part.partIndex,
+        partKind: part.partKind,
+        visibility: part.visibility,
+        state: part.state,
+        providerOptionsJson: serializeOptionalJson(part.providerOptions),
+        providerMetadataJson: serializeOptionalJson(part.providerMetadata),
+        payloadJson: serializeRequiredJson(part.payload, "节点 part"),
+        createdAt,
+      })
+      .run();
+  });
+
+  touchThread(executor, thread.id);
+  touchProject(executor, thread.projectId);
+  return mapNodeRow(executor, getNodeOrThrow(executor, id));
 }
 
-function getLatestUnarchivedHeadRow(executor: DatabaseExecutor, projectId: string) {
+function getLatestUnarchivedThreadRow(
+  executor: DatabaseExecutor,
+  projectId: string,
+  agentProfile: string,
+) {
   return executor
     .select()
-    .from(schema.aiProjectHeads)
+    .from(schema.agentThreads)
     .where(
       and(
-        eq(schema.aiProjectHeads.projectId, projectId),
-        eq(schema.aiProjectHeads.isArchived, false),
+        eq(schema.agentThreads.projectId, projectId),
+        eq(schema.agentThreads.agentProfile, agentProfile),
+        isNull(schema.agentThreads.archivedAt),
       ),
     )
-    .orderBy(desc(schema.aiProjectHeads.updatedAt), desc(schema.aiProjectHeads.createdAt))
+    .orderBy(desc(schema.agentThreads.updatedAt), desc(schema.agentThreads.createdAt))
     .get();
 }
 
-function upsertAssistantState(
-  executor: DatabaseExecutor,
+export function listThreads(
   projectId: string,
-  activeHeadId: string | null,
+  options?: { agentProfile?: string; archived?: boolean },
 ) {
-  getProjectOrThrow(executor, projectId);
-  const timestamp = now();
-  const existing = getAssistantStateRow(executor, projectId);
-
-  if (existing) {
-    executor
-      .update(schema.aiProjectAssistantState)
-      .set({
-        activeHeadId,
-        updatedAt: timestamp,
-      })
-      .where(eq(schema.aiProjectAssistantState.projectId, projectId))
-      .run();
-  } else {
-    executor
-      .insert(schema.aiProjectAssistantState)
-      .values({
-        projectId,
-        activeHeadId,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      })
-      .run();
-  }
-
-  return mapAssistantStateRow(getAssistantStateRow(executor, projectId)!);
-}
-
-function createHeadWithExecutor(executor: DatabaseExecutor, input: CreateHeadInput) {
-  getProjectOrThrow(executor, input.projectId);
-
-  const initialMessage = input.initialMessage
-    ? insertMessage(executor, {
-        projectId: input.projectId,
-        prevMessageId: null,
-        ...input.initialMessage,
-      })
-    : null;
-  const headId = createId("ai_head");
-  const timestamp = now();
-  executor
-    .insert(schema.aiProjectHeads)
-    .values({
-      id: headId,
-      projectId: input.projectId,
-      name: normalizeHeadName(input.name, initialMessage?.summaryText ?? undefined),
-      currentMessageId: initialMessage?.id ?? null,
-      forkedFromHeadId: null,
-      forkedFromMessageId: null,
-      isArchived: false,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-    .run();
-
-  touchProject(executor, input.projectId);
-  return mapHeadRow(getHeadOrThrow(executor, headId));
-}
-
-export function listProjectHeads(projectId: string, options?: { archived?: boolean }) {
   getProjectOrThrow(db, projectId);
+  const agentProfile = trimOptionalString(options?.agentProfile);
   const archived = options?.archived;
-  const rows = db
+  return db
     .select()
-    .from(schema.aiProjectHeads)
+    .from(schema.agentThreads)
     .where(
-      archived == null
-        ? eq(schema.aiProjectHeads.projectId, projectId)
-        : and(
-            eq(schema.aiProjectHeads.projectId, projectId),
-            eq(schema.aiProjectHeads.isArchived, archived),
-          ),
+      and(
+        eq(schema.agentThreads.projectId, projectId),
+        agentProfile ? eq(schema.agentThreads.agentProfile, agentProfile) : undefined,
+        archived == null
+          ? undefined
+          : archived
+            ? sql`${schema.agentThreads.archivedAt} IS NOT NULL`
+            : isNull(schema.agentThreads.archivedAt),
+      ),
     )
-    .orderBy(desc(schema.aiProjectHeads.updatedAt), desc(schema.aiProjectHeads.createdAt))
-    .all();
-  return rows.map(mapHeadRow);
+    .orderBy(desc(schema.agentThreads.updatedAt), desc(schema.agentThreads.createdAt))
+    .all()
+    .map(mapThreadRow);
 }
 
-export function resolveProjectMainHead(projectId: string) {
+export function getProjectState(projectId: string, agentProfile = PROJECT_ASSISTANT_AGENT_PROFILE) {
   getProjectOrThrow(db, projectId);
-  const row = getLatestUnarchivedHeadRow(db, projectId);
-  return row ? mapHeadRow(row) : null;
+  const row = getProjectStateRow(db, projectId, agentProfile);
+  return row ? mapProjectStateRow(row) : null;
 }
 
-export function getProjectAssistantStateView(projectId: string) {
-  getProjectOrThrow(db, projectId);
-  const row = getAssistantStateRow(db, projectId);
-  return row ? mapAssistantStateRow(row) : null;
-}
-
-export function resolveActiveAssistantHead(projectId: string) {
+export function resolveActiveThread(
+  projectId: string,
+  agentProfile = PROJECT_ASSISTANT_AGENT_PROFILE,
+) {
   return db.transaction((tx) => {
     getProjectOrThrow(tx, projectId);
-    const assistantState = getAssistantStateRow(tx, projectId);
+    const state = getProjectStateRow(tx, projectId, agentProfile);
 
-    if (assistantState?.activeHeadId) {
-      const activeHead = tx
+    if (state?.activeThreadId) {
+      const activeThread = tx
         .select()
-        .from(schema.aiProjectHeads)
-        .where(eq(schema.aiProjectHeads.id, assistantState.activeHeadId))
+        .from(schema.agentThreads)
+        .where(eq(schema.agentThreads.id, state.activeThreadId))
         .get();
-      if (activeHead && activeHead.projectId === projectId && !activeHead.isArchived) {
-        return mapHeadRow(activeHead);
+      if (
+        activeThread &&
+        activeThread.projectId === projectId &&
+        activeThread.agentProfile === agentProfile &&
+        activeThread.archivedAt == null
+      ) {
+        return mapThreadRow(activeThread);
       }
     }
 
-    const fallbackHead = getLatestUnarchivedHeadRow(tx, projectId);
-    upsertAssistantState(tx, projectId, fallbackHead?.id ?? null);
-    return fallbackHead ? mapHeadRow(fallbackHead) : null;
+    const fallback = getLatestUnarchivedThreadRow(tx, projectId, agentProfile);
+    upsertProjectState(tx, projectId, agentProfile, fallback?.id ?? null);
+    return fallback ? mapThreadRow(fallback) : null;
   });
 }
 
-export function listProjectRoots(projectId: string) {
-  getProjectOrThrow(db, projectId);
-  return db
-    .select()
-    .from(schema.aiProjectMessages)
-    .where(
-      and(
-        eq(schema.aiProjectMessages.projectId, projectId),
-        isNull(schema.aiProjectMessages.prevMessageId),
-      ),
-    )
-    .orderBy(schema.aiProjectMessages.createdAt)
-    .all()
-    .map(mapMessageRow);
-}
-
-export function listHeadChildren(projectId: string, messageId: string) {
-  getProjectMessageOrThrow(db, projectId, messageId);
-  return db
-    .select()
-    .from(schema.aiProjectMessages)
-    .where(
-      and(
-        eq(schema.aiProjectMessages.projectId, projectId),
-        eq(schema.aiProjectMessages.prevMessageId, messageId),
-      ),
-    )
-    .orderBy(schema.aiProjectMessages.createdAt)
-    .all()
-    .map(mapMessageRow);
-}
-
-export function getHeadOrThrowView(headId: string) {
-  return mapHeadRow(getHeadOrThrow(db, headId));
-}
-
-export function createHead(input: CreateHeadInput) {
-  return db.transaction((tx) => createHeadWithExecutor(tx, input));
-}
-
-export function setActiveAssistantHead(projectId: string, headId: string) {
-  return db.transaction((tx) => {
-    getProjectOrThrow(tx, projectId);
-    const head = getHeadOrThrow(tx, headId);
-    invariant(head.projectId === projectId, "AI 分支不属于当前项目。");
-    invariant(!head.isArchived, "不能激活已归档的 AI 会话。");
-    upsertAssistantState(tx, projectId, head.id);
-    return mapHeadRow(getHeadOrThrow(tx, head.id));
-  });
-}
-
-export function createAssistantSession(projectId: string) {
-  return db.transaction((tx) => {
-    getProjectOrThrow(tx, projectId);
-    const sessionCount = tx
-      .select({ id: schema.aiProjectHeads.id })
-      .from(schema.aiProjectHeads)
-      .where(eq(schema.aiProjectHeads.projectId, projectId))
-      .all().length;
-    const head = createHeadWithExecutor(tx, {
-      projectId,
-      name: `新会话 ${sessionCount + 1}`,
-    });
-    upsertAssistantState(tx, projectId, head.id);
-    return head;
-  });
-}
-
-export function renameHead(headId: string, name: string) {
-  return db.transaction((tx) => {
-    const head = getHeadOrThrow(tx, headId);
-    const normalizedName = trimOptionalString(name);
-    invariant(normalizedName, "名称不能为空。");
-    tx.update(schema.aiProjectHeads)
-      .set({
-        name: normalizedName,
-        updatedAt: now(),
-      })
-      .where(eq(schema.aiProjectHeads.id, headId))
-      .run();
-    touchProject(tx, head.projectId);
-    return mapHeadRow(getHeadOrThrow(tx, headId));
-  });
-}
-
-export function appendMessage(input: AppendMessageInput) {
+export function createThread(input: CreateThreadInput) {
   return db.transaction((tx) => {
     getProjectOrThrow(tx, input.projectId);
-    const head = getHeadOrThrow(tx, input.headId);
-    invariant(head.projectId === input.projectId, "AI 分支不属于当前项目。");
-    invariant(
-      (head.currentMessageId ?? null) === input.prevMessageId,
-      "AI 分支已经推进，请基于最新叶子继续对话。",
-    );
-
-    if (input.prevMessageId) {
-      getProjectMessageOrThrow(tx, input.projectId, input.prevMessageId);
-    }
-
-    const message = insertMessage(tx, input);
-    tx.update(schema.aiProjectHeads)
-      .set({
-        currentMessageId: message.id,
-        updatedAt: now(),
-      })
-      .where(eq(schema.aiProjectHeads.id, head.id))
-      .run();
-
-    touchProject(tx, input.projectId);
-    return message;
-  });
-}
-
-export function resolveHeadMessages(headId: string) {
-  const head = getHeadOrThrow(db, headId);
-  if (!head.currentMessageId) {
-    return [] as AiProjectMessageView[];
-  }
-
-  const chain: AiProjectMessageRow[] = [];
-  const seen = new Set<string>();
-  let currentId: string | null = head.currentMessageId;
-
-  while (currentId) {
-    invariant(!seen.has(currentId), "AI 消息链存在循环。");
-    seen.add(currentId);
-    const row = getMessageOrThrow(db, currentId);
-    invariant(row.projectId === head.projectId, "AI 分支引用了其他项目的消息。");
-    chain.push(row);
-    currentId = row.prevMessageId;
-  }
-
-  return chain.reverse().map(mapMessageRow);
-}
-
-export function listHeadGenerationAttempts(headId: string) {
-  const head = getHeadOrThrow(db, headId);
-  return db
-    .select()
-    .from(schema.aiProjectGenerationAttempts)
-    .where(eq(schema.aiProjectGenerationAttempts.headId, head.id))
-    .orderBy(schema.aiProjectGenerationAttempts.createdAt)
-    .all()
-    .map(mapAttemptRow);
-}
-
-export function hasPendingGenerationAttempt(headId: string) {
-  getHeadOrThrow(db, headId);
-  const pending = db
-    .select({ id: schema.aiProjectGenerationAttempts.id })
-    .from(schema.aiProjectGenerationAttempts)
-    .where(
-      and(
-        eq(schema.aiProjectGenerationAttempts.headId, headId),
-        eq(schema.aiProjectGenerationAttempts.status, "pending"),
-      ),
-    )
-    .get();
-  return pending != null;
-}
-
-export function forkHeadFromMessage(input: ForkHeadFromMessageInput) {
-  return db.transaction((tx) => {
-    getProjectOrThrow(tx, input.projectId);
-    const sourceHead = getHeadOrThrow(tx, input.sourceHeadId);
-    invariant(sourceHead.projectId === input.projectId, "源 AI 分支不属于当前项目。");
-    const sourceMessage = getProjectMessageOrThrow(tx, input.projectId, input.sourceMessageId);
-    const replacementMessage = insertMessage(tx, {
-      projectId: input.projectId,
-      prevMessageId: sourceMessage.prevMessageId,
-      role: input.role,
-      content: input.content,
-      summaryText: input.summaryText,
-      aiSelection: input.aiSelection,
-      metadata: input.metadata,
-    });
-    const headId = createId("ai_head");
-    const timestamp = now();
-
-    tx.insert(schema.aiProjectHeads)
-      .values({
-        id: headId,
-        projectId: input.projectId,
-        name: normalizeHeadName(
-          input.name,
-          replacementMessage.summaryText ?? `${sourceHead.name} 修订`,
+    const agentProfile = trimOptionalString(input.agentProfile) ?? PROJECT_ASSISTANT_AGENT_PROFILE;
+    const existingCount = tx
+      .select({ id: schema.agentThreads.id })
+      .from(schema.agentThreads)
+      .where(
+        and(
+          eq(schema.agentThreads.projectId, input.projectId),
+          eq(schema.agentThreads.agentProfile, agentProfile),
         ),
-        currentMessageId: replacementMessage.id,
-        forkedFromHeadId: sourceHead.id,
-        forkedFromMessageId: sourceMessage.id,
-        isArchived: false,
+      )
+      .all().length;
+    const timestamp = now();
+    const id = createId("agent_thread");
+    tx.insert(schema.agentThreads)
+      .values({
+        id,
+        projectId: input.projectId,
+        agentProfile,
+        title: normalizeThreadTitle(input.title, `新会话 ${existingCount + 1}`),
+        activeTipNodeId: null,
+        archivedAt: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       })
       .run();
-
+    upsertProjectState(tx, input.projectId, agentProfile, id);
     touchProject(tx, input.projectId);
-    return mapHeadRow(getHeadOrThrow(tx, headId));
+    return mapThreadRow(getThreadOrThrow(tx, id));
   });
 }
 
-export function archiveHead(headId: string, archived: boolean) {
+export function renameThread(threadId: string, title: string) {
   return db.transaction((tx) => {
-    const head = getHeadOrThrow(tx, headId);
-    const timestamp = now();
-    tx.update(schema.aiProjectHeads)
-      .set({ isArchived: archived, updatedAt: timestamp })
-      .where(eq(schema.aiProjectHeads.id, headId))
+    const thread = getThreadOrThrow(tx, threadId);
+    const normalizedTitle = trimOptionalString(title);
+    invariant(normalizedTitle, "名称不能为空。");
+    tx.update(schema.agentThreads)
+      .set({
+        title: normalizedTitle,
+        updatedAt: now(),
+      })
+      .where(eq(schema.agentThreads.id, threadId))
       .run();
-    const nextHead = getHeadOrThrow(tx, headId);
-    const assistantState = getAssistantStateRow(tx, head.projectId);
-    if (archived && assistantState?.activeHeadId === headId) {
-      const fallbackHead = getLatestUnarchivedHeadRow(tx, head.projectId);
-      upsertAssistantState(tx, head.projectId, fallbackHead?.id ?? null);
-    }
-    if (!archived && !assistantState?.activeHeadId) {
-      upsertAssistantState(tx, head.projectId, nextHead.id);
-    }
-    touchProject(tx, head.projectId);
-    return mapHeadRow(nextHead);
+    touchProject(tx, thread.projectId);
+    return mapThreadRow(getThreadOrThrow(tx, threadId));
   });
 }
 
-export function recordGenerationAttempt(input: RecordGenerationAttemptInput) {
+export function setActiveThread(projectId: string, threadId: string) {
   return db.transaction((tx) => {
-    getProjectOrThrow(tx, input.projectId);
-    if (input.headId) {
-      const head = getHeadOrThrow(tx, input.headId);
-      invariant(head.projectId === input.projectId, "AI 分支不属于当前项目。");
-    }
-    if (input.triggerMessageId) {
-      getProjectMessageOrThrow(tx, input.projectId, input.triggerMessageId);
-    }
+    const thread = getThreadOrThrow(tx, threadId);
+    invariant(thread.projectId === projectId, "thread 不属于当前项目。");
+    invariant(thread.archivedAt == null, "不能激活已归档 thread。");
+    upsertProjectState(tx, projectId, thread.agentProfile, thread.id);
+    return mapThreadRow(thread);
+  });
+}
 
-    const id = createId("ai_attempt");
-    const selection = normalizeSelectionInput(tx, input.aiSelection);
-    const createdAt = now();
+export function archiveThread(threadId: string, archived: boolean) {
+  return db.transaction((tx) => {
+    const thread = getThreadOrThrow(tx, threadId);
+    tx.update(schema.agentThreads)
+      .set({
+        archivedAt: archived ? now() : null,
+        updatedAt: now(),
+      })
+      .where(eq(schema.agentThreads.id, threadId))
+      .run();
+    const updated = getThreadOrThrow(tx, threadId);
+    const state = getProjectStateRow(tx, thread.projectId, thread.agentProfile);
+    if (archived && state?.activeThreadId === threadId) {
+      const fallback = getLatestUnarchivedThreadRow(tx, thread.projectId, thread.agentProfile);
+      upsertProjectState(tx, thread.projectId, thread.agentProfile, fallback?.id ?? null);
+    }
+    if (!archived && !state?.activeThreadId) {
+      upsertProjectState(tx, thread.projectId, thread.agentProfile, threadId);
+    }
+    touchProject(tx, thread.projectId);
+    return mapThreadRow(updated);
+  });
+}
 
-    tx.insert(schema.aiProjectGenerationAttempts)
+export function resolveThreadPath(threadId: string, tipNodeId?: string | null) {
+  const thread = getThreadOrThrow(db, threadId);
+  const currentTipId = trimOptionalString(tipNodeId) ?? thread.activeTipNodeId;
+  if (!currentTipId) {
+    return [] as AgentThreadNodeView[];
+  }
+
+  const chain: AgentThreadNodeRow[] = [];
+  const seen = new Set<string>();
+  let currentId: string | null = currentTipId;
+
+  while (currentId) {
+    invariant(!seen.has(currentId), "thread 节点链存在循环。");
+    seen.add(currentId);
+    const row = getNodeOrThrow(db, currentId);
+    invariant(row.threadId === thread.id, "thread 引用了其他会话的节点。");
+    chain.push(row);
+    currentId = row.parentNodeId;
+  }
+
+  return chain.reverse().map((row) => mapNodeRow(db, row));
+}
+
+export function buildThreadModelMessages(threadId: string, tipNodeId?: string | null) {
+  return resolveThreadPath(threadId, tipNodeId).map((node) => node.message);
+}
+
+function resolveCandidateLeafTip(
+  executor: DatabaseExecutor,
+  threadId: string,
+  candidateNodeId: string,
+): string {
+  let currentId = candidateNodeId;
+
+  while (true) {
+    const children = getNodeRowsByThread(executor, threadId, currentId);
+    if (children.length !== 1) {
+      return currentId;
+    }
+    currentId = children[0]!.id;
+  }
+}
+
+export function getNodeCandidates(parentNodeId: string) {
+  const parent = getNodeOrThrow(db, parentNodeId);
+  return getNodeRowsByThread(db, parent.threadId, parentNodeId).map(
+    (row): AgentCandidateNodeView => ({
+      id: row.id,
+      tipNodeId: resolveCandidateLeafTip(db, row.threadId, row.id),
+      role: row.role as AgentThreadRole,
+      summaryText: row.summaryText,
+      createdAt: row.createdAt,
+      createdByRunId: row.createdByRunId,
+    }),
+  );
+}
+
+function buildCandidateGroups(threadId: string, activePath: AgentThreadNodeView[]) {
+  const activeNodeByParent = new Map<string | null, string>();
+  activePath.forEach((node) => {
+    activeNodeByParent.set(node.parentNodeId, node.id);
+  });
+
+  const groups: AgentCandidateGroupView[] = [];
+  for (const [parentNodeId, activeNodeId] of activeNodeByParent.entries()) {
+    const candidates = getNodeRowsByThread(db, threadId, parentNodeId);
+    if (candidates.length <= 1) {
+      continue;
+    }
+    groups.push({
+      parentNodeId,
+      activeNodeId,
+      nodes: candidates.map((row) => ({
+        id: row.id,
+        tipNodeId: resolveCandidateLeafTip(db, row.threadId, row.id),
+        role: row.role as AgentThreadRole,
+        summaryText: row.summaryText,
+        createdAt: row.createdAt,
+        createdByRunId: row.createdByRunId,
+      })),
+    });
+  }
+  return groups;
+}
+
+export function listLatestRuns(threadId: string, limit = 10) {
+  getThreadOrThrow(db, threadId);
+  return db
+    .select()
+    .from(schema.agentRuns)
+    .where(eq(schema.agentRuns.threadId, threadId))
+    .orderBy(desc(schema.agentRuns.createdAt))
+    .limit(limit)
+    .all()
+    .map(mapRunRow);
+}
+
+export function getThreadView(threadId: string): AgentThreadStateView {
+  const thread = getThreadOrThrow(db, threadId);
+  const activePath = resolveThreadPath(thread.id);
+  return {
+    thread: mapThreadRow(thread),
+    activePath,
+    candidateGroups: buildCandidateGroups(thread.id, activePath),
+    latestRuns: listLatestRuns(thread.id),
+  };
+}
+
+export function hasPendingRun(threadId: string) {
+  getThreadOrThrow(db, threadId);
+  const row = db
+    .select({ id: schema.agentRuns.id })
+    .from(schema.agentRuns)
+    .where(
+      and(
+        eq(schema.agentRuns.threadId, threadId),
+        sql`${schema.agentRuns.status} IN ('queued', 'running')`,
+      ),
+    )
+    .get();
+  return row != null;
+}
+
+export function selectActiveTip(threadId: string, tipNodeId: string) {
+  return db.transaction((tx) => {
+    const thread = getThreadOrThrow(tx, threadId);
+    const node = getNodeOrThrow(tx, tipNodeId);
+    invariant(node.threadId === thread.id, "候选节点不属于当前 thread。");
+    tx.update(schema.agentThreads)
+      .set({
+        activeTipNodeId: node.id,
+        updatedAt: now(),
+      })
+      .where(eq(schema.agentThreads.id, thread.id))
+      .run();
+    touchProject(tx, thread.projectId);
+    return mapThreadRow(getThreadOrThrow(tx, thread.id));
+  });
+}
+
+export function appendUserNode(input: {
+  threadId: string;
+  parentNodeId: string | null;
+  message: ModelMessage;
+  sourceKind?: Extract<AgentThreadNodeSourceKind, "user_input" | "edit_rewrite">;
+}) {
+  return db.transaction((tx) => {
+    const node = insertNode(tx, {
+      threadId: input.threadId,
+      parentNodeId: input.parentNodeId,
+      message: input.message,
+      sourceKind: input.sourceKind ?? "user_input",
+    });
+    tx.update(schema.agentThreads)
+      .set({
+        activeTipNodeId: node.id,
+        updatedAt: now(),
+      })
+      .where(eq(schema.agentThreads.id, input.threadId))
+      .run();
+    return node;
+  });
+}
+
+export function createReplacementNode(input: {
+  threadId: string;
+  nodeId: string;
+  message: ModelMessage;
+}) {
+  return db.transaction((tx) => {
+    const node = getNodeOrThrow(tx, input.nodeId);
+    invariant(node.threadId === input.threadId, "待修改节点不属于当前 thread。");
+    const replacement = insertNode(tx, {
+      threadId: input.threadId,
+      parentNodeId: node.parentNodeId,
+      message: input.message,
+      sourceKind: "edit_rewrite",
+    });
+    tx.update(schema.agentThreads)
+      .set({
+        activeTipNodeId: replacement.id,
+        updatedAt: now(),
+      })
+      .where(eq(schema.agentThreads.id, input.threadId))
+      .run();
+    return replacement;
+  });
+}
+
+export function createRun(input: CreateRunInput) {
+  return db.transaction((tx) => {
+    const thread = getThreadOrThrow(tx, input.threadId);
+    const status = input.status ?? "running";
+    if (input.parentRunId) {
+      const parentRun = getRunOrThrow(tx, input.parentRunId);
+      invariant(parentRun.threadId === thread.id, "父 run 不属于当前 thread。");
+    }
+    if (input.triggerNodeId) {
+      const triggerNode = getNodeOrThrow(tx, input.triggerNodeId);
+      invariant(triggerNode.threadId === thread.id, "触发节点不属于当前 thread。");
+    }
+    if (input.baseTipNodeId) {
+      const baseTipNode = getNodeOrThrow(tx, input.baseTipNodeId);
+      invariant(baseTipNode.threadId === thread.id, "base tip 不属于当前 thread。");
+    }
+    const id = createId("agent_run");
+    const timestamp = now();
+    tx.insert(schema.agentRuns)
       .values({
         id,
-        projectId: input.projectId,
-        headId: trimOptionalString(input.headId),
-        triggerMessageId: trimOptionalString(input.triggerMessageId),
-        assistantMessageId: null,
-        status: "pending",
-        requestJson: serializeRequiredJson(input.request, "AI 请求"),
-        usageJson: null,
-        errorJson: null,
-        ...selection,
-        createdAt,
+        threadId: thread.id,
+        parentRunId: trimOptionalString(input.parentRunId),
+        parentEventId: trimOptionalString(input.parentEventId),
+        triggerNodeId: trimOptionalString(input.triggerNodeId),
+        baseTipNodeId: trimOptionalString(input.baseTipNodeId),
+        runMode: input.runMode,
+        status,
+        agentProfile: input.agentProfile,
+        selectionSnapshotJson: serializeRequiredJson(input.selectionSnapshot ?? {}, "run 选择快照"),
+        contextSnapshotJson: serializeOptionalJson(input.contextSnapshot),
+        errorArtifactId: null,
+        startedAt: timestamp,
         completedAt: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
       })
       .run();
-
-    touchProject(tx, input.projectId);
-    return mapAttemptRow(getAttemptOrThrow(tx, id));
+    touchThread(tx, thread.id);
+    touchProject(tx, thread.projectId);
+    return mapRunRow(getRunOrThrow(tx, id));
   });
 }
 
-export function completeGenerationAttemptSuccess(input: CompleteGenerationAttemptSuccessInput) {
+export function createArtifact(input: CreateArtifactInput) {
   return db.transaction((tx) => {
-    const attempt = getAttemptOrThrow(tx, input.attemptId);
-    if (input.assistantMessageId) {
-      getProjectMessageOrThrow(tx, attempt.projectId, input.assistantMessageId);
+    if (input.runId) {
+      getRunOrThrow(tx, input.runId);
     }
-    tx.update(schema.aiProjectGenerationAttempts)
-      .set({
-        status: "success",
-        assistantMessageId: trimOptionalString(input.assistantMessageId),
-        usageJson: serializeOptionalJson(input.usage),
-        errorJson: null,
-        completedAt: now(),
+    if (input.stepId) {
+      getStepOrThrow(tx, input.stepId);
+    }
+    const id = createId("agent_artifact");
+    tx.insert(schema.agentArtifacts)
+      .values({
+        id,
+        runId: trimOptionalString(input.runId),
+        stepId: trimOptionalString(input.stepId),
+        artifactKind: input.artifactKind,
+        visibility: input.visibility,
+        mimeType: trimOptionalString(input.mimeType),
+        contentJson: serializeRequiredJson(input.content, "artifact 内容"),
+        summaryText: normalizeSummaryText(input.summaryText),
+        createdAt: now(),
       })
-      .where(eq(schema.aiProjectGenerationAttempts.id, input.attemptId))
       .run();
-
-    touchProject(tx, attempt.projectId);
-    return mapAttemptRow(getAttemptOrThrow(tx, input.attemptId));
+    return mapArtifactRow(getArtifactOrThrow(tx, id));
   });
 }
 
-export function completeGenerationAttemptError(input: CompleteGenerationAttemptErrorInput) {
+export function createRunStep(input: CreateRunStepInput) {
   return db.transaction((tx) => {
-    const attempt = getAttemptOrThrow(tx, input.attemptId);
-    tx.update(schema.aiProjectGenerationAttempts)
-      .set({
-        status: "error",
+    const run = getRunOrThrow(tx, input.runId);
+    const id = createId("agent_step");
+    const timestamp = now();
+    tx.insert(schema.agentRunSteps)
+      .values({
+        id,
+        runId: run.id,
+        stepIndex: input.stepIndex,
+        provider: input.provider,
+        modelId: input.modelId,
+        finishReason: trimOptionalString(input.finishReason),
+        rawFinishReason: trimOptionalString(input.rawFinishReason),
+        systemJson: serializeOptionalJson(input.system),
+        preparedMessagesArtifactId: trimOptionalString(input.preparedMessagesArtifactId),
+        responseMessagesArtifactId: trimOptionalString(input.responseMessagesArtifactId),
+        requestBodyArtifactId: trimOptionalString(input.requestBodyArtifactId),
+        responseBodyArtifactId: trimOptionalString(input.responseBodyArtifactId),
+        providerMetadataArtifactId: trimOptionalString(input.providerMetadataArtifactId),
         usageJson: serializeOptionalJson(input.usage),
-        errorJson: serializeRequiredJson(input.error, "AI 错误"),
-        completedAt: now(),
+        startedAt: timestamp,
+        completedAt: timestamp,
+        createdAt: timestamp,
       })
-      .where(eq(schema.aiProjectGenerationAttempts.id, input.attemptId))
       .run();
-
-    touchProject(tx, attempt.projectId);
-    return mapAttemptRow(getAttemptOrThrow(tx, input.attemptId));
+    tx.update(schema.agentRuns)
+      .set({ updatedAt: timestamp })
+      .where(eq(schema.agentRuns.id, run.id))
+      .run();
+    return mapRunStepRow(getStepOrThrow(tx, id));
   });
+}
+
+function nextRunEventSeq(executor: DatabaseExecutor, runId: string) {
+  const latest = executor
+    .select({ seq: schema.agentRunEvents.seq })
+    .from(schema.agentRunEvents)
+    .where(eq(schema.agentRunEvents.runId, runId))
+    .orderBy(desc(schema.agentRunEvents.seq))
+    .get();
+  return (latest?.seq ?? 0) + 1;
+}
+
+export function appendRunEvent(input: CreateRunEventInput) {
+  return db.transaction((tx) => {
+    const run = getRunOrThrow(tx, input.runId);
+    if (input.stepId) {
+      const step = getStepOrThrow(tx, input.stepId);
+      invariant(step.runId === run.id, "事件 step 不属于当前 run。");
+    }
+    if (input.nodeId) {
+      const node = getNodeOrThrow(tx, input.nodeId);
+      invariant(node.threadId === run.threadId, "事件节点不属于当前 run 所在 thread。");
+    }
+    if (input.relatedRunId) {
+      getRunOrThrow(tx, input.relatedRunId);
+    }
+    const id = createId("agent_event");
+    tx.insert(schema.agentRunEvents)
+      .values({
+        id,
+        runId: run.id,
+        stepId: trimOptionalString(input.stepId),
+        seq: nextRunEventSeq(tx, run.id),
+        eventKind: input.eventKind,
+        nodeId: trimOptionalString(input.nodeId),
+        relatedToolCallId: trimOptionalString(input.relatedToolCallId),
+        relatedRunId: trimOptionalString(input.relatedRunId),
+        summaryText: normalizeSummaryText(input.summaryText),
+        payloadArtifactId: trimOptionalString(input.payloadArtifactId),
+        createdAt: now(),
+      })
+      .run();
+    tx.update(schema.agentRuns)
+      .set({ updatedAt: now() })
+      .where(eq(schema.agentRuns.id, run.id))
+      .run();
+    return mapRunEventRow(
+      tx.select().from(schema.agentRunEvents).where(eq(schema.agentRunEvents.id, id)).get()!,
+    );
+  });
+}
+
+export function materializeResponseMessages(input: MaterializeResponseMessagesInput) {
+  return db.transaction((tx) => {
+    const thread = getThreadOrThrow(tx, input.threadId);
+    let parentNodeId = input.parentNodeId;
+    const nodes: AgentThreadNodeView[] = [];
+
+    input.messages.forEach((message) => {
+      const node = insertNode(tx, {
+        threadId: thread.id,
+        parentNodeId,
+        message,
+        sourceKind: message.role === "tool" ? "tool_result" : "model_response",
+        createdByRunId: input.runId,
+        sourceStepId: input.stepId,
+      });
+      parentNodeId = node.id;
+      nodes.push(node);
+    });
+
+    return {
+      nodes,
+      tipNodeId: parentNodeId,
+    };
+  });
+}
+
+export function markRunSucceeded(runId: string) {
+  return db.transaction((tx) => {
+    const run = getRunOrThrow(tx, runId);
+    tx.update(schema.agentRuns)
+      .set({
+        status: "succeeded",
+        completedAt: now(),
+        updatedAt: now(),
+      })
+      .where(eq(schema.agentRuns.id, run.id))
+      .run();
+    return mapRunRow(getRunOrThrow(tx, run.id));
+  });
+}
+
+export function markRunFailed(runId: string, errorArtifactId?: string | null) {
+  return db.transaction((tx) => {
+    const run = getRunOrThrow(tx, runId);
+    if (errorArtifactId) {
+      getArtifactOrThrow(tx, errorArtifactId);
+    }
+    tx.update(schema.agentRuns)
+      .set({
+        status: "failed",
+        errorArtifactId: trimOptionalString(errorArtifactId),
+        completedAt: now(),
+        updatedAt: now(),
+      })
+      .where(eq(schema.agentRuns.id, run.id))
+      .run();
+    return mapRunRow(getRunOrThrow(tx, run.id));
+  });
+}
+
+export function getRunTrace(runId: string): AgentRunTraceView {
+  const run = getRunOrThrow(db, runId);
+  const steps = db
+    .select()
+    .from(schema.agentRunSteps)
+    .where(eq(schema.agentRunSteps.runId, run.id))
+    .orderBy(schema.agentRunSteps.stepIndex)
+    .all()
+    .map(mapRunStepRow);
+  const events = db
+    .select()
+    .from(schema.agentRunEvents)
+    .where(eq(schema.agentRunEvents.runId, run.id))
+    .orderBy(schema.agentRunEvents.seq)
+    .all()
+    .map(mapRunEventRow);
+  const artifacts = db
+    .select()
+    .from(schema.agentArtifacts)
+    .where(eq(schema.agentArtifacts.runId, run.id))
+    .orderBy(schema.agentArtifacts.createdAt)
+    .all()
+    .map(mapArtifactRow);
+  const childRuns = db
+    .select()
+    .from(schema.agentRuns)
+    .where(eq(schema.agentRuns.parentRunId, run.id))
+    .orderBy(schema.agentRuns.createdAt)
+    .all()
+    .map(mapRunRow);
+
+  return {
+    run: mapRunRow(run),
+    steps,
+    events,
+    artifacts,
+    childRuns,
+  };
+}
+
+export function listChildRuns(runId: string) {
+  getRunOrThrow(db, runId);
+  return db
+    .select()
+    .from(schema.agentRuns)
+    .where(eq(schema.agentRuns.parentRunId, runId))
+    .orderBy(schema.agentRuns.createdAt)
+    .all()
+    .map(mapRunRow);
 }

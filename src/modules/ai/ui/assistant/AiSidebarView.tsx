@@ -18,7 +18,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 
-import type { AiProjectHeadView } from "@/modules/ai/domain/types";
+import type { AgentThreadView } from "@/modules/ai/domain/types";
 import { rpc } from "@/rpc/client";
 import { InlineEditInput } from "@/shared/ui/InlineEditableText";
 import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
@@ -447,7 +447,7 @@ function SessionActionButton({
 }
 
 function HeadRow({
-  head,
+  thread,
   isActive,
   isEditing,
   editingName,
@@ -460,7 +460,7 @@ function HeadRow({
   onArchive,
   onRestore,
 }: {
-  head: AiProjectHeadView;
+  thread: AgentThreadView;
   isActive: boolean;
   isEditing: boolean;
   editingName: string;
@@ -474,6 +474,7 @@ function HeadRow({
   onRestore: () => void;
 }) {
   const editingInputRef = useRef<HTMLInputElement>(null);
+  const isArchived = thread.archivedAt != null;
 
   useEffect(() => {
     if (!isEditing) {
@@ -484,7 +485,7 @@ function HeadRow({
     editingInputRef.current?.select();
   }, [isEditing]);
 
-  const titleLabel = isActive ? "当前会话" : head.isArchived ? "已归档" : "点击切换";
+  const titleLabel = isActive ? "当前会话" : isArchived ? "已归档" : "点击切换";
   const rowClassName = `group flex w-full items-center gap-2 overflow-hidden px-3 py-2 text-left transition ${
     isActive || isEditing
       ? "bg-list-active-background text-foreground"
@@ -497,7 +498,7 @@ function HeadRow({
       <div className={rowClassName} style={{ height: `${HEAD_ROW_HEIGHT}px` }}>
         <span
           className={`shrink-0 text-[16px] ${
-            head.isArchived
+            isArchived
               ? "icon-[material-symbols--inventory-2] text-foreground-muted"
               : isActive
                 ? "icon-[material-symbols--chat] text-accent-foreground"
@@ -532,11 +533,11 @@ function HeadRow({
 
   return (
     <div style={{ height: `${HEAD_ROW_HEIGHT}px` }} className={rowClassName}>
-      {head.isArchived ? (
+      {isArchived ? (
         <div className={rowContentClassName}>
           <span className="icon-[material-symbols--inventory-2] shrink-0 text-[16px] text-foreground-muted" />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[12px] font-medium">{head.name}</span>
+            <span className="block truncate text-[12px] font-medium">{thread.title}</span>
             <span className="block text-[10px] text-foreground-muted">{titleLabel}</span>
           </span>
         </div>
@@ -555,13 +556,13 @@ function HeadRow({
             }`}
           />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[12px] font-medium">{head.name}</span>
+            <span className="block truncate text-[12px] font-medium">{thread.title}</span>
             <span className="block text-[10px] text-foreground-muted">{titleLabel}</span>
           </span>
         </button>
       )}
       <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100">
-        {!head.isArchived ? (
+        {!isArchived ? (
           <>
             <SessionActionButton
               icon="icon-[material-symbols--edit-outline]"
@@ -590,7 +591,7 @@ function HeadRow({
 }
 
 export function AnimatedHeadRow({
-  head,
+  thread,
   isActive,
   isEditing,
   editingName,
@@ -604,7 +605,7 @@ export function AnimatedHeadRow({
   onArchive,
   onRestore,
 }: {
-  head: AiProjectHeadView;
+  thread: AgentThreadView;
   isActive: boolean;
   isEditing: boolean;
   editingName: string;
@@ -628,7 +629,7 @@ export function AnimatedHeadRow({
       transition={{ duration: 0.16, ease: "easeOut" }}
     >
       <HeadRow
-        head={head}
+        thread={thread}
         isActive={isActive}
         isEditing={isEditing}
         editingName={editingName}

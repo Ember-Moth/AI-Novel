@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1780923902736,
-      "tag": "0000_steady_sebastian_shaw",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1781028005116,
-      "tag": "0001_nosy_wendell_vaughn",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1781030912213,
-      "tag": "0002_heavy_young_avengers",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1781060620491,
-      "tag": "0003_loud_mole_man",
+      "when": 1781078917953,
+      "tag": "0000_mixed_dormammu",
       "breakpoints": true
     }
   ]
