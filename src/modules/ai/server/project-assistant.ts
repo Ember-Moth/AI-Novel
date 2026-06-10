@@ -367,6 +367,43 @@ function summarizeToolResult(toolResult: Record<string, unknown>) {
   return `${prefix}${detail}${suffix}`;
 }
 
+function areModelMessagesEquivalent(left: ModelMessage, right: ModelMessage) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function diffStepResponseMessages(
+  previousMessages: ModelMessage[],
+  currentMessages: ModelMessage[],
+) {
+  let sharedPrefixLength = 0;
+  const maxPrefixLength = Math.min(previousMessages.length, currentMessages.length);
+
+  while (
+    sharedPrefixLength < maxPrefixLength &&
+    areModelMessagesEquivalent(
+      previousMessages[sharedPrefixLength]!,
+      currentMessages[sharedPrefixLength]!,
+    )
+  ) {
+    sharedPrefixLength += 1;
+  }
+
+  if (sharedPrefixLength === previousMessages.length) {
+    return {
+      deltaMessages: currentMessages.slice(sharedPrefixLength),
+      nextMessages: currentMessages,
+    };
+  }
+
+  // Some providers/tools may already expose per-step deltas instead of cumulative
+  // response messages. In that case, preserve the raw step payload as-is and append
+  // only the current step's messages into the thread graph.
+  return {
+    deltaMessages: currentMessages,
+    nextMessages: previousMessages.concat(currentMessages),
+  };
+}
+
 async function persistRunExecution({
   run,
   thread,
@@ -380,6 +417,7 @@ async function persistRunExecution({
 }) {
   let currentParentId = run.baseTipNodeId;
   let lastAssistantNode: AgentThreadNodeView | null = null;
+  let materializedResponseMessages: ModelMessage[] = [];
 
   for (const step of result.steps) {
     const preparedMessagesArtifact = createArtifact({
@@ -506,26 +544,34 @@ async function persistRunExecution({
       });
     });
 
-    const materialized = materializeResponseMessages({
-      threadId: thread.id,
-      parentNodeId: currentParentId,
-      runId: run.id,
-      stepId: stepRecord.id,
-      messages: step.response.messages,
-    });
-    materialized.nodes.forEach((node) => {
-      appendRunEvent({
+    const { deltaMessages, nextMessages } = diffStepResponseMessages(
+      materializedResponseMessages,
+      step.response.messages,
+    );
+    materializedResponseMessages = nextMessages;
+
+    if (deltaMessages.length > 0) {
+      const materialized = materializeResponseMessages({
+        threadId: thread.id,
+        parentNodeId: currentParentId,
         runId: run.id,
         stepId: stepRecord.id,
-        eventKind: "node-materialized",
-        nodeId: node.id,
-        summaryText: node.summaryText ?? `${node.role} node`,
+        messages: deltaMessages,
       });
-      if (node.role === "assistant" && extractAssistantText(node)) {
-        lastAssistantNode = node;
-      }
-    });
-    currentParentId = materialized.tipNodeId;
+      materialized.nodes.forEach((node) => {
+        appendRunEvent({
+          runId: run.id,
+          stepId: stepRecord.id,
+          eventKind: "node-materialized",
+          nodeId: node.id,
+          summaryText: node.summaryText ?? `${node.role} node`,
+        });
+        if (node.role === "assistant" && extractAssistantText(node)) {
+          lastAssistantNode = node;
+        }
+      });
+      currentParentId = materialized.tipNodeId;
+    }
   }
 
   if (currentParentId) {

@@ -136,6 +136,8 @@ export function AiSidebar({
               const text = getMessageText(message);
               const toolTrace = getAssistantToolTrace(message);
               const isUser = message.role === "user";
+              const isTool = message.role === "tool";
+              const showMessageBubble = isUser || (!isTool && text.trim().length > 0);
               const candidateGroup = controller.getCandidateGroupForNode(message);
               const showRetryError = controller.retryableRun?.triggerNodeId === message.id;
               const showServerPending = controller.pendingRun?.triggerNodeId === message.id;
@@ -145,17 +147,19 @@ export function AiSidebar({
 
               return (
                 <div key={message.id}>
-                  <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`max-w-[88%] rounded-lg px-3 py-2 text-[13px] leading-5 whitespace-pre-wrap ${
-                        isUser
-                          ? "bg-accent-foreground text-sidebar-background"
-                          : "border border-border bg-sidebar-background text-foreground"
-                      }`}
-                    >
-                      {text || " "}
+                  {showMessageBubble ? (
+                    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={`max-w-[88%] rounded-lg px-3 py-2 text-[13px] leading-5 whitespace-pre-wrap ${
+                          isUser
+                            ? "bg-accent-foreground text-sidebar-background"
+                            : "border border-border bg-sidebar-background text-foreground"
+                        }`}
+                      >
+                        {text}
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
 
                   {showRetryError ? (
                     <AttemptErrorCard
