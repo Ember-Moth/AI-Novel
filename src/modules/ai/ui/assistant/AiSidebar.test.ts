@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { shouldAnimateMessageMount } from "./AiSidebar";
 import {
   applyStreamEvent,
   buildSessionRows,
@@ -185,4 +186,14 @@ test("applyStreamEvent keeps reasoning, text, and tool traces aligned in one str
       ],
     },
   ]);
+});
+
+test("shouldAnimateMessageMount skips enter animation for streamed assistant messages", () => {
+  expect(shouldAnimateMessageMount("assistant", "assistant_1", new Set(["assistant_1"]))).toBe(
+    false,
+  );
+  expect(shouldAnimateMessageMount("assistant", "assistant_2", new Set(["assistant_1"]))).toBe(
+    true,
+  );
+  expect(shouldAnimateMessageMount("user", "assistant_1", new Set(["assistant_1"]))).toBe(true);
 });

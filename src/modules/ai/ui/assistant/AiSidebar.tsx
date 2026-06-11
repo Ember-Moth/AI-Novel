@@ -40,6 +40,7 @@ export function AiSidebar({
   const [expandedReasoningKeys, setExpandedReasoningKeys] = useState<Set<string>>(new Set());
   const [expandedRunSummaryKeys, setExpandedRunSummaryKeys] = useState<Set<string>>(new Set());
   const [shouldStickToBottom, setShouldStickToBottom] = useState(true);
+  const streamedAssistantMessageIdsRef = useRef<Set<string>>(new Set());
   const pendingSendSummary =
     controller.activeStream?.kind === "send"
       ? buildStreamRunSummary(controller.activeStream)
@@ -52,6 +53,16 @@ export function AiSidebar({
   useEffect(() => {
     setShouldStickToBottom(true);
   }, [controller.activeThreadId]);
+
+  useEffect(() => {
+    streamedAssistantMessageIdsRef.current.clear();
+  }, [controller.activeThreadId]);
+
+  useEffect(() => {
+    controller.activeStream?.blocks.forEach((block) => {
+      streamedAssistantMessageIdsRef.current.add(block.assistantNodeId);
+    });
+  }, [controller.activeStream]);
 
   useEffect(() => {
     if (!shouldStickToBottom) {
@@ -270,12 +281,17 @@ export function AiSidebar({
                   controller.runSummaries,
                   message.id,
                 ).filter((summary) => summary.runId !== controller.activeStream?.runId);
+                const shouldAnimateMount = shouldAnimateMessageMount(
+                  message.role,
+                  message.id,
+                  streamedAssistantMessageIdsRef.current,
+                );
 
                 return (
                   <motion.div
                     key={message.id}
                     className="flex flex-col gap-1.5"
-                    initial={{ opacity: 0 }}
+                    initial={shouldAnimateMount ? { opacity: 0 } : false}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.15, ease: "easeOut" }}
@@ -492,7 +508,6 @@ export function AiSidebar({
                   className="flex flex-col gap-1.5"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
                   transition={{ duration: 0.15, ease: "easeOut" }}
                 >
                   <div className="flex justify-end">
@@ -665,6 +680,14 @@ export function AiSidebar({
 
 function isViewportNearBottom(viewport: HTMLElement) {
   return viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 24;
+}
+
+export function shouldAnimateMessageMount(
+  role: string,
+  messageId: string,
+  streamedAssistantMessageIds: ReadonlySet<string>,
+) {
+  return !(role === "assistant" && streamedAssistantMessageIds.has(messageId));
 }
 
 function buildStreamRunSummary(overlay: AssistantStreamOverlay) {
