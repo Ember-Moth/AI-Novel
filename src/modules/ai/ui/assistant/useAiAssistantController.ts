@@ -408,6 +408,7 @@ export function useAiAssistantController(
   const [expectedActiveThreadId, setExpectedActiveThreadId] = useState<string | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [activeStream, setActiveStream] = useState<AssistantStreamOverlay | null>(null);
+  const [includeContext, setIncludeContext] = useState(true);
 
   const storedSelectionQuery = rpc.useQuery("config.getAiAssistantModelSelection");
   const assistantOverviewQuery = rpc.useQuery("ai.getProjectAssistantState", { projectId });
@@ -584,7 +585,7 @@ export function useAiAssistantController(
             projectId,
             threadId: activeThreadId,
             text,
-            context: contextSnapshot,
+            context: includeContext ? contextSnapshot : null,
           },
           {
             onEvent: (event) => {
@@ -632,6 +633,7 @@ export function useAiAssistantController(
       canSubmit,
       contextSnapshot,
       draft,
+      includeContext,
       projectId,
       sendMessageStream,
     ],
@@ -659,7 +661,7 @@ export function useAiAssistantController(
             projectId,
             threadId: activeThreadId,
             triggerNodeId,
-            context: contextSnapshot,
+            context: includeContext ? contextSnapshot : null,
           },
           {
             onEvent: (event) => {
@@ -697,7 +699,14 @@ export function useAiAssistantController(
         setPendingAction(null);
       }
     },
-    [activeThreadId, assistantOverviewQuery, contextSnapshot, projectId, retryMessageStream],
+    [
+      activeThreadId,
+      assistantOverviewQuery,
+      contextSnapshot,
+      includeContext,
+      projectId,
+      retryMessageStream,
+    ],
   );
 
   const handleCreateThread = useCallback(async () => {
@@ -835,6 +844,7 @@ export function useAiAssistantController(
     handleSelectionChange,
     handleSelectionCommit,
     handleSubmit,
+    includeContext,
     isBusy,
     isGenerating,
     isLoadingSelection,
@@ -852,6 +862,7 @@ export function useAiAssistantController(
     sessionOverlayState,
     sessionRows,
     setDraft,
+    setIncludeContext,
     showArchivedThreads,
     setShowArchivedThreads,
     showEmptyState,

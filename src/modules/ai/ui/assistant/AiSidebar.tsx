@@ -552,10 +552,24 @@ export function AiSidebar({
               </div>
 
               <div className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
-                <span className="inline-flex items-center gap-1 rounded border border-border bg-editor-background px-1.5 py-px text-[10px] leading-4 text-foreground">
-                  <span className="icon-[material-symbols--my-location] shrink-0 text-[12px] text-accent-foreground" />
+                <button
+                  type="button"
+                  onClick={() => controller.setIncludeContext((current) => !current)}
+                  className={`inline-flex items-center gap-1 rounded border px-1.5 py-px text-[10px] leading-4 transition ${
+                    controller.includeContext
+                      ? "border-border bg-editor-background text-foreground"
+                      : "border-border/50 bg-editor-background/50 text-foreground-muted/60"
+                  }`}
+                >
+                  <span
+                    className={`shrink-0 text-[12px] ${
+                      controller.includeContext
+                        ? "icon-[material-symbols--my-location] text-accent-foreground"
+                        : "icon-[material-symbols--my-location-outline] text-foreground-muted/60"
+                    }`}
+                  />
                   <span>当前上下文</span>
-                </span>
+                </button>
               </div>
             </div>
           </form>
