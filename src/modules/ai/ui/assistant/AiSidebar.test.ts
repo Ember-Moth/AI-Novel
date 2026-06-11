@@ -221,6 +221,8 @@ test("buildProjectAssistantSendActiveTools adds aux write tools only when explic
     "read_aux_path",
     "mkdir_aux_dir",
     "write_aux_file",
+    "move_aux_node",
+    "create_aux_symlink",
   ]);
 });
 

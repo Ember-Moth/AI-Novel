@@ -96,6 +96,18 @@ test("isActiveAuxFileMutationTarget matches the active file by node id before fa
   ).toBe(false);
   expect(
     isActiveAuxFileMutationTarget({
+      event: createWorkspaceMutationEvent({
+        toolName: "move_aux_node",
+        action: "moved",
+        nodeId: "aux_1",
+        path: "/资料库/主角.md",
+        previousPath: "/设定/角色.md",
+      }),
+      activeAuxNode,
+    }),
+  ).toBe(true);
+  expect(
+    isActiveAuxFileMutationTarget({
       event: createWorkspaceMutationEvent(),
       activeAuxNode: createAuxFileNode({ nodeType: "dir" }),
     }),
@@ -145,6 +157,54 @@ test("handleAuxWorkspaceMutationForEditor refetches without clearing unrelated d
 
   const handled = handleAuxWorkspaceMutationForEditor({
     event: createWorkspaceMutationEvent({ nodeId: "aux_2", path: "/其他/资料.md" }),
+    workspaceId: "workspace_1",
+    activeTimelinePointId: "timeline_1",
+    activeAuxNode: createAuxFileNode(),
+    refetchAux,
+    clearActiveAuxDraftState,
+  });
+
+  expect(handled).toBe(true);
+  expect(refetchAux).toHaveBeenCalledTimes(1);
+  expect(clearActiveAuxDraftState).not.toHaveBeenCalled();
+});
+
+test("handleAuxWorkspaceMutationForEditor clears active drafts for move_aux_node matched by node id", () => {
+  const refetchAux = mock(() => {});
+  const clearActiveAuxDraftState = mock(() => {});
+
+  const handled = handleAuxWorkspaceMutationForEditor({
+    event: createWorkspaceMutationEvent({
+      toolName: "move_aux_node",
+      action: "moved",
+      path: "/资料库/主角.md",
+      previousPath: "/设定/角色.md",
+      nodeId: "aux_1",
+    }),
+    workspaceId: "workspace_1",
+    activeTimelinePointId: "timeline_1",
+    activeAuxNode: createAuxFileNode(),
+    refetchAux,
+    clearActiveAuxDraftState,
+  });
+
+  expect(handled).toBe(true);
+  expect(refetchAux).toHaveBeenCalledTimes(1);
+  expect(clearActiveAuxDraftState).toHaveBeenCalledWith("aux_1");
+});
+
+test("handleAuxWorkspaceMutationForEditor refetches for create_aux_symlink without clearing unrelated drafts", () => {
+  const refetchAux = mock(() => {});
+  const clearActiveAuxDraftState = mock(() => {});
+
+  const handled = handleAuxWorkspaceMutationForEditor({
+    event: createWorkspaceMutationEvent({
+      toolName: "create_aux_symlink",
+      action: "created",
+      path: "/索引/角色.md",
+      targetPath: "/设定/角色.md",
+      nodeId: "aux_link_1",
+    }),
     workspaceId: "workspace_1",
     activeTimelinePointId: "timeline_1",
     activeAuxNode: createAuxFileNode(),

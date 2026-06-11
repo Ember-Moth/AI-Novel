@@ -10,9 +10,11 @@ import {
   composeWritingContext,
   exportContentSubtree,
   getDefaultWorkspace,
+  linkAt,
   listAuxDirAt,
   listTimelinePoints,
   mkdirAt,
+  moveAuxNodeAt,
   ORIGIN_TIMELINE_POINT_ID,
   readAuxByPathAt,
   writeFileAt,
@@ -236,6 +238,17 @@ function resolveParentDirId(input: {
   invariant(parentNode, `${input.actionLabel}失败：父目录不存在或在当前时间点不可见。`);
   invariant(parentNode.nodeType === "dir", `${input.actionLabel}失败：父路径不是辅助资料目录。`);
   return parentNode.id;
+}
+
+function resolveAuxNodeByPathOrThrow(input: {
+  workspaceId: string;
+  timelinePointId: string;
+  path: string;
+  actionLabel: string;
+}) {
+  const node = readAuxByPathAt(input.workspaceId, input.timelinePointId, input.path);
+  invariant(node, `${input.actionLabel}失败：目标路径不存在或在当前时间点不可见。`);
+  return node;
 }
 
 function failure(error: unknown): AssistantToolError {
@@ -557,6 +570,146 @@ function buildAssistantToolRegistry({
             data: {
               action: "created",
               path: normalizedPath,
+              nodeId: node.id,
+            },
+          };
+        });
+      },
+    }),
+    move_aux_node: tool({
+      description:
+        "在当前时间点下移动或重命名一个辅助资料节点。支持文件、目录或符号链接，但不支持辅助资料根目录。",
+      inputSchema: jsonSchema<{ path: string; newPath: string }>({
+        type: "object",
+        required: ["path", "newPath"],
+        properties: {
+          path: {
+            type: "string",
+            description: "要移动的辅助资料绝对路径，例如 /设定/角色.md。",
+          },
+          newPath: {
+            type: "string",
+            description: "移动后的目标绝对路径，例如 /资料库/人物/主角.md。",
+          },
+        },
+      }),
+      execute: async ({ path, newPath }) => {
+        const workspace = getWorkspaceForProject(projectId);
+        if (!workspace) {
+          return failure(new Error("当前项目没有默认工作区。"));
+        }
+
+        return withEnvelope(() => {
+          const timelinePointId = resolveTimelinePointId(context);
+          const { normalizedPath } = splitAuxPath(path, "移动辅助资料");
+          const {
+            normalizedPath: normalizedNewPath,
+            parentPath: newParentPath,
+            name: newName,
+          } = splitAuxPath(newPath, "移动辅助资料");
+          invariant(
+            normalizedPath !== normalizedNewPath,
+            "移动辅助资料失败：目标路径不能与原路径相同。",
+          );
+
+          const existing = resolveAuxNodeByPathOrThrow({
+            workspaceId: workspace.id,
+            timelinePointId,
+            path: normalizedPath,
+            actionLabel: "移动辅助资料",
+          });
+          const conflicting = readAuxByPathAt(workspace.id, timelinePointId, normalizedNewPath);
+          invariant(conflicting == null, "移动辅助资料失败：目标路径已存在。");
+
+          const newParentDirId = resolveParentDirId({
+            workspaceId: workspace.id,
+            timelinePointId,
+            auxRootId: workspace.auxRootId,
+            parentPath: newParentPath,
+            actionLabel: "移动辅助资料",
+          });
+          const node = moveAuxNodeAt({
+            workspaceId: workspace.id,
+            timelinePointId,
+            nodeId: existing.id,
+            newParentDirId,
+            newName,
+          });
+
+          return {
+            ok: true,
+            truncated: false,
+            data: {
+              action: "moved",
+              path: normalizedNewPath,
+              previousPath: normalizedPath,
+              nodeId: node.id,
+            },
+          };
+        });
+      },
+    }),
+    create_aux_symlink: tool({
+      description:
+        "在当前时间点下创建一个辅助资料符号链接。链接本身写入到指定路径，目标路径必须在当前时间点可见。",
+      inputSchema: jsonSchema<{ path: string; targetPath: string }>({
+        type: "object",
+        required: ["path", "targetPath"],
+        properties: {
+          path: {
+            type: "string",
+            description: "要创建的符号链接绝对路径，例如 /索引/角色.md。",
+          },
+          targetPath: {
+            type: "string",
+            description: "符号链接目标绝对路径，例如 /设定/角色/主角.md。",
+          },
+        },
+      }),
+      execute: async ({ path, targetPath }) => {
+        const workspace = getWorkspaceForProject(projectId);
+        if (!workspace) {
+          return failure(new Error("当前项目没有默认工作区。"));
+        }
+
+        return withEnvelope(() => {
+          const timelinePointId = resolveTimelinePointId(context);
+          const { normalizedPath, parentPath, name } = splitAuxPath(path, "创建辅助资料符号链接");
+          const { normalizedPath: normalizedTargetPath } = splitAuxPath(
+            targetPath,
+            "创建辅助资料符号链接",
+          );
+          const existing = readAuxByPathAt(workspace.id, timelinePointId, normalizedPath);
+          invariant(existing == null, "创建辅助资料符号链接失败：目标路径已存在。");
+
+          const targetNode = resolveAuxNodeByPathOrThrow({
+            workspaceId: workspace.id,
+            timelinePointId,
+            path: normalizedTargetPath,
+            actionLabel: "创建辅助资料符号链接",
+          });
+          const parentDirId = resolveParentDirId({
+            workspaceId: workspace.id,
+            timelinePointId,
+            auxRootId: workspace.auxRootId,
+            parentPath,
+            actionLabel: "创建辅助资料符号链接",
+          });
+          const node = linkAt({
+            workspaceId: workspace.id,
+            timelinePointId,
+            parentDirId,
+            name,
+            targetNodeId: targetNode.id,
+          });
+
+          return {
+            ok: true,
+            truncated: false,
+            data: {
+              action: "created",
+              path: normalizedPath,
+              targetPath: normalizedTargetPath,
               nodeId: node.id,
             },
           };

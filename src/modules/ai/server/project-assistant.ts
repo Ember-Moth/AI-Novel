@@ -781,7 +781,12 @@ function extractWorkspaceMutationEventFromToolResult({
   const action = Reflect.get(data as Record<string, unknown>, "action");
   const path = Reflect.get(data as Record<string, unknown>, "path");
   const nodeId = Reflect.get(data as Record<string, unknown>, "nodeId");
-  if ((action !== "created" && action !== "updated") || typeof path !== "string") {
+  const previousPath = Reflect.get(data as Record<string, unknown>, "previousPath");
+  const targetPath = Reflect.get(data as Record<string, unknown>, "targetPath");
+  if (
+    (action !== "created" && action !== "updated" && action !== "moved") ||
+    typeof path !== "string"
+  ) {
     return null;
   }
 
@@ -794,6 +799,9 @@ function extractWorkspaceMutationEventFromToolResult({
     action: action as WorkspaceMutationAction,
     path,
     nodeId: typeof nodeId === "string" && nodeId.trim().length > 0 ? nodeId : null,
+    previousPath:
+      typeof previousPath === "string" && previousPath.trim().length > 0 ? previousPath : null,
+    targetPath: typeof targetPath === "string" && targetPath.trim().length > 0 ? targetPath : null,
   };
 }
 

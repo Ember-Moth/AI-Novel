@@ -79,7 +79,12 @@ export const PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES = [
   "read_aux_path",
 ] as const;
 
-export const PROJECT_ASSISTANT_AUX_WRITE_TOOL_NAMES = ["mkdir_aux_dir", "write_aux_file"] as const;
+export const PROJECT_ASSISTANT_AUX_WRITE_TOOL_NAMES = [
+  "mkdir_aux_dir",
+  "write_aux_file",
+  "move_aux_node",
+  "create_aux_symlink",
+] as const;
 
 export const PROJECT_ASSISTANT_TOOL_NAMES = [
   ...PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES,
@@ -90,7 +95,7 @@ export type ProjectAssistantToolName = (typeof PROJECT_ASSISTANT_TOOL_NAMES)[num
 export type ProjectAssistantAuxWriteToolName =
   (typeof PROJECT_ASSISTANT_AUX_WRITE_TOOL_NAMES)[number];
 export type WorkspaceMutationArea = "aux";
-export type WorkspaceMutationAction = "created" | "updated";
+export type WorkspaceMutationAction = "created" | "updated" | "moved";
 
 export interface ProjectAssistantContextSnapshot {
   workspaceId: string | null;
@@ -266,6 +271,8 @@ export interface WorkspaceMutationEvent {
   action: WorkspaceMutationAction;
   path: string;
   nodeId: string | null;
+  previousPath?: string | null;
+  targetPath?: string | null;
 }
 
 export type ProjectAssistantStreamEvent =

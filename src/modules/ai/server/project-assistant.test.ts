@@ -631,6 +631,8 @@ test("sendProjectAssistantMessage uses read-only tools by default and can opt in
       "read_aux_path",
       "mkdir_aux_dir",
       "write_aux_file",
+      "move_aux_node",
+      "create_aux_symlink",
     ],
   });
 
@@ -650,6 +652,8 @@ test("sendProjectAssistantMessage uses read-only tools by default and can opt in
       "read_aux_path",
       "mkdir_aux_dir",
       "write_aux_file",
+      "move_aux_node",
+      "create_aux_symlink",
     ],
   ]);
 });
@@ -848,6 +852,8 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
       "read_aux_path",
       "mkdir_aux_dir",
       "write_aux_file",
+      "move_aux_node",
+      "create_aux_symlink",
     ],
   });
   const trace = service.getRunTrace(result.run.id);
@@ -943,6 +949,8 @@ test("sendProjectAssistantMessageStream emits workspace-mutated after a successf
       "read_aux_path",
       "mkdir_aux_dir",
       "write_aux_file",
+      "move_aux_node",
+      "create_aux_symlink",
     ],
   });
   handle.subscribe((event) => {
@@ -951,7 +959,7 @@ test("sendProjectAssistantMessageStream emits workspace-mutated after a successf
 
   await handle.finalResult;
 
-  expect(emitted).toContainEqual({
+  expect(emitted.find((event) => event.type === "workspace-mutated")).toMatchObject({
     type: "workspace-mutated",
     workspaceId: workspace.id,
     area: "aux",
@@ -960,6 +968,8 @@ test("sendProjectAssistantMessageStream emits workspace-mutated after a successf
     action: "created",
     path: "/设定/角色.md",
     nodeId: "aux_stream",
+    previousPath: null,
+    targetPath: null,
   });
 });
 
@@ -1048,6 +1058,119 @@ test("sendProjectAssistantMessageStream emits workspace-mutated for mkdir_aux_di
       "read_aux_path",
       "mkdir_aux_dir",
       "write_aux_file",
+      "move_aux_node",
+      "create_aux_symlink",
+    ],
+  });
+  handle.subscribe((event) => {
+    emitted.push(event as Record<string, unknown>);
+  });
+
+  await handle.finalResult;
+
+  expect(emitted.find((event) => event.type === "workspace-mutated")).toMatchObject({
+    type: "workspace-mutated",
+    workspaceId: workspace.id,
+    area: "aux",
+    timelinePointId: "origin",
+    toolName: "mkdir_aux_dir",
+    action: "created",
+    path: "/设定",
+    nodeId: "aux_dir_stream",
+    previousPath: null,
+    targetPath: null,
+  });
+});
+
+test("sendProjectAssistantMessageStream emits workspace-mutated for move_aux_node", async () => {
+  seedProject("assistant_workspace_mutation_move");
+  const workspace = createDefaultWorkspace("assistant_workspace_mutation_move");
+  const seeded = seedCustomConnection({
+    connectionId: "conn_workspace_mutation_move",
+    modelId: "story-model",
+    modelRowId: "cmodel_workspace_mutation_move",
+    supportsToolUse: true,
+  });
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+    streamAssistantText: createMockStream({
+      chunks: [
+        { type: "start-step", stepNumber: 0 },
+        {
+          type: "tool-result",
+          stepNumber: 0,
+          toolResult: {
+            toolCallId: "tool_move_stream",
+            toolName: "move_aux_node",
+            output: {
+              ok: true,
+              data: {
+                action: "moved",
+                path: "/资料库/主角.md",
+                previousPath: "/设定/角色.md",
+                nodeId: "aux_move_stream",
+              },
+            },
+          },
+        },
+        {
+          type: "finish-step",
+          stepNumber: 0,
+          finishReason: "stop",
+          usage: { totalTokens: 2 },
+        },
+      ],
+      text: "",
+      usage: { totalTokens: 2 },
+      finishReason: "stop",
+      steps: [
+        {
+          stepNumber: 0,
+          preparedMessages: [],
+          model: { provider: "openai", modelId: "story-model" },
+          finishReason: "stop",
+          rawFinishReason: "stop",
+          usage: { totalTokens: 2 },
+          request: { body: { step: 0 } },
+          response: { body: { id: "resp_workspace_mutation_move" }, messages: [] },
+          providerMetadata: {},
+          toolCalls: [],
+          toolResults: [
+            {
+              toolCallId: "tool_move_stream",
+              toolName: "move_aux_node",
+              output: {
+                ok: true,
+                data: {
+                  action: "moved",
+                  path: "/资料库/主角.md",
+                  previousPath: "/设定/角色.md",
+                  nodeId: "aux_move_stream",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    }) as any,
+  });
+  const thread = service.createProjectAssistantThread("assistant_workspace_mutation_move");
+  const emitted: Array<Record<string, unknown>> = [];
+
+  const handle = service.sendProjectAssistantMessageStream({
+    projectId: "assistant_workspace_mutation_move",
+    threadId: thread.id,
+    text: "移动辅助资料",
+    activeTools: [
+      "read_current_writing_context",
+      "read_content_subtree",
+      "list_timeline_points",
+      "list_aux_dir",
+      "read_aux_path",
+      "mkdir_aux_dir",
+      "write_aux_file",
+      "move_aux_node",
+      "create_aux_symlink",
     ],
   });
   handle.subscribe((event) => {
@@ -1061,10 +1184,123 @@ test("sendProjectAssistantMessageStream emits workspace-mutated for mkdir_aux_di
     workspaceId: workspace.id,
     area: "aux",
     timelinePointId: "origin",
-    toolName: "mkdir_aux_dir",
+    toolName: "move_aux_node",
+    action: "moved",
+    path: "/资料库/主角.md",
+    previousPath: "/设定/角色.md",
+    nodeId: "aux_move_stream",
+    targetPath: null,
+  });
+});
+
+test("sendProjectAssistantMessageStream emits workspace-mutated for create_aux_symlink", async () => {
+  seedProject("assistant_workspace_mutation_symlink");
+  const workspace = createDefaultWorkspace("assistant_workspace_mutation_symlink");
+  const seeded = seedCustomConnection({
+    connectionId: "conn_workspace_mutation_symlink",
+    modelId: "story-model",
+    modelRowId: "cmodel_workspace_mutation_symlink",
+    supportsToolUse: true,
+  });
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+    streamAssistantText: createMockStream({
+      chunks: [
+        { type: "start-step", stepNumber: 0 },
+        {
+          type: "tool-result",
+          stepNumber: 0,
+          toolResult: {
+            toolCallId: "tool_link_stream",
+            toolName: "create_aux_symlink",
+            output: {
+              ok: true,
+              data: {
+                action: "created",
+                path: "/索引/角色.md",
+                targetPath: "/设定/角色.md",
+                nodeId: "aux_link_stream",
+              },
+            },
+          },
+        },
+        {
+          type: "finish-step",
+          stepNumber: 0,
+          finishReason: "stop",
+          usage: { totalTokens: 2 },
+        },
+      ],
+      text: "",
+      usage: { totalTokens: 2 },
+      finishReason: "stop",
+      steps: [
+        {
+          stepNumber: 0,
+          preparedMessages: [],
+          model: { provider: "openai", modelId: "story-model" },
+          finishReason: "stop",
+          rawFinishReason: "stop",
+          usage: { totalTokens: 2 },
+          request: { body: { step: 0 } },
+          response: { body: { id: "resp_workspace_mutation_symlink" }, messages: [] },
+          providerMetadata: {},
+          toolCalls: [],
+          toolResults: [
+            {
+              toolCallId: "tool_link_stream",
+              toolName: "create_aux_symlink",
+              output: {
+                ok: true,
+                data: {
+                  action: "created",
+                  path: "/索引/角色.md",
+                  targetPath: "/设定/角色.md",
+                  nodeId: "aux_link_stream",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    }) as any,
+  });
+  const thread = service.createProjectAssistantThread("assistant_workspace_mutation_symlink");
+  const emitted: Array<Record<string, unknown>> = [];
+
+  const handle = service.sendProjectAssistantMessageStream({
+    projectId: "assistant_workspace_mutation_symlink",
+    threadId: thread.id,
+    text: "创建辅助资料链接",
+    activeTools: [
+      "read_current_writing_context",
+      "read_content_subtree",
+      "list_timeline_points",
+      "list_aux_dir",
+      "read_aux_path",
+      "mkdir_aux_dir",
+      "write_aux_file",
+      "move_aux_node",
+      "create_aux_symlink",
+    ],
+  });
+  handle.subscribe((event) => {
+    emitted.push(event as Record<string, unknown>);
+  });
+
+  await handle.finalResult;
+
+  expect(emitted).toContainEqual({
+    type: "workspace-mutated",
+    workspaceId: workspace.id,
+    area: "aux",
+    timelinePointId: "origin",
+    toolName: "create_aux_symlink",
     action: "created",
-    path: "/设定",
-    nodeId: "aux_dir_stream",
+    path: "/索引/角色.md",
+    targetPath: "/设定/角色.md",
+    nodeId: "aux_link_stream",
+    previousPath: null,
   });
 });
 
@@ -1108,14 +1344,26 @@ test("sendProjectAssistantMessageStream does not emit workspace-mutated for non-
           },
         },
         {
+          type: "tool-result",
+          stepNumber: 0,
+          toolResult: {
+            toolCallId: "tool_failed_move",
+            toolName: "move_aux_node",
+            output: {
+              ok: false,
+              error: "移动失败",
+            },
+          },
+        },
+        {
           type: "finish-step",
           stepNumber: 0,
           finishReason: "stop",
-          usage: { totalTokens: 3 },
+          usage: { totalTokens: 4 },
         },
       ],
       text: "",
-      usage: { totalTokens: 3 },
+      usage: { totalTokens: 4 },
       finishReason: "stop",
       steps: [
         {
@@ -1124,7 +1372,7 @@ test("sendProjectAssistantMessageStream does not emit workspace-mutated for non-
           model: { provider: "openai", modelId: "story-model" },
           finishReason: "stop",
           rawFinishReason: "stop",
-          usage: { totalTokens: 3 },
+          usage: { totalTokens: 4 },
           request: { body: { step: 0 } },
           response: { body: { id: "resp_workspace_mutation_filtered" }, messages: [] },
           providerMetadata: {},
@@ -1148,6 +1396,14 @@ test("sendProjectAssistantMessageStream does not emit workspace-mutated for non-
                 error: "写入失败",
               },
             },
+            {
+              toolCallId: "tool_failed_move",
+              toolName: "move_aux_node",
+              output: {
+                ok: false,
+                error: "移动失败",
+              },
+            },
           ],
         },
       ],
@@ -1168,6 +1424,8 @@ test("sendProjectAssistantMessageStream does not emit workspace-mutated for non-
       "read_aux_path",
       "mkdir_aux_dir",
       "write_aux_file",
+      "move_aux_node",
+      "create_aux_symlink",
     ],
   });
   handle.subscribe((event) => {

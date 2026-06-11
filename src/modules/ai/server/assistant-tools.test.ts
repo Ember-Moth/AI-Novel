@@ -32,12 +32,17 @@ test("createAssistantTools only exposes the allowlisted tools", () => {
   const tools = createAssistantTools({
     projectId: "assistant_tools_filter",
     context: null,
-    activeTools: ["read_aux_path", "write_aux_file"],
+    activeTools: ["read_aux_path", "move_aux_node", "create_aux_symlink"],
   });
 
-  expect(Object.keys(tools).sort()).toEqual(["read_aux_path", "write_aux_file"]);
+  expect(Object.keys(tools).sort()).toEqual([
+    "create_aux_symlink",
+    "move_aux_node",
+    "read_aux_path",
+  ]);
   expect(tools.read_current_writing_context).toBeUndefined();
   expect(tools.mkdir_aux_dir).toBeUndefined();
+  expect(tools.write_aux_file).toBeUndefined();
 });
 
 test("mkdir_aux_dir creates a directory at the current timeline point", async () => {
@@ -184,6 +189,490 @@ test("write_aux_file returns an error when the target path is a directory", asyn
   expect(result).toEqual({
     ok: false,
     error: "写入辅助资料文件失败：目标路径不是文件。",
+  });
+});
+
+test("move_aux_node renames a file in the same directory", async () => {
+  const workspace = seedProject("assistant_tools_move_rename");
+  const notesDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "设定",
+  });
+  const file = workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: notesDir.id,
+    name: "角色.md",
+    content: "主角设定",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_move_rename",
+    context: null,
+    activeTools: ["move_aux_node"],
+  });
+
+  const result = await executeTool(tools.move_aux_node!, {
+    path: "/设定/角色.md",
+    newPath: "/设定/主角.md",
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    truncated: false,
+    data: {
+      action: "moved",
+      path: "/设定/主角.md",
+      previousPath: "/设定/角色.md",
+      nodeId: file.id,
+    },
+  });
+  expect(
+    workspaceDomain.readAuxByPathAt(
+      workspace.id,
+      workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+      "/设定/角色.md",
+    ),
+  ).toBeNull();
+  expect(
+    workspaceDomain.readAuxByPathAt(
+      workspace.id,
+      workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+      "/设定/主角.md",
+    )?.id,
+  ).toBe(file.id);
+});
+
+test("move_aux_node moves a file across directories", async () => {
+  const workspace = seedProject("assistant_tools_move_cross_dir");
+  const sourceDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "设定",
+  });
+  workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "资料库",
+  });
+  const file = workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: sourceDir.id,
+    name: "角色.md",
+    content: "主角设定",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_move_cross_dir",
+    context: null,
+    activeTools: ["move_aux_node"],
+  });
+
+  const result = await executeTool(tools.move_aux_node!, {
+    path: "/设定/角色.md",
+    newPath: "/资料库/角色.md",
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    data: {
+      action: "moved",
+      path: "/资料库/角色.md",
+      previousPath: "/设定/角色.md",
+      nodeId: file.id,
+    },
+  });
+  expect(
+    workspaceDomain.readAuxByPathAt(
+      workspace.id,
+      workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+      "/资料库/角色.md",
+    )?.id,
+  ).toBe(file.id);
+});
+
+test("move_aux_node moves a directory", async () => {
+  const workspace = seedProject("assistant_tools_move_dir");
+  const sourceDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "设定",
+  });
+  workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "资料库",
+  });
+  const nestedDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: sourceDir.id,
+    name: "角色",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_move_dir",
+    context: null,
+    activeTools: ["move_aux_node"],
+  });
+
+  const result = await executeTool(tools.move_aux_node!, {
+    path: "/设定/角色",
+    newPath: "/资料库/角色档案",
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    data: {
+      action: "moved",
+      path: "/资料库/角色档案",
+      previousPath: "/设定/角色",
+      nodeId: nestedDir.id,
+    },
+  });
+  expect(
+    workspaceDomain.readAuxByPathAt(
+      workspace.id,
+      workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+      "/资料库/角色档案",
+    )?.id,
+  ).toBe(nestedDir.id);
+});
+
+test("move_aux_node returns an error when the target path already exists", async () => {
+  const workspace = seedProject("assistant_tools_move_conflict");
+  const sourceDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "设定",
+  });
+  workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: sourceDir.id,
+    name: "角色.md",
+    content: "a",
+  });
+  workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: sourceDir.id,
+    name: "主角.md",
+    content: "b",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_move_conflict",
+    context: null,
+    activeTools: ["move_aux_node"],
+  });
+
+  const result = await executeTool(tools.move_aux_node!, {
+    path: "/设定/角色.md",
+    newPath: "/设定/主角.md",
+  });
+
+  expect(result).toEqual({
+    ok: false,
+    error: "移动辅助资料失败：目标路径已存在。",
+  });
+});
+
+test("move_aux_node returns an error when the target parent directory does not exist", async () => {
+  const workspace = seedProject("assistant_tools_move_missing_parent");
+  const sourceDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "设定",
+  });
+  workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: sourceDir.id,
+    name: "角色.md",
+    content: "a",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_move_missing_parent",
+    context: null,
+    activeTools: ["move_aux_node"],
+  });
+
+  const result = await executeTool(tools.move_aux_node!, {
+    path: "/设定/角色.md",
+    newPath: "/资料库/角色.md",
+  });
+
+  expect(result).toEqual({
+    ok: false,
+    error: "移动辅助资料失败：父目录不存在或在当前时间点不可见。",
+  });
+});
+
+test("move_aux_node rejects moving a directory into its own subtree", async () => {
+  const workspace = seedProject("assistant_tools_move_into_child");
+  const parentDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "设定",
+  });
+  workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: parentDir.id,
+    name: "角色",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_move_into_child",
+    context: null,
+    activeTools: ["move_aux_node"],
+  });
+
+  const result = await executeTool(tools.move_aux_node!, {
+    path: "/设定",
+    newPath: "/设定/角色/设定",
+  });
+
+  expect(result).toEqual({
+    ok: false,
+    error: "无法移动：不能把辅助信息移动到自己的子节点下。",
+  });
+});
+
+test("move_aux_node respects the active timeline point from context", async () => {
+  const workspace = seedProject("assistant_tools_move_timeline");
+  const sourceDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "设定",
+  });
+  workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "资料库",
+  });
+  const file = workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: sourceDir.id,
+    name: "角色.md",
+    content: "origin",
+  });
+  const timelinePoint = workspaceDomain.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    key: "draft",
+    label: "Draft",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_move_timeline",
+    context: {
+      workspaceId: workspace.id,
+      activeContentNodeId: null,
+      activeContentTitle: null,
+      activeAuxNodeId: null,
+      activeAuxPath: null,
+      activeTimelinePointId: timelinePoint.id,
+      activeTimelineLabel: timelinePoint.label,
+    },
+    activeTools: ["move_aux_node"],
+  });
+
+  await executeTool(tools.move_aux_node!, {
+    path: "/设定/角色.md",
+    newPath: "/资料库/角色.md",
+  });
+
+  expect(
+    workspaceDomain.readAuxByPathAt(
+      workspace.id,
+      workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+      "/设定/角色.md",
+    )?.id,
+  ).toBe(file.id);
+  expect(
+    workspaceDomain.readAuxByPathAt(workspace.id, timelinePoint.id, "/资料库/角色.md")?.id,
+  ).toBe(file.id);
+});
+
+test("create_aux_symlink creates a symlink to a file", async () => {
+  const workspace = seedProject("assistant_tools_symlink_file");
+  const notesDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "设定",
+  });
+  workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "索引",
+  });
+  const targetFile = workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: notesDir.id,
+    name: "角色.md",
+    content: "主角设定",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_symlink_file",
+    context: null,
+    activeTools: ["create_aux_symlink"],
+  });
+
+  const result = await executeTool(tools.create_aux_symlink!, {
+    path: "/索引/角色.md",
+    targetPath: "/设定/角色.md",
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    data: {
+      action: "created",
+      path: "/索引/角色.md",
+      targetPath: "/设定/角色.md",
+    },
+  });
+  expect(
+    workspaceDomain.readAuxByPathAt(
+      workspace.id,
+      workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+      "/索引/角色.md",
+    )?.id,
+  ).toBe(targetFile.id);
+  expect(
+    workspaceDomain
+      .exportAuxSnapshotTree(workspace.id, workspaceDomain.ORIGIN_TIMELINE_POINT_ID)
+      .nodes.find((node) => node.path === "/索引")?.children[0]?.symlinkTargetPath,
+  ).toBe("/设定/角色.md");
+});
+
+test("create_aux_symlink creates a symlink to a directory", async () => {
+  const workspace = seedProject("assistant_tools_symlink_dir");
+  const targetDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "设定",
+  });
+  workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "索引",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_symlink_dir",
+    context: null,
+    activeTools: ["create_aux_symlink"],
+  });
+
+  const result = await executeTool(tools.create_aux_symlink!, {
+    path: "/索引/设定入口",
+    targetPath: "/设定",
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    data: {
+      action: "created",
+      path: "/索引/设定入口",
+      targetPath: "/设定",
+      nodeId: expect.any(String),
+    },
+  });
+  const indexNode = workspaceDomain
+    .exportAuxSnapshotTree(workspace.id, workspaceDomain.ORIGIN_TIMELINE_POINT_ID)
+    .nodes.find((node) => node.path === "/索引");
+  expect(
+    indexNode?.children.find((node) => node.path === "/索引/设定入口")?.symlinkTargetPath,
+  ).toBe("/设定");
+  expect(
+    workspaceDomain.readAuxByPathAt(
+      workspace.id,
+      workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+      "/索引/设定入口",
+    )?.id,
+  ).toBe(targetDir.id);
+});
+
+test("create_aux_symlink returns an error when the target does not exist", async () => {
+  const workspace = seedProject("assistant_tools_symlink_missing_target");
+  workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "索引",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_symlink_missing_target",
+    context: null,
+    activeTools: ["create_aux_symlink"],
+  });
+
+  const result = await executeTool(tools.create_aux_symlink!, {
+    path: "/索引/角色.md",
+    targetPath: "/设定/角色.md",
+  });
+
+  expect(result).toEqual({
+    ok: false,
+    error: "创建辅助资料符号链接失败：目标路径不存在或在当前时间点不可见。",
+  });
+});
+
+test("create_aux_symlink returns an error when the destination path already exists", async () => {
+  const workspace = seedProject("assistant_tools_symlink_conflict");
+  const notesDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "设定",
+  });
+  const indexDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "索引",
+  });
+  workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: notesDir.id,
+    name: "角色.md",
+    content: "主角设定",
+  });
+  workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: indexDir.id,
+    name: "角色.md",
+    content: "已存在",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_symlink_conflict",
+    context: null,
+    activeTools: ["create_aux_symlink"],
+  });
+
+  const result = await executeTool(tools.create_aux_symlink!, {
+    path: "/索引/角色.md",
+    targetPath: "/设定/角色.md",
+  });
+
+  expect(result).toEqual({
+    ok: false,
+    error: "创建辅助资料符号链接失败：目标路径已存在。",
   });
 });
 

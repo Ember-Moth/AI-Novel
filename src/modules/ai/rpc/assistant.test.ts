@@ -419,6 +419,343 @@ test("sendProjectAssistantMessage additionally invalidates aux workspace when th
   ]);
 });
 
+test("sendProjectAssistantMessage additionally invalidates aux workspace for move_aux_node", async () => {
+  useService({
+    getProjectAssistantState: () => ({
+      activeThreadId: null,
+      threads: [],
+      state: {
+        thread: null,
+        activePath: [],
+        candidateGroups: [],
+        latestRuns: [],
+        runSummaries: [],
+      },
+    }),
+    createProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    setProjectAssistantActiveThread: () => {
+      throw new Error("unused");
+    },
+    renameProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    archiveProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    getThreadView: () => {
+      throw new Error("unused");
+    },
+    getRunTrace: () => ({
+      run: {
+        id: "run_send_move",
+        threadId: "thread_send_move",
+        parentRunId: null,
+        parentEventId: null,
+        triggerNodeId: "node_user_move",
+        baseTipNodeId: "node_user_move",
+        runMode: "send" as const,
+        status: "succeeded" as const,
+        agentProfile: "project-assistant",
+        selectionSnapshot: {},
+        contextSnapshot: {
+          workspaceId: "workspace_move",
+          activeContentNodeId: null,
+          activeContentTitle: null,
+          activeAuxNodeId: null,
+          activeAuxPath: null,
+          activeTimelinePointId: "origin",
+          activeTimelineLabel: "原点",
+        },
+        errorArtifactId: null,
+        startedAt: 1,
+        completedAt: 2,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      steps: [],
+      events: [],
+      artifacts: [
+        {
+          id: "artifact_tool_output_move",
+          runId: "run_send_move",
+          stepId: "step_1",
+          artifactKind: "tool-output" as const,
+          visibility: "internal" as const,
+          mimeType: null,
+          content: {
+            toolName: "move_aux_node",
+            output: {
+              ok: true,
+              data: {
+                action: "moved",
+                path: "/资料库/主角.md",
+                previousPath: "/设定/角色.md",
+                nodeId: "aux_moved",
+              },
+            },
+          },
+          summaryText: null,
+          createdAt: 1,
+        },
+      ],
+      childRuns: [],
+    }),
+    getNodeCandidates: () => {
+      throw new Error("unused");
+    },
+    getChildRuns: () => {
+      throw new Error("unused");
+    },
+    selectThreadTip: () => {
+      throw new Error("unused");
+    },
+    sendProjectAssistantMessage: async () => ({
+      thread: {
+        id: "thread_send_move",
+        projectId: "rpc_assistant_send_move",
+        agentProfile: "project-assistant",
+        title: "主会话",
+        activeTipNodeId: "node_assistant_move",
+        archivedAt: null,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      userNode: {
+        id: "node_user_move",
+        threadId: "thread_send_move",
+        parentNodeId: null,
+        role: "user" as const,
+        createdByRunId: null,
+        sourceStepId: null,
+        sourceKind: "user_input" as const,
+        summaryText: "Hello",
+        message: { role: "user" as const, content: [{ type: "text" as const, text: "Hello" }] },
+        parts: [],
+        createdAt: 1,
+      },
+      assistantNode: null,
+      run: {
+        id: "run_send_move",
+        threadId: "thread_send_move",
+        parentRunId: null,
+        parentEventId: null,
+        triggerNodeId: "node_user_move",
+        baseTipNodeId: "node_user_move",
+        runMode: "send" as const,
+        status: "succeeded" as const,
+        agentProfile: "project-assistant",
+        selectionSnapshot: {},
+        contextSnapshot: {
+          workspaceId: "workspace_move",
+          activeContentNodeId: null,
+          activeContentTitle: null,
+          activeAuxNodeId: null,
+          activeAuxPath: null,
+          activeTimelinePointId: "origin",
+          activeTimelineLabel: "原点",
+        },
+        errorArtifactId: null,
+        startedAt: 1,
+        completedAt: 2,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      state: {
+        thread: null,
+        activePath: [],
+        candidateGroups: [],
+        latestRuns: [],
+        runSummaries: [],
+      },
+    }),
+    retryProjectAssistantMessage: async () => {
+      throw new Error("unused");
+    },
+    editProjectAssistantMessage: async () => {
+      throw new Error("unused");
+    },
+  } as unknown as ProjectAssistantService);
+
+  const result = await handlers.sendProjectAssistantMessage.handler(
+    {
+      projectId: "rpc_assistant_send_move",
+      threadId: "thread_send_move",
+      text: "Hello",
+    },
+    requestCtx,
+  );
+
+  expect(result.invalidate).toContainEqual(rpcTags.auxWorkspace("workspace_move"));
+});
+
+test("sendProjectAssistantMessage does not invalidate aux workspace for failed move_aux_node output", async () => {
+  useService({
+    getProjectAssistantState: () => ({
+      activeThreadId: null,
+      threads: [],
+      state: {
+        thread: null,
+        activePath: [],
+        candidateGroups: [],
+        latestRuns: [],
+        runSummaries: [],
+      },
+    }),
+    createProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    setProjectAssistantActiveThread: () => {
+      throw new Error("unused");
+    },
+    renameProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    archiveProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    getThreadView: () => {
+      throw new Error("unused");
+    },
+    getRunTrace: () => ({
+      run: {
+        id: "run_send_failed_move",
+        threadId: "thread_send_failed_move",
+        parentRunId: null,
+        parentEventId: null,
+        triggerNodeId: "node_user_failed_move",
+        baseTipNodeId: "node_user_failed_move",
+        runMode: "send" as const,
+        status: "succeeded" as const,
+        agentProfile: "project-assistant",
+        selectionSnapshot: {},
+        contextSnapshot: {
+          workspaceId: "workspace_failed_move",
+          activeContentNodeId: null,
+          activeContentTitle: null,
+          activeAuxNodeId: null,
+          activeAuxPath: null,
+          activeTimelinePointId: "origin",
+          activeTimelineLabel: "原点",
+        },
+        errorArtifactId: null,
+        startedAt: 1,
+        completedAt: 2,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      steps: [],
+      events: [],
+      artifacts: [
+        {
+          id: "artifact_tool_output_failed_move",
+          runId: "run_send_failed_move",
+          stepId: "step_1",
+          artifactKind: "tool-output" as const,
+          visibility: "internal" as const,
+          mimeType: null,
+          content: {
+            toolName: "move_aux_node",
+            output: {
+              ok: false,
+              error: "移动失败",
+            },
+          },
+          summaryText: null,
+          createdAt: 1,
+        },
+      ],
+      childRuns: [],
+    }),
+    getNodeCandidates: () => {
+      throw new Error("unused");
+    },
+    getChildRuns: () => {
+      throw new Error("unused");
+    },
+    selectThreadTip: () => {
+      throw new Error("unused");
+    },
+    sendProjectAssistantMessage: async () => ({
+      thread: {
+        id: "thread_send_failed_move",
+        projectId: "rpc_assistant_send_failed_move",
+        agentProfile: "project-assistant",
+        title: "主会话",
+        activeTipNodeId: "node_assistant_failed_move",
+        archivedAt: null,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      userNode: {
+        id: "node_user_failed_move",
+        threadId: "thread_send_failed_move",
+        parentNodeId: null,
+        role: "user" as const,
+        createdByRunId: null,
+        sourceStepId: null,
+        sourceKind: "user_input" as const,
+        summaryText: "Hello",
+        message: { role: "user" as const, content: [{ type: "text" as const, text: "Hello" }] },
+        parts: [],
+        createdAt: 1,
+      },
+      assistantNode: null,
+      run: {
+        id: "run_send_failed_move",
+        threadId: "thread_send_failed_move",
+        parentRunId: null,
+        parentEventId: null,
+        triggerNodeId: "node_user_failed_move",
+        baseTipNodeId: "node_user_failed_move",
+        runMode: "send" as const,
+        status: "succeeded" as const,
+        agentProfile: "project-assistant",
+        selectionSnapshot: {},
+        contextSnapshot: {
+          workspaceId: "workspace_failed_move",
+          activeContentNodeId: null,
+          activeContentTitle: null,
+          activeAuxNodeId: null,
+          activeAuxPath: null,
+          activeTimelinePointId: "origin",
+          activeTimelineLabel: "原点",
+        },
+        errorArtifactId: null,
+        startedAt: 1,
+        completedAt: 2,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      state: {
+        thread: null,
+        activePath: [],
+        candidateGroups: [],
+        latestRuns: [],
+        runSummaries: [],
+      },
+    }),
+    retryProjectAssistantMessage: async () => {
+      throw new Error("unused");
+    },
+    editProjectAssistantMessage: async () => {
+      throw new Error("unused");
+    },
+  } as unknown as ProjectAssistantService);
+
+  const result = await handlers.sendProjectAssistantMessage.handler(
+    {
+      projectId: "rpc_assistant_send_failed_move",
+      threadId: "thread_send_failed_move",
+      text: "Hello",
+    },
+    requestCtx,
+  );
+
+  expect(result.invalidate).not.toContain(rpcTags.auxWorkspace("workspace_failed_move"));
+});
+
 test("sendProjectAssistantMessageStream emits events and returns invalidate tags on complete", async () => {
   let receivedActiveTools: unknown = null;
   const run = {
