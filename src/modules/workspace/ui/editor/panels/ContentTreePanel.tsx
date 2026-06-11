@@ -347,6 +347,7 @@ export function ContentTreePanel({
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropIntent, setDropIntent] = useState<ContentDropIntent | null>(null);
   const [dropIndicatorRect, setDropIndicatorRect] = useState<DropIndicatorRect | null>(null);
+  const [panelMinHeight, setPanelMinHeight] = useState<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const subtreeIdsRef = useRef<Set<string>>(new Set());
   const panelNodeMap = useMemo(() => buildPanelNodeMap(tree), [tree]);
@@ -373,6 +374,26 @@ export function ContentTreePanel({
         : null,
     [dropIntent, panelDepthMap, panelParentMap, visiblePreviousRowMap, visibleSubtreeTailMap],
   );
+
+  useLayoutEffect(() => {
+    const panelElement = panelRef.current;
+    const viewportElement = panelElement?.closest(".simplebar-content")?.parentElement;
+    if (!(panelElement instanceof HTMLElement) || !(viewportElement instanceof HTMLElement)) {
+      setPanelMinHeight(null);
+      return;
+    }
+
+    const updateMinHeight = () => {
+      setPanelMinHeight(viewportElement.clientHeight);
+    };
+
+    updateMinHeight();
+    const observer = new ResizeObserver(() => {
+      updateMinHeight();
+    });
+    observer.observe(viewportElement);
+    return () => observer.disconnect();
+  }, []);
 
   useLayoutEffect(() => {
     if (dropIntent?.position === "inside") {
@@ -563,7 +584,12 @@ export function ContentTreePanel({
   );
 
   return (
-    <div ref={panelRef} className="relative min-h-full pb-2" aria-busy={isPending}>
+    <div
+      ref={panelRef}
+      className="relative min-h-full pb-2"
+      style={panelMinHeight == null ? undefined : { minHeight: panelMinHeight }}
+      aria-busy={isPending}
+    >
       <RefreshOverlay active={isPending} />
       <div
         inert={isPending}

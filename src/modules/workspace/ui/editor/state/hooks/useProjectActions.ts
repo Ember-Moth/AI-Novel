@@ -17,8 +17,10 @@ import {
   nextAuxFileName,
   nextAuxSymlinkName,
   omitRecordKey,
+  resolveAuxHierarchyMove,
   resolveContentCreateSiblingPlacement,
   resolveContentMove,
+  type AuxHierarchyMoveIntent,
   type ContentMoveIntent,
 } from "@/modules/workspace/ui/editor/model/tree";
 import type { AuxTreeNodeVM, ContentTreeNodeVM } from "@/modules/workspace/ui/editor/model/types";
@@ -1087,6 +1089,53 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
     [auxNodeMap, auxParentMap, auxRootId, auxTree, moveAux, store, workspaceId],
   );
 
+  const handleAuxMove = useCallback(
+    async (intent: AuxHierarchyMoveIntent) => {
+      const { activeTimelinePointId, setAuxError } = store.getState();
+      if (!workspaceId || !activeTimelinePointId || !auxRootId) {
+        return;
+      }
+
+      const move = resolveAuxHierarchyMove({
+        parentMap: auxParentMap,
+        nodeMap: auxNodeMap,
+        auxRootId,
+        ...intent,
+      });
+      if (!move) {
+        return;
+      }
+
+      const node = auxNodeMap.get(move.nodeId);
+      if (!node) {
+        return;
+      }
+
+      clearActionError(setAuxError);
+
+      if (move.newParentId !== auxRootId) {
+        expandAuxParent(move.newParentId);
+      }
+
+      try {
+        await moveAux.mutate({
+          workspaceId,
+          timelinePointId: activeTimelinePointId,
+          nodeId: move.nodeId,
+          newParentDirId: move.newParentId,
+          newName: node.name.trim() || node.name,
+        });
+      } catch (error) {
+        setActionError(
+          store.getState().setAuxError,
+          error instanceof Error ? error.message : "调整辅助信息层级失败，请稍后重试。",
+          actionAnchorId("aux", "row", move.nodeId),
+        );
+      }
+    },
+    [auxNodeMap, auxParentMap, auxRootId, expandAuxParent, moveAux, store, workspaceId],
+  );
+
   const handleAuxDelete = useCallback(
     async (nodeId: string, anchorId: string) => {
       const { activeTimelinePointId, setAuxError } = store.getState();
@@ -1291,6 +1340,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       handleAuxCreateChildFile,
       handleAuxCreateSymlink,
       handleAuxRename,
+      handleAuxMove,
       handleAuxDelete,
       handleAuxRestore,
       setActiveAuxNodeId: store.getState().setActiveAuxNodeId,

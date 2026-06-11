@@ -418,6 +418,7 @@ function ProjectWorkspace({
                   ) : (
                     <AuxTreePanel
                       tree={auxTree}
+                      rootId={auxRootId}
                       expandedIds={expandedAuxIds}
                       onToggle={actions.toggleAuxExpanded}
                       activeId={activeAuxNodeId}
@@ -426,6 +427,7 @@ function ProjectWorkspace({
                       onCreateChildFile={actions.handleAuxCreateChildFile}
                       onCreateSymlink={actions.handleAuxCreateSymlink}
                       onRename={actions.handleAuxRename}
+                      onMove={actions.handleAuxMove}
                       onDelete={actions.handleAuxDelete}
                       onRestore={actions.handleAuxRestore}
                       isBusy={auxBusy}

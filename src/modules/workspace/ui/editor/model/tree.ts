@@ -15,6 +15,16 @@ export interface ResolvedContentMove {
   position: ContentDropPosition;
 }
 
+export interface AuxHierarchyMoveIntent {
+  nodeId: string;
+  targetId: string | null;
+}
+
+export interface ResolvedAuxHierarchyMove {
+  nodeId: string;
+  newParentId: string;
+}
+
 export function buildContentNodePath(
   nodeId: string,
   contentParentMap: Map<string, string | null>,
@@ -284,6 +294,86 @@ export function findAuxNode(nodes: AuxTreeNodeVM[], nodeId: string): AuxTreeNode
   }
 
   return null;
+}
+
+export function collectAuxSubtreeIds(root: AuxTreeNodeVM): Set<string> {
+  const ids = new Set<string>();
+
+  const walk = (node: AuxTreeNodeVM) => {
+    ids.add(node.id);
+    for (const child of node.children) {
+      walk(child);
+    }
+  };
+
+  walk(root);
+  return ids;
+}
+
+export function resolveAuxHierarchyMove({
+  parentMap,
+  nodeMap,
+  auxRootId,
+  nodeId,
+  targetId,
+}: {
+  parentMap: ReadonlyMap<string, string | null>;
+  nodeMap: ReadonlyMap<string, AuxTreeNodeVM>;
+  auxRootId: string | null;
+  nodeId: string;
+  targetId: string | null;
+}): ResolvedAuxHierarchyMove | null {
+  if (!auxRootId) {
+    return null;
+  }
+
+  const node = nodeMap.get(nodeId);
+  if (!node || node.isDeleted) {
+    return null;
+  }
+
+  const currentParentId = parentMap.get(nodeId) ?? auxRootId;
+
+  if (targetId === null) {
+    if (currentParentId === auxRootId) {
+      return null;
+    }
+
+    return {
+      nodeId,
+      newParentId: auxRootId,
+    };
+  }
+
+  if (nodeId === targetId) {
+    return null;
+  }
+
+  const target = nodeMap.get(targetId);
+  if (!target || target.isDeleted) {
+    return null;
+  }
+
+  const subtreeIds = collectAuxSubtreeIds(node);
+  if (subtreeIds.has(targetId)) {
+    return null;
+  }
+
+  let newParentId: string | null;
+  if (target.nodeType === "dir") {
+    newParentId = target.id;
+  } else {
+    newParentId = parentMap.get(target.id) ?? auxRootId;
+  }
+
+  if (!newParentId || newParentId === currentParentId || subtreeIds.has(newParentId)) {
+    return null;
+  }
+
+  return {
+    nodeId,
+    newParentId,
+  };
 }
 
 export function listAuxSiblings(

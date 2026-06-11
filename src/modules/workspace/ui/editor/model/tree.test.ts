@@ -1,13 +1,15 @@
 import { expect, test } from "bun:test";
 
-import { buildContentTreeState } from "./normalize";
+import { buildAuxTreeState, buildContentTreeState } from "./normalize";
 import {
+  collectAuxSubtreeIds,
   nextAuxSymlinkName,
+  resolveAuxHierarchyMove,
   resolveContentCreateSiblingPlacement,
   resolveContentMove,
   type ContentDropPosition,
 } from "./tree";
-import type { AuxTreeNodeVM, RawContentTreeNode } from "./types";
+import type { AuxTreeNodeVM, RawAuxTreeNode, RawContentTreeNode } from "./types";
 
 const ROOT_ID = "content_root";
 
@@ -146,6 +148,36 @@ function auxNode(name: string): AuxTreeNodeVM {
   };
 }
 
+function rawAuxNode(
+  id: string,
+  overrides: Partial<RawAuxTreeNode> = {},
+  children: RawAuxTreeNode[] = [],
+): RawAuxTreeNode {
+  return {
+    id,
+    nodeType: "file",
+    name: id,
+    content: "",
+    path: `/${id}`,
+    symlinkTargetPath: null,
+    hasTimelineChange: false,
+    isDeleted: false,
+    children,
+    ...overrides,
+  };
+}
+
+function resolveAux(nodes: RawAuxTreeNode[], nodeId: string, targetId: string | null) {
+  const state = buildAuxTreeState(nodes);
+  return resolveAuxHierarchyMove({
+    parentMap: state.parentMap,
+    nodeMap: state.nodeMap,
+    auxRootId: "aux_root",
+    nodeId,
+    targetId,
+  });
+}
+
 test("nextAuxSymlinkName starts with link 1 when there is no conflict", () => {
   expect(nextAuxSymlinkName([auxNode("notes.md")], "notes.md")).toBe("notes.md - 链接 1");
 });
@@ -177,4 +209,103 @@ test("nextAuxSymlinkName treats files directories and symlinks as the same colli
       "notes.md",
     ),
   ).toBe("notes.md - 链接 4");
+});
+
+test("collectAuxSubtreeIds includes descendants", () => {
+  const root = {
+    ...auxNode("dir"),
+    nodeType: "dir" as const,
+    children: [{ ...auxNode("child"), children: [auxNode("leaf")] }],
+  };
+
+  expect([...collectAuxSubtreeIds(root)]).toEqual(["dir", "child", "leaf"]);
+});
+
+test("resolveAuxHierarchyMove moves into a hovered directory", () => {
+  const move = resolveAux(
+    [rawAuxNode("source"), rawAuxNode("dir", { nodeType: "dir" })],
+    "source",
+    "dir",
+  );
+
+  expect(move).toEqual({
+    nodeId: "source",
+    newParentId: "dir",
+  });
+});
+
+test("resolveAuxHierarchyMove maps a hovered file to its parent directory", () => {
+  const move = resolveAux(
+    [rawAuxNode("source"), rawAuxNode("dir", { nodeType: "dir" }, [rawAuxNode("file")])],
+    "source",
+    "file",
+  );
+
+  expect(move).toEqual({
+    nodeId: "source",
+    newParentId: "dir",
+  });
+});
+
+test("resolveAuxHierarchyMove maps a hovered top-level file to root", () => {
+  const move = resolveAux(
+    [rawAuxNode("dir", { nodeType: "dir" }, [rawAuxNode("source")]), rawAuxNode("file")],
+    "source",
+    "file",
+  );
+
+  expect(move).toEqual({
+    nodeId: "source",
+    newParentId: "aux_root",
+  });
+});
+
+test("resolveAuxHierarchyMove still returns null for top-level no-op moves", () => {
+  expect(resolveAux([rawAuxNode("source"), rawAuxNode("file")], "source", "file")).toBeNull();
+});
+
+test("resolveAuxHierarchyMove maps a blank-area drop to the root", () => {
+  const move = resolveAux(
+    [rawAuxNode("dir", { nodeType: "dir" }, [rawAuxNode("source")])],
+    "source",
+    null,
+  );
+
+  expect(move).toEqual({
+    nodeId: "source",
+    newParentId: "aux_root",
+  });
+});
+
+test("resolveAuxHierarchyMove returns null for same-parent moves", () => {
+  expect(
+    resolveAux(
+      [rawAuxNode("dir", { nodeType: "dir" }, [rawAuxNode("source"), rawAuxNode("file")])],
+      "source",
+      "file",
+    ),
+  ).toBeNull();
+});
+
+test("resolveAuxHierarchyMove rejects moving into itself or its subtree", () => {
+  const nodes = [
+    rawAuxNode("dir", { nodeType: "dir" }, [
+      rawAuxNode("child-dir", { nodeType: "dir" }, [rawAuxNode("leaf")]),
+    ]),
+    rawAuxNode("sibling"),
+  ];
+
+  expect(resolveAux(nodes, "dir", "dir")).toBeNull();
+  expect(resolveAux(nodes, "dir", "child-dir")).toBeNull();
+  expect(resolveAux(nodes, "dir", "leaf")).toBeNull();
+});
+
+test("resolveAuxHierarchyMove rejects deleted targets", () => {
+  expect(
+    resolveAux(
+      [rawAuxNode("source"), rawAuxNode("deleted-dir", { nodeType: "dir", isDeleted: true })],
+      "source",
+      "deleted-dir",
+    ),
+  ).toBeNull();
 });

@@ -35,6 +35,7 @@ test("AuxTreePanel renders create-symlink actions for non-deleted entries only",
         }),
         createAuxNode({ id: "deleted_1", name: "旧资料", isDeleted: true }),
       ]}
+      rootId="aux_root"
       expandedIds={new Set()}
       onToggle={() => {}}
       activeId={null}
@@ -43,6 +44,7 @@ test("AuxTreePanel renders create-symlink actions for non-deleted entries only",
       onCreateChildDir={() => {}}
       onCreateChildFile={() => {}}
       onCreateSymlink={() => {}}
+      onMove={() => {}}
       onDelete={() => {}}
       onRestore={() => {}}
       isBusy={false}
@@ -55,4 +57,35 @@ test("AuxTreePanel renders create-symlink actions for non-deleted entries only",
   expect(html).toContain('data-action-anchor="aux:create-symlink:file_1"');
   expect(html).toContain('data-action-anchor="aux:create-symlink:symlink_1"');
   expect(html).not.toContain('data-action-anchor="aux:create-symlink:deleted_1"');
+});
+
+test("AuxTreePanel exposes drag handles for non-deleted entries only", () => {
+  const html = renderToStaticMarkup(
+    <AuxTreePanel
+      tree={[
+        createAuxNode({ id: "dir_1", name: "设定", nodeType: "dir" }),
+        createAuxNode({ id: "file_1", name: "notes.md" }),
+        createAuxNode({ id: "deleted_1", name: "旧资料", isDeleted: true }),
+      ]}
+      rootId="aux_root"
+      expandedIds={new Set()}
+      onToggle={() => {}}
+      activeId={null}
+      onSelect={() => {}}
+      onRename={async () => true}
+      onCreateChildDir={() => {}}
+      onCreateChildFile={() => {}}
+      onCreateSymlink={() => {}}
+      onMove={() => {}}
+      onDelete={() => {}}
+      onRestore={() => {}}
+      isBusy={false}
+      isPending={false}
+      showTimelineChanges={false}
+    />,
+  );
+
+  expect(html).toContain('data-drag-handle="dir_1"');
+  expect(html).toContain('data-drag-handle="file_1"');
+  expect(html).not.toContain('data-drag-handle="deleted_1"');
 });

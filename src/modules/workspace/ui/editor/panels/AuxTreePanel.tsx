@@ -1,4 +1,11 @@
-import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { AuxNodeIcon } from "@/modules/workspace/ui/editor/components/icons";
 import { InlineEditableText } from "@/shared/ui/InlineEditableText";
@@ -12,7 +19,26 @@ import {
 import { PanelPlaceholder } from "@/shared/ui/PanelPlaceholder";
 import { RefreshOverlay } from "@/shared/ui/RefreshOverlay";
 import { actionAnchorId } from "@/modules/workspace/ui/editor/model/action-error";
+import {
+  buildAuxParentMap,
+  collectAuxSubtreeIds,
+  resolveAuxHierarchyMove,
+  type AuxHierarchyMoveIntent,
+} from "@/modules/workspace/ui/editor/model/tree";
 import type { AuxTreeNodeVM } from "@/modules/workspace/ui/editor/model/types";
+import { cn } from "@/shared/lib/cn";
+
+const AUX_ROW_SELECTOR = "[data-row-id]";
+const DRAG_START_DISTANCE = 4;
+
+type AuxDropIndicatorTarget = { mode: "node"; nodeId: string } | { mode: "root" };
+
+type DropIndicatorRect = {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+};
 
 function AuxTreeNodeRow({
   node,
@@ -28,6 +54,10 @@ function AuxTreeNodeRow({
   onCreateSymlink,
   onDelete,
   onRestore,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  isDragging,
   isBusy,
   showTimelineChanges,
 }: {
@@ -44,12 +74,24 @@ function AuxTreeNodeRow({
   onCreateSymlink: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onDelete: (_id: string, _anchorId: string) => void;
   onRestore: (_id: string, _anchorId: string) => void;
+  onDragStart: (_nodeId: string) => void;
+  onDragMove: (_nodeId: string, _point: { x: number; y: number }) => void;
+  onDragEnd: (_nodeId: string, _point: { x: number; y: number }) => void;
+  isDragging: boolean;
   isBusy: boolean;
   showTimelineChanges: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
+  const pointerDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+  } | null>(null);
   const isDir = node.nodeType === "dir";
   const isDeleted = node.isDeleted;
+  const canDrag = !isDeleted;
+  const dragDisabled = isBusy || isEditing || !canDrag;
   const contentStateClass = isDeleted
     ? "text-red-300 opacity-55"
     : showTimelineChanges && !node.hasTimelineChange
@@ -63,14 +105,78 @@ function AuxTreeNodeRow({
   const restoreAnchorId = actionAnchorId("aux", "restore", node.id);
   const canRestore = showTimelineChanges && node.hasTimelineChange;
 
+  const handleDragPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (dragDisabled || event.button !== 0) {
+      return;
+    }
+
+    pointerDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleDragPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const dragState = pointerDragRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const distance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
+    if (!dragState.dragging) {
+      if (distance < DRAG_START_DISTANCE) {
+        return;
+      }
+
+      dragState.dragging = true;
+      onDragStart(node.id);
+    }
+
+    event.preventDefault();
+    onDragMove(node.id, { x: event.clientX, y: event.clientY });
+  };
+
+  const handleDragPointerEnd = (event: ReactPointerEvent<HTMLElement>) => {
+    const dragState = pointerDragRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    pointerDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (dragState.dragging) {
+      event.preventDefault();
+      onDragEnd(node.id, { x: event.clientX, y: event.clientY });
+    }
+  };
+
+  const dragStartProps = canDrag
+    ? {
+        onPointerDown: handleDragPointerDown,
+        onPointerMove: handleDragPointerMove,
+        onPointerUp: handleDragPointerEnd,
+        onPointerCancel: handleDragPointerEnd,
+      }
+    : {};
+
   const icon = (
-    <span className={`inline-flex shrink-0 items-center ${contentStateClass}`}>
+    <span
+      className={`inline-flex shrink-0 touch-none items-center ${contentStateClass}`}
+      data-drag-handle={canDrag ? node.id : undefined}
+      {...dragStartProps}
+    >
       <AuxNodeIcon nodeType={isDir ? (isExpanded ? "dir-open" : "dir") : node.nodeType} />
     </span>
   );
 
   const label = (
-    <span className={`min-w-0 flex-1 ${contentStateClass}`}>
+    <span className={`min-w-0 flex-1 touch-none ${contentStateClass}`} {...dragStartProps}>
       <InlineEditableText
         value={node.name}
         disabled={isBusy || isDeleted}
@@ -86,14 +192,24 @@ function AuxTreeNodeRow({
     </span>
   );
 
+  const sharedProps = {
+    layout: "position" as const,
+    dataRowId: node.id,
+    dataNodeId: node.id,
+    depth,
+    isActive,
+    group: true,
+    anchorId: rowAnchorId,
+    className: cn(
+      "relative list-none",
+      isDragging ? "pointer-events-none z-10 opacity-75 shadow-sm" : "",
+    ),
+  };
+
   if (isDir) {
     return (
       <SidebarListRow
-        layout="position"
-        depth={depth}
-        isActive={isActive}
-        group
-        anchorId={rowAnchorId}
+        {...sharedProps}
         onClick={() => {
           onSelect(node);
           if (hasChildren && !isExpanded) {
@@ -160,11 +276,7 @@ function AuxTreeNodeRow({
 
   return (
     <SidebarListRow
-      layout="position"
-      depth={depth}
-      isActive={isActive}
-      group
-      anchorId={rowAnchorId}
+      {...sharedProps}
       onClick={() => onSelect(node)}
       leading={<ExpandToggle hasChildren={false} expanded={false} />}
       icon={icon}
@@ -209,8 +321,45 @@ function AuxTreeNodeRow({
   );
 }
 
+function DropIndicatorOverlay({ rect }: { rect: DropIndicatorRect }) {
+  return (
+    <motion.span
+      className="pointer-events-none absolute z-30 block"
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{
+        opacity: 1,
+        scale: 1,
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      }}
+      exit={{
+        opacity: 0,
+        scale: 0.96,
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      }}
+      transition={{ duration: 0.14, ease: "easeOut" }}
+      style={{
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+        originX: 0,
+        originY: 0.5,
+      }}
+    >
+      <span className="absolute inset-0 border border-drag-border bg-list-hover-background/40" />
+    </motion.span>
+  );
+}
+
 export function AuxTreePanel({
   tree,
+  rootId,
   expandedIds,
   onToggle,
   activeId,
@@ -219,6 +368,7 @@ export function AuxTreePanel({
   onCreateChildDir,
   onCreateChildFile,
   onCreateSymlink,
+  onMove,
   onDelete,
   onRestore,
   isBusy,
@@ -226,6 +376,7 @@ export function AuxTreePanel({
   showTimelineChanges,
 }: {
   tree: AuxTreeNodeVM[];
+  rootId: string | null;
   expandedIds: Set<string>;
   onToggle: (_id: string) => void;
   activeId: string | null;
@@ -234,12 +385,100 @@ export function AuxTreePanel({
   onCreateChildDir: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onCreateChildFile: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onCreateSymlink: (_node: AuxTreeNodeVM, _anchorId: string) => void;
+  onMove: (_intent: AuxHierarchyMoveIntent) => void;
   onDelete: (_id: string, _anchorId: string) => void;
   onRestore: (_id: string, _anchorId: string) => void;
   isBusy: boolean;
   isPending: boolean;
   showTimelineChanges: boolean;
 }) {
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropIntent, setDropIntent] = useState<AuxHierarchyMoveIntent | null>(null);
+  const [dropIndicatorRect, setDropIndicatorRect] = useState<DropIndicatorRect | null>(null);
+  const [panelMinHeight, setPanelMinHeight] = useState<number | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const subtreeIdsRef = useRef<Set<string>>(new Set());
+  const panelNodeMap = useMemo(() => buildPanelNodeMap(tree), [tree]);
+  const panelParentMap = useMemo(() => buildAuxParentMap(tree), [tree]);
+  const visibleSubtreeTailMap = useMemo(
+    () => buildVisibleSubtreeTailMap(tree, expandedIds),
+    [expandedIds, tree],
+  );
+  const dropIndicatorTarget = useMemo(
+    () => resolveDropIndicatorTarget(dropIntent, panelNodeMap, panelParentMap, rootId),
+    [dropIntent, panelNodeMap, panelParentMap, rootId],
+  );
+
+  useLayoutEffect(() => {
+    const panelElement = panelRef.current;
+    const viewportElement = panelElement?.closest(".simplebar-content")?.parentElement;
+    if (!(panelElement instanceof HTMLElement) || !(viewportElement instanceof HTMLElement)) {
+      setPanelMinHeight(null);
+      return;
+    }
+
+    const updateMinHeight = () => {
+      setPanelMinHeight(viewportElement.clientHeight);
+    };
+
+    updateMinHeight();
+    const observer = new ResizeObserver(() => {
+      updateMinHeight();
+    });
+    observer.observe(viewportElement);
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const panelElement = panelRef.current;
+    if (!panelElement || !dropIndicatorTarget) {
+      setDropIndicatorRect(null);
+      return;
+    }
+
+    const panelRect = panelElement.getBoundingClientRect();
+
+    if (dropIndicatorTarget.mode === "root") {
+      const visibleRows = panelElement.querySelectorAll(AUX_ROW_SELECTOR);
+      const firstVisibleRow = visibleRows.item(0);
+      const lastVisibleRow = visibleRows.item(visibleRows.length - 1);
+      if (!(firstVisibleRow instanceof HTMLElement) || !(lastVisibleRow instanceof HTMLElement)) {
+        setDropIndicatorRect(null);
+        return;
+      }
+
+      const firstRect = firstVisibleRow.getBoundingClientRect();
+      const lastRect = lastVisibleRow.getBoundingClientRect();
+      const top = Math.max(firstRect.top - panelRect.top, 0);
+      const left = 0;
+      const width = Math.max(panelRect.width, 24);
+      const bottom = Math.max(panelRect.height, lastRect.bottom - panelRect.top);
+      const height = Math.max(bottom - top, firstRect.height);
+      setDropIndicatorRect({ top, left, width, height });
+      return;
+    }
+
+    const targetElement = panelElement.querySelector(
+      `[data-row-id="${CSS.escape(dropIndicatorTarget.nodeId)}"]`,
+    );
+    const tailId =
+      visibleSubtreeTailMap.get(dropIndicatorTarget.nodeId) ?? dropIndicatorTarget.nodeId;
+    const tailElement = panelElement.querySelector(`[data-row-id="${CSS.escape(tailId)}"]`);
+    if (!(targetElement instanceof HTMLElement) || !(tailElement instanceof HTMLElement)) {
+      setDropIndicatorRect(null);
+      return;
+    }
+
+    const targetRect = targetElement.getBoundingClientRect();
+    const tailRect = tailElement.getBoundingClientRect();
+    setDropIndicatorRect({
+      top: targetRect.top - panelRect.top,
+      left: Math.max(targetRect.left - panelRect.left, 0),
+      width: Math.max(targetRect.width, 24),
+      height: Math.max(tailRect.bottom - targetRect.top, targetRect.height),
+    });
+  }, [dropIndicatorTarget, visibleSubtreeTailMap]);
+
   if (tree.length === 0) {
     return (
       <PanelPlaceholder
@@ -248,6 +487,91 @@ export function AuxTreePanel({
       />
     );
   }
+
+  const findDropIntent = (nodeId: string, point: { x: number; y: number }) => {
+    const source = document.elementFromPoint(point.x, point.y);
+    const row = source?.closest(AUX_ROW_SELECTOR);
+
+    if (!(row instanceof HTMLElement)) {
+      return findBlankAreaDropIntent(nodeId, point);
+    }
+
+    const targetId = row.dataset.rowId;
+    if (!targetId || targetId === nodeId || subtreeIdsRef.current.has(targetId)) {
+      return null;
+    }
+
+    const nextIntent = { nodeId, targetId };
+    const resolved = resolveAuxHierarchyMove({
+      parentMap: panelParentMap,
+      nodeMap: panelNodeMap,
+      auxRootId: rootId,
+      ...nextIntent,
+    });
+    return resolved ? nextIntent : null;
+  };
+
+  const findBlankAreaDropIntent = (nodeId: string, point: { x: number; y: number }) => {
+    const panelElement = panelRef.current;
+    if (!panelElement) {
+      return null;
+    }
+
+    const panelRect = panelElement.getBoundingClientRect();
+    if (
+      point.x < panelRect.left ||
+      point.x > panelRect.right ||
+      point.y < panelRect.top ||
+      point.y > panelRect.bottom
+    ) {
+      return null;
+    }
+
+    const visibleRows = panelElement.querySelectorAll(AUX_ROW_SELECTOR);
+    const lastVisibleRow = visibleRows.item(visibleRows.length - 1);
+    if (!(lastVisibleRow instanceof HTMLElement)) {
+      return null;
+    }
+
+    if (point.y < lastVisibleRow.getBoundingClientRect().bottom) {
+      return null;
+    }
+
+    const nextIntent = {
+      nodeId,
+      targetId: null,
+    };
+    const resolved = resolveAuxHierarchyMove({
+      parentMap: panelParentMap,
+      nodeMap: panelNodeMap,
+      auxRootId: rootId,
+      ...nextIntent,
+    });
+    return resolved ? nextIntent : null;
+  };
+
+  const handleDragStart = (nodeId: string) => {
+    const node = panelNodeMap.get(nodeId) ?? null;
+    subtreeIdsRef.current = node ? collectAuxSubtreeIds(node) : new Set([nodeId]);
+    setDraggedId(nodeId);
+    setDropIntent(null);
+  };
+
+  const handleDragMove = (nodeId: string, point: { x: number; y: number }) => {
+    setDropIntent(findDropIntent(nodeId, point));
+  };
+
+  const handleDragEnd = (nodeId: string, point: { x: number; y: number }) => {
+    const finalIntent = findDropIntent(nodeId, point) ?? dropIntent;
+    setDraggedId(null);
+    setDropIntent(null);
+    setDropIndicatorRect(null);
+    subtreeIdsRef.current = new Set();
+
+    if (finalIntent) {
+      onMove(finalIntent);
+    }
+  };
 
   const renderRow = (ctx: TreeRowContext<AuxTreeNodeVM>) => (
     <AuxTreeNodeRow
@@ -264,13 +588,22 @@ export function AuxTreePanel({
       onCreateSymlink={onCreateSymlink}
       onDelete={onDelete}
       onRestore={onRestore}
+      onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
+      onDragEnd={handleDragEnd}
+      isDragging={draggedId === ctx.node.id}
       isBusy={isBusy}
       showTimelineChanges={showTimelineChanges}
     />
   );
 
   return (
-    <div className="relative pb-2" aria-busy={isPending}>
+    <div
+      ref={panelRef}
+      className="relative min-h-full pb-2"
+      style={panelMinHeight == null ? undefined : { minHeight: panelMinHeight }}
+      aria-busy={isPending}
+    >
       <RefreshOverlay active={isPending} />
       <div
         inert={isPending}
@@ -286,7 +619,85 @@ export function AuxTreePanel({
           getChildren={(node) => node.children}
           renderRow={renderRow}
         />
+        <AnimatePresence>
+          {dropIndicatorRect ? (
+            <DropIndicatorOverlay key="aux-drop-indicator" rect={dropIndicatorRect} />
+          ) : null}
+        </AnimatePresence>
       </div>
     </div>
   );
+}
+
+function buildPanelNodeMap(nodes: AuxTreeNodeVM[]) {
+  const map = new Map<string, AuxTreeNodeVM>();
+
+  const walk = (currentNodes: AuxTreeNodeVM[]) => {
+    for (const node of currentNodes) {
+      map.set(node.id, node);
+      walk(node.children);
+    }
+  };
+
+  walk(nodes);
+  return map;
+}
+
+function buildVisibleSubtreeTailMap(nodes: AuxTreeNodeVM[], expandedIds: ReadonlySet<string>) {
+  const map = new Map<string, string>();
+
+  const walk = (visibleNodes: AuxTreeNodeVM[]) => {
+    for (const node of visibleNodes) {
+      map.set(node.id, findVisibleSubtreeTailId(node, expandedIds));
+      if (expandedIds.has(node.id)) {
+        walk(node.children);
+      }
+    }
+  };
+
+  walk(nodes);
+  return map;
+}
+
+function findVisibleSubtreeTailId(node: AuxTreeNodeVM, expandedIds: ReadonlySet<string>) {
+  if (!expandedIds.has(node.id) || node.children.length === 0) {
+    return node.id;
+  }
+
+  return findVisibleSubtreeTailId(node.children[node.children.length - 1]!, expandedIds);
+}
+
+function resolveDropIndicatorTarget(
+  intent: AuxHierarchyMoveIntent | null,
+  nodeMap: ReadonlyMap<string, AuxTreeNodeVM>,
+  parentMap: ReadonlyMap<string, string | null>,
+  rootId: string | null,
+): AuxDropIndicatorTarget | null {
+  if (!intent) {
+    return null;
+  }
+
+  if (intent.targetId === null) {
+    return { mode: "root" };
+  }
+
+  const target = nodeMap.get(intent.targetId);
+  if (!target || target.isDeleted) {
+    return null;
+  }
+
+  if (target.nodeType === "dir") {
+    return { mode: "node", nodeId: target.id };
+  }
+
+  const parentId = parentMap.get(target.id) ?? rootId;
+  if (!parentId) {
+    return null;
+  }
+
+  if (parentId === rootId) {
+    return { mode: "root" };
+  }
+
+  return { mode: "node", nodeId: parentId };
 }

@@ -44,6 +44,13 @@ function buildAuxMaps(nodes: AuxTreeNodeVM[], parentId: string | null = null) {
 function createWorkspaceState(input: {
   auxTree: AuxTreeNodeVM[];
   auxRootId?: string;
+  moveMutate?: (_input: {
+    workspaceId: string;
+    timelinePointId: string;
+    nodeId: string;
+    newParentDirId: string;
+    newName: string;
+  }) => Promise<{ id: string }>;
   linkMutate?: (_input: {
     workspaceId: string;
     timelinePointId: string;
@@ -92,7 +99,14 @@ function createWorkspaceState(input: {
             id: "aux_link_new",
           })),
       },
-      moveAux: { isPending: false, mutate: mock(async () => ({ id: "aux_moved" })) },
+      moveAux: {
+        isPending: false,
+        mutate:
+          input.moveMutate ??
+          mock(async () => ({
+            id: "aux_moved",
+          })),
+      },
       deleteAux: { isPending: false, mutate: mock(async () => undefined) },
       restoreAux: { isPending: false, mutate: mock(async () => undefined) },
     },
@@ -203,5 +217,48 @@ test("handleAuxCreateSymlink links to the symlink node itself when invoked on a 
     parentDirId: "aux_root",
     name: "角色入口 - 链接 1",
     targetNodeId: "aux_link_source",
+  });
+});
+
+test("handleAuxMove moves a node into a directory and keeps its current name", async () => {
+  const workspace = createWorkspaceState({
+    auxTree: [
+      createAuxNode({ id: "dir_target", name: "设定", nodeType: "dir" }),
+      createAuxNode({ id: "file_source", name: "notes.md" }),
+    ],
+  });
+  const { actions, store } = renderActions(workspace);
+
+  store.getState().setActiveTimelinePointId("timeline_1");
+  await actions.handleAuxMove({ nodeId: "file_source", targetId: "dir_target" });
+
+  expect(workspace.aux.moveAux.mutate).toHaveBeenCalledWith({
+    workspaceId: "workspace_1",
+    timelinePointId: "timeline_1",
+    nodeId: "file_source",
+    newParentDirId: "dir_target",
+    newName: "notes.md",
+  });
+  expect(store.getState().expandedAuxIds.has("dir_target")).toBe(true);
+});
+
+test("handleAuxMove reports server errors on the source row anchor", async () => {
+  const workspace = createWorkspaceState({
+    auxTree: [
+      createAuxNode({ id: "dir_target", name: "设定", nodeType: "dir" }),
+      createAuxNode({ id: "file_source", name: "notes.md" }),
+    ],
+    moveMutate: mock(async () => {
+      throw new Error("重名冲突");
+    }),
+  });
+  const { actions, store } = renderActions(workspace);
+
+  store.getState().setActiveTimelinePointId("timeline_1");
+  await actions.handleAuxMove({ nodeId: "file_source", targetId: "dir_target" });
+
+  expect(store.getState().auxError).toEqual({
+    message: "重名冲突",
+    anchorId: "aux:row:file_source",
   });
 });
