@@ -9,7 +9,6 @@ import type {
 import {
   AnimatedHeadRow,
   ArchivedSectionToggleRow,
-  ModelHint,
   ModelPicker,
   RunSummaryRow,
   SessionStatusOverlay,
@@ -20,7 +19,6 @@ import {
   getAssistantToolTrace,
   getMessageText,
   getRunSummaryByDisplayNode,
-  listAssistantContextDetails,
 } from "./assistantState";
 import { type AssistantStreamOverlay, useAiAssistantController } from "./useAiAssistantController";
 import { useAssistantSheetLayout } from "./useAssistantSheetLayout";
@@ -41,7 +39,6 @@ export function AiSidebar({
   const [expandedReasoningKeys, setExpandedReasoningKeys] = useState<Set<string>>(new Set());
   const [expandedRunSummaryKeys, setExpandedRunSummaryKeys] = useState<Set<string>>(new Set());
   const [shouldStickToBottom, setShouldStickToBottom] = useState(true);
-  const contextDetails = listAssistantContextDetails(controller.contextSnapshot);
   const pendingSendSummary =
     controller.activeStream?.kind === "send"
       ? buildStreamRunSummary(controller.activeStream)
@@ -505,23 +502,6 @@ export function AiSidebar({
         composerPane={
           <form className="shrink-0" aria-label="AI 对话输入" onSubmit={controller.handleSubmit}>
             <div className="space-y-2 p-2">
-              <div className="rounded-lg border border-border bg-sidebar-background px-2.5 py-2">
-                <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-foreground-muted">
-                  <span className="icon-[material-symbols--my-location] text-sm text-accent-foreground" />
-                  <span>当前上下文</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {contextDetails.map((item) => (
-                    <span
-                      key={item.label}
-                      className="rounded-md border border-border bg-editor-background px-2 py-1 text-[11px] leading-4 text-foreground"
-                    >
-                      <span className="text-foreground-muted">{item.label}:</span> {item.value}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
               <div className="overflow-hidden rounded-lg border border-border bg-editor-background focus-within:border-accent-foreground">
                 <textarea
                   value={controller.draft}
@@ -571,23 +551,11 @@ export function AiSidebar({
                 </div>
               </div>
 
-              <div
-                className={`flex items-center gap-1.5 text-[11px] ${
-                  controller.canSubmit ? "text-foreground-muted" : "text-accent-foreground"
-                }`}
-              >
-                <ModelHint
-                  canSend={controller.canSubmit}
-                  hasActiveHead={controller.activeThreadId != null}
-                  selectedConnectionId={controller.selectedConnectionId}
-                  selectedModelId={controller.selectedModelId}
-                  hasDraft={controller.hasDraft}
-                  isLoadingSelection={controller.isLoadingSelection}
-                  isGenerating={controller.isGenerating}
-                  isSessionBusy={controller.isThreadBusy}
-                  hasPendingAttempt={controller.pendingRun != null}
-                  errorMessage={controller.composerError}
-                />
+              <div className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
+                <span className="inline-flex items-center gap-1 rounded border border-border bg-editor-background px-1.5 py-px text-[10px] leading-4 text-foreground">
+                  <span className="icon-[material-symbols--my-location] shrink-0 text-[12px] text-accent-foreground" />
+                  <span>当前上下文</span>
+                </span>
               </div>
             </div>
           </form>
