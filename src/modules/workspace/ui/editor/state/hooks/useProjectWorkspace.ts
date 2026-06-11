@@ -18,6 +18,9 @@ type RefreshableQueryState = {
   isStale: boolean;
   error: unknown;
 };
+type PendingMutationState = {
+  isPending: boolean;
+};
 type WorkspaceIdentityRow = NonNullable<ReturnType<typeof rpc.useQuery<"workspaces.get">>["data"]>;
 
 export function selectVisibleAuxSnapshot(
@@ -31,6 +34,10 @@ export function isQueryRefreshing(query: RefreshableQueryState, hasVisibleData: 
   return (
     !query.isSkipped && hasVisibleData && (query.isRefetching || query.isStale) && !query.error
   );
+}
+
+export function isAuxBusy(mutations: PendingMutationState[]) {
+  return mutations.some((mutation) => mutation.isPending);
 }
 
 export function resolveProjectWorkspaceIdentity({
@@ -210,6 +217,7 @@ export function useProjectAuxData(
 
   const mkdirAux = rpc.useMutation("aux.mkdir");
   const writeFileAux = rpc.useMutation("aux.writeFile");
+  const linkAux = rpc.useMutation("aux.link");
   const moveAux = rpc.useMutation("aux.move");
   const deleteAux = rpc.useMutation("aux.delete");
   const restoreAux = rpc.useMutation("aux.restore");
@@ -220,12 +228,7 @@ export function useProjectAuxData(
   );
   const rootId = visibleAuxSnapshot?.rootNodeId ?? null;
 
-  const busy =
-    mkdirAux.isPending ||
-    writeFileAux.isPending ||
-    moveAux.isPending ||
-    deleteAux.isPending ||
-    restoreAux.isPending;
+  const busy = isAuxBusy([mkdirAux, writeFileAux, linkAux, moveAux, deleteAux, restoreAux]);
   const initialLoading =
     !auxQuery.isSkipped && !visibleAuxSnapshot && auxQuery.isInitialLoading && !auxQuery.error;
   const refreshing = isQueryRefreshing(auxQuery, !!visibleAuxSnapshot);
@@ -237,6 +240,7 @@ export function useProjectAuxData(
       query: auxQuery,
       mkdirAux,
       writeFileAux,
+      linkAux,
       moveAux,
       deleteAux,
       restoreAux,
@@ -261,6 +265,7 @@ export function useProjectAuxData(
       deleteAux,
       error,
       initialLoading,
+      linkAux,
       mkdirAux,
       moveAux,
       pending,

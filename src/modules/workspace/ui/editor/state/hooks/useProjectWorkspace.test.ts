@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
 
 import {
+  isAuxBusy,
   isQueryRefreshing,
   resolveProjectWorkspaceIdentity,
   selectVisibleAuxSnapshot,
@@ -81,6 +82,12 @@ test("selectVisibleAuxSnapshot only returns snapshots for the current aux root",
   expect(selectVisibleAuxSnapshot("other-root", snapshot)).toBeUndefined();
   expect(selectVisibleAuxSnapshot(null, snapshot)).toBeUndefined();
   expect(selectVisibleAuxSnapshot("aux-root", undefined)).toBeUndefined();
+});
+
+test("isAuxBusy treats link mutations as part of aux busy state", () => {
+  expect(isAuxBusy([{ isPending: false }, { isPending: false }, { isPending: true }])).toBe(true);
+
+  expect(isAuxBusy([{ isPending: false }, { isPending: false }, { isPending: false }])).toBe(false);
 });
 
 test("resolveProjectWorkspaceIdentity rejects workspaces from another project", () => {

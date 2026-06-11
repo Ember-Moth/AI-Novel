@@ -15,6 +15,7 @@ import {
   listAuxSiblings,
   nextAuxDirName,
   nextAuxFileName,
+  nextAuxSymlinkName,
   omitRecordKey,
   resolveContentCreateSiblingPlacement,
   resolveContentMove,
@@ -81,6 +82,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       parentMap: auxParentMap,
       mkdirAux,
       writeFileAux,
+      linkAux,
       moveAux,
       deleteAux,
       restoreAux,
@@ -378,6 +380,43 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       }
     },
     [auxNodeMap, auxRootId, auxTree, expandAuxParent, store, workspaceId, writeFileAux],
+  );
+
+  const createAuxSymlink = useCallback(
+    async (parentDirId: string, targetNodeId: string, targetName: string, anchorId: string) => {
+      const { activeTimelinePointId, setAuxError } = store.getState();
+      if (!workspaceId || !activeTimelinePointId) {
+        return;
+      }
+
+      const siblings = listAuxSiblings(auxTree, auxNodeMap, parentDirId, auxRootId);
+      const name = nextAuxSymlinkName(siblings, targetName);
+
+      clearActionError(setAuxError);
+
+      try {
+        const node = await linkAux.mutate({
+          workspaceId,
+          timelinePointId: activeTimelinePointId,
+          parentDirId,
+          name,
+          targetNodeId,
+        });
+        const state = store.getState();
+        state.setShouldAutoSelectContent(false);
+        state.setPendingContentNodeId(null);
+        state.setPendingAuxNodeId(auxNodeMap.has(node.id) ? null : node.id);
+        state.setActiveAuxNodeId(node.id);
+        expandAuxParent(parentDirId);
+      } catch (error) {
+        setActionError(
+          store.getState().setAuxError,
+          error instanceof Error ? error.message : "创建辅助符号链接失败，请稍后重试。",
+          anchorId,
+        );
+      }
+    },
+    [auxNodeMap, auxRootId, auxTree, expandAuxParent, linkAux, store, workspaceId],
   );
 
   const activateContentNode = useCallback(
@@ -986,6 +1025,18 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
     [createAuxFile],
   );
 
+  const handleAuxCreateSymlink = useCallback(
+    async (node: AuxTreeNodeVM, anchorId: string) => {
+      const parentDirId = auxParentMap.get(node.id) ?? auxRootId;
+      if (!parentDirId) {
+        return;
+      }
+
+      await createAuxSymlink(parentDirId, node.id, node.name, anchorId);
+    },
+    [auxParentMap, auxRootId, createAuxSymlink],
+  );
+
   const handleAuxRename = useCallback(
     async (nodeId: string, name: string) => {
       const { activeTimelinePointId, setAuxError } = store.getState();
@@ -1238,6 +1289,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       handleAuxCreateSiblingFile,
       handleAuxCreateChildDir,
       handleAuxCreateChildFile,
+      handleAuxCreateSymlink,
       handleAuxRename,
       handleAuxDelete,
       handleAuxRestore,

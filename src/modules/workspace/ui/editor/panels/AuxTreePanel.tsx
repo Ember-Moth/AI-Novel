@@ -25,6 +25,7 @@ function AuxTreeNodeRow({
   onRename,
   onCreateChildDir,
   onCreateChildFile,
+  onCreateSymlink,
   onDelete,
   onRestore,
   isBusy,
@@ -40,6 +41,7 @@ function AuxTreeNodeRow({
   onRename: (_nodeId: string, _name: string) => Promise<boolean>;
   onCreateChildDir: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onCreateChildFile: (_node: AuxTreeNodeVM, _anchorId: string) => void;
+  onCreateSymlink: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onDelete: (_id: string, _anchorId: string) => void;
   onRestore: (_id: string, _anchorId: string) => void;
   isBusy: boolean;
@@ -56,6 +58,7 @@ function AuxTreeNodeRow({
   const rowAnchorId = actionAnchorId("aux", "row", node.id);
   const addDirAnchorId = actionAnchorId("aux", "add-dir", node.id);
   const addFileAnchorId = actionAnchorId("aux", "add-file", node.id);
+  const createSymlinkAnchorId = actionAnchorId("aux", "create-symlink", node.id);
   const deleteAnchorId = actionAnchorId("aux", "delete", node.id);
   const restoreAnchorId = actionAnchorId("aux", "restore", node.id);
   const canRestore = showTimelineChanges && node.hasTimelineChange;
@@ -134,6 +137,13 @@ function AuxTreeNodeRow({
                   icon="icon-[material-symbols--note-add]"
                 />
                 <RowActionButton
+                  anchorId={createSymlinkAnchorId}
+                  onClick={() => onCreateSymlink(node, createSymlinkAnchorId)}
+                  disabled={isBusy || isEditing}
+                  title="在同目录创建符号链接"
+                  icon="icon-[material-symbols--link]"
+                />
+                <RowActionButton
                   anchorId={deleteAnchorId}
                   onClick={() => onDelete(node.id, deleteAnchorId)}
                   disabled={isBusy || isEditing}
@@ -176,13 +186,22 @@ function AuxTreeNodeRow({
             />
           ) : null}
           {isDeleted ? null : (
-            <RowActionButton
-              anchorId={deleteAnchorId}
-              onClick={() => onDelete(node.id, deleteAnchorId)}
-              disabled={isBusy || isEditing}
-              title="删除节点"
-              icon="icon-[material-symbols--close]"
-            />
+            <>
+              <RowActionButton
+                anchorId={createSymlinkAnchorId}
+                onClick={() => onCreateSymlink(node, createSymlinkAnchorId)}
+                disabled={isBusy || isEditing}
+                title="在同目录创建符号链接"
+                icon="icon-[material-symbols--link]"
+              />
+              <RowActionButton
+                anchorId={deleteAnchorId}
+                onClick={() => onDelete(node.id, deleteAnchorId)}
+                disabled={isBusy || isEditing}
+                title="删除节点"
+                icon="icon-[material-symbols--close]"
+              />
+            </>
           )}
         </>
       }
@@ -199,6 +218,7 @@ export function AuxTreePanel({
   onRename,
   onCreateChildDir,
   onCreateChildFile,
+  onCreateSymlink,
   onDelete,
   onRestore,
   isBusy,
@@ -213,6 +233,7 @@ export function AuxTreePanel({
   onRename: (_nodeId: string, _name: string) => Promise<boolean>;
   onCreateChildDir: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onCreateChildFile: (_node: AuxTreeNodeVM, _anchorId: string) => void;
+  onCreateSymlink: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onDelete: (_id: string, _anchorId: string) => void;
   onRestore: (_id: string, _anchorId: string) => void;
   isBusy: boolean;
@@ -240,6 +261,7 @@ export function AuxTreePanel({
       onRename={onRename}
       onCreateChildDir={onCreateChildDir}
       onCreateChildFile={onCreateChildFile}
+      onCreateSymlink={onCreateSymlink}
       onDelete={onDelete}
       onRestore={onRestore}
       isBusy={isBusy}

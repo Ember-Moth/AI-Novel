@@ -318,6 +318,15 @@ export function nextAuxFileName(siblings: AuxTreeNodeVM[]): string {
   return `新文件 ${index}`;
 }
 
+export function nextAuxSymlinkName(siblings: AuxTreeNodeVM[], targetName: string): string {
+  const existing = new Set(siblings.map((node) => node.name));
+  let index = 1;
+  while (existing.has(`${targetName} - 链接 ${index}`)) {
+    index += 1;
+  }
+  return `${targetName} - 链接 ${index}`;
+}
+
 export function getAuxRenameValidationError({
   tree,
   nodeMap,

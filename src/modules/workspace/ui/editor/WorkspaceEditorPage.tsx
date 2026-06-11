@@ -424,6 +424,7 @@ function ProjectWorkspace({
                       onSelect={actions.handleAuxSelect}
                       onCreateChildDir={actions.handleAuxCreateChildDir}
                       onCreateChildFile={actions.handleAuxCreateChildFile}
+                      onCreateSymlink={actions.handleAuxCreateSymlink}
                       onRename={actions.handleAuxRename}
                       onDelete={actions.handleAuxDelete}
                       onRestore={actions.handleAuxRestore}

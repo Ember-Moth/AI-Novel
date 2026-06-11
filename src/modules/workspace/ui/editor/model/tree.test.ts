@@ -2,11 +2,12 @@ import { expect, test } from "bun:test";
 
 import { buildContentTreeState } from "./normalize";
 import {
+  nextAuxSymlinkName,
   resolveContentCreateSiblingPlacement,
   resolveContentMove,
   type ContentDropPosition,
 } from "./tree";
-import type { RawContentTreeNode } from "./types";
+import type { AuxTreeNodeVM, RawContentTreeNode } from "./types";
 
 const ROOT_ID = "content_root";
 
@@ -129,4 +130,51 @@ test("resolveContentCreateSiblingPlacement appends to the top level when nothing
     parentId: ROOT_ID,
     afterSiblingId: "c",
   });
+});
+
+function auxNode(name: string): AuxTreeNodeVM {
+  return {
+    id: name,
+    nodeType: "file",
+    name,
+    content: "",
+    path: `/${name}`,
+    symlinkTargetPath: null,
+    hasTimelineChange: false,
+    isDeleted: false,
+    children: [],
+  };
+}
+
+test("nextAuxSymlinkName starts with link 1 when there is no conflict", () => {
+  expect(nextAuxSymlinkName([auxNode("notes.md")], "notes.md")).toBe("notes.md - 链接 1");
+});
+
+test("nextAuxSymlinkName increments until the name is unique", () => {
+  expect(
+    nextAuxSymlinkName(
+      [auxNode("notes.md"), auxNode("notes.md - 链接 1"), auxNode("notes.md - 链接 2")],
+      "notes.md",
+    ),
+  ).toBe("notes.md - 链接 3");
+});
+
+test("nextAuxSymlinkName treats files directories and symlinks as the same collision space", () => {
+  expect(
+    nextAuxSymlinkName(
+      [
+        auxNode("notes.md - 链接 1"),
+        {
+          ...auxNode("notes.md - 链接 2"),
+          nodeType: "dir",
+        },
+        {
+          ...auxNode("notes.md - 链接 3"),
+          nodeType: "symlink",
+          symlinkTargetPath: "/notes.md",
+        },
+      ],
+      "notes.md",
+    ),
+  ).toBe("notes.md - 链接 4");
 });
