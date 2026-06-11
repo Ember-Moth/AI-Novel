@@ -1,5 +1,3 @@
-export const PANEL_COUNT = 3;
-
 /** 固定的 header 高度（px）；折叠时面板即为此高度。需与 SidebarSection header 的高度类保持一致（h-7 = 28px）。 */
 export const HEADER_PX = 28;
 

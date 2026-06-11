@@ -2,10 +2,10 @@ import { useMolecule } from "bunshi/react";
 import { useAtom, useStore } from "jotai";
 import { useCallback, useRef } from "react";
 
-import { SidebarLayoutMolecule } from "../molecules/sidebarLayout";
-import { collapse, expand, reflow, resizeAt, seedHeights } from "../sidebarLayoutMath";
+import { collapse, expand, reflow, resizeAt, seedHeights } from "./layoutMath";
+import { SidebarLayoutMolecule } from "./layoutMolecule";
 
-export function useSidebarLayout() {
+export function useSidebarLayout(panelCount: number) {
   const layout = useMolecule(SidebarLayoutMolecule);
   const store = useStore();
 
@@ -25,7 +25,11 @@ export function useSidebarLayout() {
 
       const wasInitialized = store.get(layout.initializedAtom);
       if (!wasInitialized) {
-        const seeded = seedHeights(rounded, store.get(layout.collapsedAtom));
+        const current = store.get(layout.collapsedAtom);
+        const collapsedSeed =
+          current.length === panelCount ? current : new Array(panelCount).fill(false);
+        const seeded = seedHeights(rounded, collapsedSeed);
+        store.set(layout.collapsedAtom, collapsedSeed);
         store.set(layout.heightsAtom, seeded);
         store.set(layout.rememberedAtom, seeded.slice());
         store.set(layout.containerHeightAtom, rounded);
@@ -46,7 +50,7 @@ export function useSidebarLayout() {
       store.set(layout.heightsAtom, reflowed);
       store.set(layout.containerHeightAtom, rounded);
     },
-    [layout, store],
+    [layout, store, panelCount],
   );
 
   const resizeStart = useCallback(() => {

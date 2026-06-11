@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { FullPageMessage } from "@/shared/ui/FullPageMessage";
 import { IconButton } from "@/shared/ui/IconButton";
 import { PanelPlaceholder } from "@/shared/ui/PanelPlaceholder";
-import { SidebarPanels } from "@/modules/workspace/ui/editor/components/SidebarPanels";
+import { SidebarLayoutScope, SidebarPanels } from "@/shared/ui/sidebar";
 import { actionAnchorId, clearActionError } from "@/modules/workspace/ui/editor/model/action-error";
 import { AuxTreePanel } from "@/modules/workspace/ui/editor/panels/AuxTreePanel";
 import { ContentTreePanel } from "@/modules/workspace/ui/editor/panels/ContentTreePanel";
@@ -47,7 +47,9 @@ export function WorkspaceEditorPage({
 }) {
   return (
     <ScopeProvider scope={ProjectScope} value={projectId}>
-      <ProjectWorkspace projectId={projectId} workspaceId={workspaceId} />
+      <ScopeProvider scope={SidebarLayoutScope} value={`workspace:${projectId}`}>
+        <ProjectWorkspace projectId={projectId} workspaceId={workspaceId} />
+      </ScopeProvider>
     </ScopeProvider>
   );
 }

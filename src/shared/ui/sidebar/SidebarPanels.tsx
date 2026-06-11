@@ -1,9 +1,9 @@
 import { type ReactNode, useEffect, useRef } from "react";
 
-import { ResizeHandle } from "@/modules/workspace/ui/editor/components/ResizeHandle";
-import { SidebarSection } from "@/modules/workspace/ui/editor/components/SidebarSection";
-import { useSidebarLayout } from "@/modules/workspace/ui/editor/state/hooks/useSidebarLayout";
-import { isHandleInteractive } from "@/modules/workspace/ui/editor/state/sidebarLayoutMath";
+import { isHandleInteractive } from "./layoutMath";
+import { ResizeHandle } from "./ResizeHandle";
+import { SidebarSection } from "./SidebarSection";
+import { useSidebarLayout } from "./useSidebarLayout";
 
 export type SidebarPanelSpec = {
   title: string;
@@ -21,7 +21,7 @@ export function SidebarPanels({ panels }: { panels: SidebarPanelSpec[] }) {
     resize,
     resizeEnd,
     toggleCollapse,
-  } = useSidebarLayout();
+  } = useSidebarLayout(panels.length);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

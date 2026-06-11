@@ -1,4 +1,5 @@
 import { skipToken } from "@codehz/rpc/react";
+import { ScopeProvider } from "bunshi/react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -9,7 +10,7 @@ import {
   lastWorkspaceRouteAtom,
   projectBranchSelectionAtom,
 } from "@/app/state/lastProject";
-import { SidebarSection } from "@/modules/workspace/ui/editor/components/SidebarSection";
+import { SidebarLayoutScope, SidebarPanels } from "@/shared/ui/sidebar";
 import { rpc } from "@/rpc/client";
 import { cn } from "@/shared/lib/cn";
 import { createProjectId } from "@/shared/lib/domain";
@@ -525,27 +526,29 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
         active="home"
         sidebar={
           projectId && project ? (
-            <ProjectWorkbenchSidebar
-              project={project}
-              branches={sortedBranches}
-              branchesLoading={branchesQuery.isInitialLoading && sortedBranches.length === 0}
-              branchesError={branchesQuery.error?.message ?? null}
-              selectedBranch={selectedBranch}
-              defaultBranch={defaultBranch}
-              defaultWorkspace={defaultWorkspace}
-              detailName={detailName}
-              detailDescription={detailDescription}
-              detailError={detailError ?? updateProject.error?.message ?? null}
-              isSaving={updateProject.isPending}
-              onNameChange={setDetailName}
-              onDescriptionChange={setDetailDescription}
-              onMetadataCommit={() => void commitProjectMetadata()}
-              onSelectBranch={rememberSelectedBranch}
-              onCreateBranch={openCreateBranchDialog}
-              onOpenWorkspace={(workspaceId) =>
-                navigate(`/project/${project.id}/workspace/${workspaceId}`)
-              }
-            />
+            <ScopeProvider scope={SidebarLayoutScope} value={`projects:${project.id}`}>
+              <ProjectWorkbenchSidebar
+                project={project}
+                branches={sortedBranches}
+                branchesLoading={branchesQuery.isInitialLoading && sortedBranches.length === 0}
+                branchesError={branchesQuery.error?.message ?? null}
+                selectedBranch={selectedBranch}
+                defaultBranch={defaultBranch}
+                defaultWorkspace={defaultWorkspace}
+                detailName={detailName}
+                detailDescription={detailDescription}
+                detailError={detailError ?? updateProject.error?.message ?? null}
+                isSaving={updateProject.isPending}
+                onNameChange={setDetailName}
+                onDescriptionChange={setDetailDescription}
+                onMetadataCommit={() => void commitProjectMetadata()}
+                onSelectBranch={rememberSelectedBranch}
+                onCreateBranch={openCreateBranchDialog}
+                onOpenWorkspace={(workspaceId) =>
+                  navigate(`/project/${project.id}/workspace/${workspaceId}`)
+                }
+              />
+            </ScopeProvider>
           ) : undefined
         }
       >
@@ -833,9 +836,6 @@ function ProjectWorkbenchSidebar({
   onCreateBranch: () => void;
   onOpenWorkspace: (_workspaceId: string) => void;
 }) {
-  const [branchesCollapsed, setBranchesCollapsed] = useState(false);
-  const [metaCollapsed, setMetaCollapsed] = useState(false);
-
   return (
     <AppSidebar>
       <div className="border-b border-border px-3 py-3">
@@ -845,56 +845,49 @@ function ProjectWorkbenchSidebar({
         <div className="mt-1 truncate text-sm font-medium text-foreground">{project.name}</div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className={cn("min-h-0", branchesCollapsed ? "shrink-0" : "flex-1")}>
-          <SidebarSection
-            title={`Branches · ${branches.length}`}
-            actions={
+      <SidebarPanels
+        panels={[
+          {
+            title: `Branches · ${branches.length}`,
+            actions: (
               <IconButton
                 icon="icon-[material-symbols--add]"
                 title="新建分支"
                 onClick={onCreateBranch}
               />
-            }
-            collapsed={branchesCollapsed}
-            onToggleCollapse={() => setBranchesCollapsed((current) => !current)}
-          >
-            <ProjectBranchListPanel
-              project={project}
-              branches={branches}
-              branchesLoading={branchesLoading}
-              branchesError={branchesError}
-              selectedBranch={selectedBranch}
-              onSelectBranch={onSelectBranch}
-            />
-          </SidebarSection>
-        </div>
-
-        <div
-          className={cn("min-h-0 border-t border-border", metaCollapsed ? "shrink-0" : "flex-1")}
-        >
-          <SidebarSection
-            title="Project Meta"
-            collapsed={metaCollapsed}
-            onToggleCollapse={() => setMetaCollapsed((current) => !current)}
-          >
-            <ProjectMetaPanel
-              project={project}
-              detailName={detailName}
-              detailDescription={detailDescription}
-              detailError={detailError}
-              isSaving={isSaving}
-              defaultBranch={defaultBranch}
-              defaultWorkspace={defaultWorkspace}
-              branchCount={branches.length}
-              onNameChange={onNameChange}
-              onDescriptionChange={onDescriptionChange}
-              onMetadataCommit={onMetadataCommit}
-              onOpenWorkspace={onOpenWorkspace}
-            />
-          </SidebarSection>
-        </div>
-      </div>
+            ),
+            content: (
+              <ProjectBranchListPanel
+                project={project}
+                branches={branches}
+                branchesLoading={branchesLoading}
+                branchesError={branchesError}
+                selectedBranch={selectedBranch}
+                onSelectBranch={onSelectBranch}
+              />
+            ),
+          },
+          {
+            title: "Project Meta",
+            content: (
+              <ProjectMetaPanel
+                project={project}
+                detailName={detailName}
+                detailDescription={detailDescription}
+                detailError={detailError}
+                isSaving={isSaving}
+                defaultBranch={defaultBranch}
+                defaultWorkspace={defaultWorkspace}
+                branchCount={branches.length}
+                onNameChange={onNameChange}
+                onDescriptionChange={onDescriptionChange}
+                onMetadataCommit={onMetadataCommit}
+                onOpenWorkspace={onOpenWorkspace}
+              />
+            ),
+          },
+        ]}
+      />
     </AppSidebar>
   );
 }
