@@ -51,7 +51,7 @@
 
   /* Borders */
   --color-border: #3c3c3c;
-  --color-drag-border: #007fd4;
+  --color-drag-border: var(--color-accent-foreground);
 
   /* Foreground */
   --color-foreground: #cccccc;
