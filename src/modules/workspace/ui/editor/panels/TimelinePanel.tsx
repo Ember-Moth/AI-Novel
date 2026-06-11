@@ -132,6 +132,7 @@ function TimelinePointRow({
 
   return (
     <SidebarListRow
+      layout="position"
       depth={0}
       isActive={isActive}
       group={!!showSetAnchor || showDelete}
@@ -397,24 +398,34 @@ export function TimelinePanel({
           isPending ? "pointer-events-none opacity-70 select-none" : "opacity-100",
         )}
       >
-        {points.map((point) => (
-          <TimelinePointRow
-            key={point.id}
-            point={point}
-            isActive={activeId === point.id}
-            isAnchored={anchoredPointId === point.id}
-            canSetAnchor={canSetAnchor}
-            isBusy={isBusy}
-            isDragging={draggedId === point.id}
-            onSelect={onSelect}
-            onSetAnchor={onSetAnchor}
-            onDelete={onDelete}
-            onRename={onRename}
-            onDragStart={handleDragStart}
-            onDragMove={handleDragMove}
-            onDragEnd={handleDragEnd}
-          />
-        ))}
+        <AnimatePresence initial={false} mode="popLayout">
+          {points.map((point) => (
+            <motion.div
+              key={point.id}
+              layout="position"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.14, ease: "easeOut" }}
+            >
+              <TimelinePointRow
+                point={point}
+                isActive={activeId === point.id}
+                isAnchored={anchoredPointId === point.id}
+                canSetAnchor={canSetAnchor}
+                isBusy={isBusy}
+                isDragging={draggedId === point.id}
+                onSelect={onSelect}
+                onSetAnchor={onSetAnchor}
+                onDelete={onDelete}
+                onRename={onRename}
+                onDragStart={handleDragStart}
+                onDragMove={handleDragMove}
+                onDragEnd={handleDragEnd}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
         <AnimatePresence>
           {dropIndicatorRect ? (
             <DropIndicatorOverlay key="timeline-drop-indicator" rect={dropIndicatorRect} />
