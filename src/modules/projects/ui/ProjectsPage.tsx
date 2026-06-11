@@ -18,7 +18,7 @@ import { FullPageMessage } from "@/shared/ui/FullPageMessage";
 import { IconButton } from "@/shared/ui/IconButton";
 import { LoadingBlock } from "@/shared/ui/Loading";
 import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
-import { SidebarListRow } from "@/shared/ui/tree/SidebarListRow";
+import { RowActionButton, SidebarListRow } from "@/shared/ui/tree";
 
 import {
   insertProjectOptimistically,
@@ -720,7 +720,7 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
         submitLabel="创建 Fork"
       >
         <div className="rounded-md border border-border bg-editor-background px-3 py-2 text-xs text-foreground-muted">
-          来源提交：{forkCommit ? `${forkCommit.message} · ${shortId(forkCommit.id)}` : "—"}
+          来源提交：{forkCommit ? `${forkCommit.message} · ${formatCommitId(forkCommit.id)}` : "—"}
         </div>
         <label className="block space-y-1.5">
           <span className="text-xs font-medium text-foreground-muted">分支名</span>
@@ -982,7 +982,7 @@ function ProjectBranchListPanel({
               ) : null}
             </div>
           }
-          trailing={branch.headCommitId ? shortId(branch.headCommitId) : "空分支"}
+          trailing={branch.headCommitId ? formatCommitId(branch.headCommitId) : "空分支"}
         />
       ))}
     </div>
@@ -1122,7 +1122,7 @@ function ProjectWorkbenchMain({
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3">
         <BranchDetailPanel
           project={project}
           selectedBranch={selectedBranch}
@@ -1224,128 +1224,118 @@ function BranchDetailPanel({
     workspaceMissing || isCommitting || isDiscardingChanges || commitDisabledByCleanTree;
 
   return (
-    <div className="mx-auto grid min-h-full w-full max-w-6xl gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]">
-      <section className="rounded-xl border border-border bg-sidebar-background p-5 shadow-sm">
-        <div className="flex flex-wrap items-start gap-3 border-b border-border pb-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h2 className="truncate text-lg font-semibold text-foreground">
-                {selectedBranch.name}
-              </h2>
-              {project.defaultBranchId === selectedBranch.id ? (
-                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-accent-foreground">
-                  默认分支
+    <div className="mx-auto grid min-h-full w-full max-w-6xl gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]">
+      <section className="overflow-hidden rounded-md border border-border bg-sidebar-background">
+        <div className="p-3">
+          <div className="flex flex-wrap items-start gap-2 border-b border-border pb-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h2 className="truncate text-[14px] font-semibold text-foreground">
+                  {selectedBranch.name}
+                </h2>
+                {project.defaultBranchId === selectedBranch.id ? (
+                  <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-accent-foreground">
+                    默认分支
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-foreground-muted">
+                <span>更新时间 {dateFormatter.format(selectedBranch.updatedAt)}</span>
+                <span>
+                  HEAD{" "}
+                  {selectedBranch.headCommitId ? (
+                    <span className="font-mono">{formatCommitId(selectedBranch.headCommitId)}</span>
+                  ) : (
+                    "—"
+                  )}
                 </span>
-              ) : null}
+                <span>
+                  Fork 自{" "}
+                  {selectedBranch.forkedFromCommitId ? (
+                    <span className="font-mono">
+                      {formatCommitId(selectedBranch.forkedFromCommitId)}
+                    </span>
+                  ) : (
+                    "空分支"
+                  )}
+                </span>
+              </div>
             </div>
-            <div className="mt-2 flex flex-wrap gap-3 text-xs text-foreground-muted">
-              <span>更新时间 {dateFormatter.format(selectedBranch.updatedAt)}</span>
-              <span>
-                HEAD {selectedBranch.headCommitId ? shortId(selectedBranch.headCommitId) : "—"}
-              </span>
-              <span>
-                Fork 自{" "}
-                {selectedBranch.forkedFromCommitId
-                  ? shortId(selectedBranch.forkedFromCommitId)
-                  : "空分支"}
-              </span>
-            </div>
-          </div>
 
-          <div className="flex flex-wrap gap-2">
-            {selectedWorkspace ? (
+            <div className="flex flex-wrap gap-1.5">
+              {selectedWorkspace ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenWorkspace(selectedWorkspace.id)}
+                  className={primaryButton}
+                >
+                  <span className="icon-[material-symbols--edit] text-base" />
+                  打开 workspace
+                </button>
+              ) : (
+                <button type="button" disabled className={primaryButton}>
+                  <span className="icon-[material-symbols--warning] text-base" />无 workspace
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => onOpenWorkspace(selectedWorkspace.id)}
-                className={primaryButton}
+                onClick={() => onSetDefaultBranch(selectedBranch)}
+                disabled={project.defaultBranchId === selectedBranch.id || isSettingDefault}
+                className={secondaryButton}
               >
-                <span className="icon-[material-symbols--edit] text-base" />
-                打开 workspace
+                <span className="icon-[material-symbols--target] text-base" />
+                设为默认
               </button>
-            ) : (
-              <button type="button" disabled className={primaryButton}>
-                <span className="icon-[material-symbols--warning] text-base" />无 workspace
+              <button
+                type="button"
+                onClick={onDeleteBranch}
+                disabled={project.defaultBranchId === selectedBranch.id || isDeletingBranch}
+                className={cn(
+                  secondaryButton,
+                  "text-accent-foreground hover:bg-red-500/10 hover:text-red-200",
+                )}
+              >
+                <span className="icon-[material-symbols--delete] text-base" />
+                删除分支
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onSetDefaultBranch(selectedBranch)}
-              disabled={project.defaultBranchId === selectedBranch.id || isSettingDefault}
-              className={secondaryButton}
-            >
-              <span className="icon-[material-symbols--target] text-base" />
-              设为默认
-            </button>
-            <button
-              type="button"
-              onClick={onDeleteBranch}
-              disabled={project.defaultBranchId === selectedBranch.id || isDeletingBranch}
-              className={cn(
-                secondaryButton,
-                "text-accent-foreground hover:bg-red-500/10 hover:text-red-200",
-              )}
-            >
-              <span className="icon-[material-symbols--delete] text-base" />
-              删除分支
-            </button>
+            </div>
           </div>
+
+          {workspaceMissing ? (
+            <div className="mt-2 rounded-md border border-border bg-editor-background px-3 py-2 text-xs text-accent-foreground">
+              该分支当前没有对应 workspace，只支持只读查看历史，不能打开编辑器或直接提交。
+            </div>
+          ) : null}
         </div>
 
-        {workspaceMissing ? (
-          <div className="mt-4 rounded-md border border-border bg-editor-background px-4 py-3 text-sm text-accent-foreground">
-            该分支当前没有对应 workspace，只支持只读查看历史，不能打开编辑器或直接提交。
-          </div>
-        ) : null}
-
-        <section className="mt-6 rounded-lg border border-border bg-editor-background p-4">
-          <div className="flex items-center gap-2">
+        <section>
+          <div className="flex h-7 items-center gap-1 px-3 text-[11px] font-semibold tracking-wider text-foreground-muted uppercase">
             <span className="icon-[material-symbols--history] text-base text-accent-foreground" />
-            <h3 className="text-sm font-semibold text-foreground">提交历史</h3>
+            <h3>提交历史</h3>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-1">
             {commitHistoryError ? (
-              <InlineError message={commitHistoryError} />
+              <div className="px-3 pb-3">
+                <InlineError message={commitHistoryError} />
+              </div>
             ) : commitHistoryLoading ? (
-              <LoadingBlock label="正在加载提交历史..." />
+              <div className="px-3 pb-3">
+                <LoadingBlock label="正在加载提交历史..." />
+              </div>
             ) : commitHistory.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border bg-sidebar-background px-4 py-8 text-sm text-foreground-muted">
+              <div className="mx-3 mb-3 rounded-md border border-dashed border-border bg-editor-background px-3 py-6 text-sm text-foreground-muted">
                 这个分支还没有提交历史。
               </div>
             ) : (
-              <div className="space-y-3">
+              <div>
                 {commitHistory.map((commit) => (
-                  <article
+                  <CommitHistoryRow
                     key={commit.id}
-                    className="rounded-lg border border-border bg-sidebar-background px-4 py-3"
-                  >
-                    <div className="flex flex-wrap items-start gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="font-medium text-foreground">{commit.message}</div>
-                          {commit.id === selectedBranch.headCommitId ? (
-                            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-accent-foreground">
-                              HEAD
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-3 text-xs text-foreground-muted">
-                          <span>{shortId(commit.id)}</span>
-                          <span>{dateFormatter.format(commit.committedAt)}</span>
-                          <span>父提交 {commit.parents.length}</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => onOpenFork(commit)}
-                        className={secondaryButton}
-                      >
-                        <span className="icon-[material-symbols--fork-right] text-base" />
-                        Fork
-                      </button>
-                    </div>
-                  </article>
+                    commit={commit}
+                    isHead={commit.id === selectedBranch.headCommitId}
+                    onFork={() => onOpenFork(commit)}
+                  />
                 ))}
               </div>
             )}
@@ -1353,10 +1343,10 @@ function BranchDetailPanel({
         </section>
       </section>
 
-      <section className="rounded-xl border border-border bg-sidebar-background p-5 shadow-sm">
-        <div className="flex items-center gap-2">
+      <section className="rounded-md border border-border bg-sidebar-background p-3">
+        <div className="flex h-7 items-center gap-1 text-[11px] font-semibold tracking-wider text-foreground-muted uppercase">
           <span className="icon-[material-symbols--upload] text-base text-accent-foreground" />
-          <h3 className="text-sm font-semibold text-foreground">Commit</h3>
+          <h3>Commit</h3>
         </div>
 
         {!workspaceMissing ? (
@@ -1371,11 +1361,11 @@ function BranchDetailPanel({
           />
         ) : null}
 
-        <form className="mt-4 grid gap-3" onSubmit={onSubmitCommit}>
+        <form className="mt-2 grid gap-2" onSubmit={onSubmitCommit}>
           <textarea
             value={commitMessage}
             onChange={(event) => onCommitMessageChange(event.target.value)}
-            rows={5}
+            rows={4}
             disabled={commitDisabled}
             placeholder="描述这次提交做了什么。"
             className="w-full resize-y rounded-md border border-border bg-editor-background px-3 py-2 text-sm leading-relaxed text-foreground transition outline-none focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
@@ -1396,6 +1386,45 @@ function BranchDetailPanel({
           </div>
         </form>
       </section>
+    </div>
+  );
+}
+
+function CommitHistoryRow({
+  commit,
+  isHead,
+  onFork,
+}: {
+  commit: CommitRow;
+  isHead: boolean;
+  onFork: () => void;
+}) {
+  return (
+    <div className="group flex w-full items-start gap-1.5 px-3 py-1 text-[13px] text-foreground transition hover:bg-list-hover-background">
+      <span className="mt-0.5 icon-[material-symbols--commit] shrink-0 text-base text-foreground-muted" />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-0 items-center gap-1 leading-none">
+          <span className="truncate">{commit.message}</span>
+          {isHead ? (
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-accent-foreground">
+              HEAD
+            </span>
+          ) : null}
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px] leading-none text-foreground-muted">
+          <span className="break-all">{formatCommitId(commit.id)}</span>
+          <span className="shrink-0">{dateFormatter.format(commit.committedAt)}</span>
+        </div>
+      </div>
+      <div className="grid h-5 shrink-0 items-center self-center">
+        <div className="pointer-events-none col-start-1 row-start-1 flex items-center justify-end opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100">
+          <RowActionButton
+            icon="icon-[material-symbols--fork-right]"
+            title="Fork"
+            onClick={onFork}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -1499,7 +1528,7 @@ function WorkingTreeStatusPanel({
   onDiscardChanges: () => void;
 }) {
   return (
-    <section className="relative mt-4 rounded-lg border border-border bg-editor-background p-4">
+    <section className="relative mt-2 rounded-md border border-border bg-editor-background p-3">
       {canDiscardChanges ? (
         <button
           type="button"
@@ -1507,7 +1536,7 @@ function WorkingTreeStatusPanel({
           disabled={isDiscardingChanges}
           className={cn(
             secondaryButton,
-            "absolute top-4 right-4 text-accent-foreground hover:bg-red-500/10 hover:text-red-200",
+            "absolute top-3 right-3 text-accent-foreground hover:bg-red-500/10 hover:text-red-200",
           )}
         >
           <span
@@ -1522,12 +1551,12 @@ function WorkingTreeStatusPanel({
         </button>
       ) : null}
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         <span className="icon-[material-symbols--difference] text-base text-accent-foreground" />
-        <h4 className="text-sm font-semibold text-foreground">未提交变更</h4>
+        <h4 className="text-xs font-medium text-foreground-muted">未提交变更</h4>
       </div>
 
-      <div className="mt-3 space-y-3">
+      <div className="mt-2 space-y-2">
         {error ? <InlineError message={error} /> : null}
         {discardError ? <InlineError message={discardError} /> : null}
         {loading ? (
@@ -1537,7 +1566,7 @@ function WorkingTreeStatusPanel({
         ) : !status.hasChanges ? (
           <p className="text-sm text-foreground-muted">工作区与 HEAD 一致，无未提交变更。</p>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-2">
             {(Object.keys(workingTreeAreaLabels) as Array<keyof typeof workingTreeAreaLabels>).map(
               (areaKey) => {
                 const area = status.areas[areaKey];
@@ -1550,7 +1579,7 @@ function WorkingTreeStatusPanel({
                     <div className="text-xs font-medium text-foreground-muted">
                       {workingTreeAreaLabels[areaKey]}
                     </div>
-                    <ul className="mt-2 space-y-1.5">
+                    <ul className="mt-1 space-y-1">
                       {area.changes.map((change) => (
                         <li
                           key={`${areaKey}-${change.kind}-${change.label}`}
@@ -1654,6 +1683,6 @@ function PageHeader({
   );
 }
 
-function shortId(id: string) {
-  return id.length > 16 ? `${id.slice(0, 16)}…` : id;
+function formatCommitId(id: string) {
+  return id.startsWith("commit_") ? id.slice("commit_".length) : id;
 }
