@@ -24,7 +24,11 @@ export const create = mutation<
   ReturnType<typeof createBranch>,
   RpcTagList
 >({
-  invalidate: (input) => [rpcTags.branchesByProject(input.projectId)],
+  invalidate: (input) => [
+    rpcTags.branchesByProject(input.projectId),
+    rpcTags.project(input.projectId),
+    rpcTags.projectsList(),
+  ],
   handler: (input) => createBranch(input),
 });
 
@@ -36,6 +40,8 @@ export const createWithWorkspace = mutation<
   invalidate: (input) => [
     rpcTags.branchesByProject(input.projectId),
     rpcTags.workspacesByProject(input.projectId),
+    rpcTags.project(input.projectId),
+    rpcTags.projectsList(),
   ],
   handler: (input) => createBranchWorkspace(input),
 });
@@ -44,6 +50,9 @@ export const deleteMutation = mutation<{ projectId: string; branchId: string }, 
   invalidate: (input) => [
     rpcTags.branchesByProject(input.projectId),
     rpcTags.branch(input.branchId),
+    rpcTags.workspacesByProject(input.projectId),
+    rpcTags.project(input.projectId),
+    rpcTags.projectsList(),
   ],
   handler: ({ branchId }) => deleteBranch(branchId),
 });

@@ -6,6 +6,7 @@ import {
   getBranchOrThrow,
   getCommitOrThrow,
   getProjectOrThrow,
+  getWorkspaceForBranch,
   touchProject,
 } from "./internal/access";
 import { restoreWorkspaceFromTree } from "./snapshot";
@@ -75,12 +76,10 @@ export function deleteBranch(branchId: string) {
       "无法删除：这是项目的默认分支。请先切换默认分支。",
     );
 
-    const workspace = tx
-      .select({ id: schema.workspaces.id })
-      .from(schema.workspaces)
-      .where(eq(schema.workspaces.branchId, branch.id))
-      .get();
-    invariant(!workspace, "无法删除：该分支仍有关联的工作区。请先删除对应工作区。");
+    const workspace = getWorkspaceForBranch(tx, branch.id);
+    if (workspace) {
+      tx.delete(schema.workspaces).where(eq(schema.workspaces.id, workspace.id)).run();
+    }
 
     tx.delete(schema.branches).where(eq(schema.branches.id, branch.id)).run();
     touchProject(tx, project.id);

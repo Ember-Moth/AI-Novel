@@ -52,8 +52,10 @@ export const config = {
 
 export const projects = {
   list: projectHandlers.list,
+  get: projectHandlers.get,
   create: projectHandlers.create,
   update: projectHandlers.update,
+  setDefaultBranch: projectHandlers.setDefaultBranch,
   delete: projectHandlers.deleteMutation,
 };
 

@@ -1,8 +1,9 @@
 import { mutation, query } from "@codehz/rpc/core";
-import { eq, type InferInsertModel, type InferSelectModel } from "drizzle-orm";
+import { and, eq, type InferInsertModel, type InferSelectModel } from "drizzle-orm";
 
 import { db, schema } from "@/db";
 import { createDefaultWorkspaceWithExecutor } from "@/modules/workspace/domain";
+import { invariant } from "@/shared/lib/domain";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
 
 type ProjectMutationInput = Pick<
@@ -14,6 +15,19 @@ type ProjectRow = InferSelectModel<(typeof schema)["projects"]>;
 export const list = query<void, ProjectRow[], RpcTagList>({
   watch: () => [rpcTags.projectsList()],
   handler: () => db.query.projects.findMany().sync(),
+});
+
+export const get = query<{ projectId: string }, ProjectRow, RpcTagList>({
+  watch: ({ projectId }) => [rpcTags.project(projectId)],
+  handler: ({ projectId }) => {
+    const project = db.query.projects
+      .findFirst({
+        where: eq(schema.projects.id, projectId),
+      })
+      .sync();
+    invariant(project, "未找到项目。");
+    return project;
+  },
 });
 
 export const create = mutation<ProjectMutationInput, { workspaceId: string }, RpcTagList>({
@@ -40,6 +54,35 @@ export const update = mutation<ProjectMutationInput, void, RpcTagList>({
       .run();
   },
 });
+
+export const setDefaultBranch = mutation<{ projectId: string; branchId: string }, void, RpcTagList>(
+  {
+    invalidate: ({ projectId }) => [rpcTags.projectsList(), rpcTags.project(projectId)],
+    handler: ({ projectId, branchId }) => {
+      const project = db.query.projects
+        .findFirst({
+          where: eq(schema.projects.id, projectId),
+        })
+        .sync();
+      invariant(project, "未找到项目。");
+
+      const branch = db.query.branches
+        .findFirst({
+          where: and(eq(schema.branches.id, branchId), eq(schema.branches.projectId, projectId)),
+        })
+        .sync();
+      invariant(branch, "无法设置默认分支：该分支不属于当前项目。");
+
+      db.update(schema.projects)
+        .set({
+          defaultBranchId: branch.id,
+          updatedAt: Date.now(),
+        })
+        .where(eq(schema.projects.id, projectId))
+        .run();
+    },
+  },
+);
 
 export const deleteMutation = mutation<{ id: string }, void, RpcTagList>({
   invalidate: ({ id }) => [rpcTags.projectsList(), rpcTags.project(id)],

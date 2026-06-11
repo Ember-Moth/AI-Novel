@@ -40,6 +40,8 @@ export const create = mutation<
     rpcTags.commitHistory(input.branchId),
     rpcTags.branch(input.branchId),
     rpcTags.branchesByProject(branch.projectId),
+    rpcTags.project(branch.projectId),
+    rpcTags.projectsList(),
   );
   return commit;
 });

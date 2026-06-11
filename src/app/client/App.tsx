@@ -14,6 +14,8 @@ export function App() {
     isWorkspaceRoute,
     isKnownRoute,
     projectRouteId,
+    projectBranchRouteId,
+    route,
     cachedWorkspaceRoute,
   } = useCachedProjectRoute();
 
@@ -28,7 +30,11 @@ export function App() {
   return (
     <>
       <Activity mode={isProjectsPage ? "visible" : "hidden"}>
-        <ProjectsPage projectId={projectRouteId} />
+        <ProjectsPage
+          projectId={projectRouteId}
+          section={route.kind === "projectBranches" ? "branches" : "overview"}
+          branchId={projectBranchRouteId}
+        />
       </Activity>
 
       <Activity mode={isSettings ? "visible" : "hidden"}>

@@ -7,7 +7,8 @@ import { lastProjectIdAtom, lastWorkspaceRouteAtom } from "@/app/state/lastProje
 export type AppRoute =
   | { kind: "home" }
   | { kind: "settings" }
-  | { kind: "project"; projectId: string }
+  | { kind: "project"; projectId: string; section: "overview" }
+  | { kind: "projectBranches"; projectId: string; branchId: string | null }
   | { kind: "workspace"; projectId: string; workspaceId: string }
   | { kind: "unknown" };
 
@@ -30,6 +31,24 @@ export function parseAppRoute(location: string): AppRoute {
     return { kind: "settings" };
   }
 
+  const projectBranchMatch = normalizedLocation.match(/^\/project\/([^/]+)\/branches\/([^/]+)$/);
+  if (projectBranchMatch) {
+    return {
+      kind: "projectBranches",
+      projectId: decodePathSegment(projectBranchMatch[1]!),
+      branchId: decodePathSegment(projectBranchMatch[2]!),
+    };
+  }
+
+  const projectBranchesMatch = normalizedLocation.match(/^\/project\/([^/]+)\/branches$/);
+  if (projectBranchesMatch) {
+    return {
+      kind: "projectBranches",
+      projectId: decodePathSegment(projectBranchesMatch[1]!),
+      branchId: null,
+    };
+  }
+
   const workspaceMatch = normalizedLocation.match(/^\/project\/([^/]+)\/workspace\/([^/]+)$/);
   if (workspaceMatch) {
     return {
@@ -44,6 +63,7 @@ export function parseAppRoute(location: string): AppRoute {
     return {
       kind: "project",
       projectId: decodePathSegment(projectMatch[1]!),
+      section: "overview",
     };
   }
 
@@ -87,7 +107,7 @@ export function resolveLastWorkspaceRoute(
 }
 
 export function resolveProjectRouteTarget(route: AppRoute, lastProjectId: string | null) {
-  if (route.kind === "project" || route.kind === "workspace") {
+  if (route.kind === "project" || route.kind === "projectBranches" || route.kind === "workspace") {
     return `/project/${route.projectId}`;
   }
 
@@ -104,7 +124,9 @@ export function useCachedProjectRoute() {
   const [lastWorkspaceRoute, setLastWorkspaceRoute] = useAtom(lastWorkspaceRouteAtom);
   const route = parseAppRoute(location);
   const routeProjectId =
-    route.kind === "project" || route.kind === "workspace" ? route.projectId : null;
+    route.kind === "project" || route.kind === "projectBranches" || route.kind === "workspace"
+      ? route.projectId
+      : null;
   const routeWorkspaceProjectId = route.kind === "workspace" ? route.projectId : null;
   const routeWorkspaceId = route.kind === "workspace" ? route.workspaceId : null;
   const routeWorkspace =
@@ -138,10 +160,13 @@ export function useCachedProjectRoute() {
     isHome: route.kind === "home",
     isProjectDetailRoute: route.kind === "project",
     isWorkspaceRoute: route.kind === "workspace",
-    isProjectsPage: route.kind === "home" || route.kind === "project",
+    isProjectsPage:
+      route.kind === "home" || route.kind === "project" || route.kind === "projectBranches",
     isSettings: route.kind === "settings",
     isKnownRoute: route.kind !== "unknown",
-    projectRouteId: route.kind === "project" ? route.projectId : null,
+    isProjectBranchesRoute: route.kind === "projectBranches",
+    projectRouteId: routeProjectId,
+    projectBranchRouteId: route.kind === "projectBranches" ? route.branchId : null,
     routeProjectId,
     routeWorkspace,
     cachedWorkspaceRoute,

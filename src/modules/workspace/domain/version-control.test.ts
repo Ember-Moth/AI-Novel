@@ -142,6 +142,26 @@ test("branch off a commit shares the same head and forked metadata", () => {
   expect(exported.nodes[0]?.body).toBe("base");
 });
 
+test("deleting a branch also deletes its workspace", () => {
+  const workspace = seedProject("proj_delete_branch");
+  const featureWorkspace = service.createBranchWorkspace({
+    projectId: "proj_delete_branch",
+    name: "feature",
+  });
+
+  service.deleteBranch(featureWorkspace.branchId);
+
+  expect(() => service.getBranch(featureWorkspace.branchId)).toThrow("未找到分支。");
+  expect(() => service.getWorkspace(featureWorkspace.id)).toThrow("未找到工作区。");
+  expect(service.getWorkspace(workspace.id).branchId).toBe(workspace.branchId);
+});
+
+test("default branch still cannot be deleted", () => {
+  const workspace = seedProject("proj_delete_default");
+
+  expect(() => service.deleteBranch(workspace.branchId)).toThrow("无法删除：这是项目的默认分支。");
+});
+
 test("merge metadata records multiple parents without merging", () => {
   const workspace = seedProject("proj_merge");
   service.createContentNode({

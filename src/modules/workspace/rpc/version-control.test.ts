@@ -46,8 +46,35 @@ test("creating a branch with workspace invalidates branches and workspaces", asy
   expect(result.invalidate).toEqual([
     rpcTags.branchesByProject("rpc_branch_create"),
     rpcTags.workspacesByProject("rpc_branch_create"),
+    rpcTags.project("rpc_branch_create"),
+    rpcTags.projectsList(),
   ]);
   expect(result.data.branchId).not.toBe(workspace.branchId);
+});
+
+test("deleting a branch invalidates branch, workspace, and project tags", async () => {
+  seedProject("rpc_branch_delete");
+  const featureWorkspace = service.createBranchWorkspace({
+    projectId: "rpc_branch_delete",
+    name: "feature",
+  });
+
+  const result = await branchHandlers.deleteMutation.handler(
+    {
+      projectId: "rpc_branch_delete",
+      branchId: featureWorkspace.branchId,
+    },
+    requestCtx,
+  );
+
+  expect(result.invalidate).toEqual([
+    rpcTags.branchesByProject("rpc_branch_delete"),
+    rpcTags.branch(featureWorkspace.branchId),
+    rpcTags.workspacesByProject("rpc_branch_delete"),
+    rpcTags.project("rpc_branch_delete"),
+    rpcTags.projectsList(),
+  ]);
+  expect(() => service.getWorkspace(featureWorkspace.id)).toThrow("未找到工作区。");
 });
 
 test("commit create invalidates history and branch tags", async () => {
@@ -68,6 +95,8 @@ test("commit create invalidates history and branch tags", async () => {
     rpcTags.commitHistory(workspace.branchId),
     rpcTags.branch(workspace.branchId),
     rpcTags.branchesByProject("rpc_commit_create"),
+    rpcTags.project("rpc_commit_create"),
+    rpcTags.projectsList(),
   ]);
   expect(result.data.id).toMatch(/^commit_/);
 });
