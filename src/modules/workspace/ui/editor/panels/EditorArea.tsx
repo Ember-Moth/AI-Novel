@@ -1,5 +1,6 @@
 import { AuxNodeIcon, ContentNodeIcon } from "@/modules/workspace/ui/editor/components/icons";
 import { RefreshIndicator } from "@/shared/ui/RefreshIndicator";
+import { MainTextEditor } from "@/shared/ui/editor/MainTextEditor";
 import type {
   AuxTreeNodeVM,
   ContentTreeNodeVM,
@@ -72,11 +73,11 @@ export function EditorArea({
             时间锚点: {timelineLabel}
           </span>
         </div>
-        <textarea
-          className="flex-1 resize-none border-none bg-editor-background p-4 font-mono text-[14px] leading-7 text-editor-foreground outline-none"
+        <MainTextEditor
           value={body}
-          onChange={(event) => onBodyChange(event.target.value)}
+          onChange={onBodyChange}
           placeholder="开始写作..."
+          variant="content"
         />
       </div>
     );
@@ -122,11 +123,11 @@ export function EditorArea({
               <RefreshIndicator label="同步中..." size="xs" className="shrink-0" />
             ) : null}
           </div>
-          <textarea
-            className="flex-1 resize-none border-none bg-editor-background p-4 font-mono text-[14px] leading-7 text-editor-foreground outline-none"
+          <MainTextEditor
             value={auxContent}
-            onChange={(event) => onAuxContentChange(event.target.value)}
+            onChange={onAuxContentChange}
             placeholder="编辑辅助信息..."
+            variant="aux"
           />
         </div>
       );

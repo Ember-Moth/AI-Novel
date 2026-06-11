@@ -1,0 +1,43 @@
+import { expect, test } from "bun:test";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import {
+  MAIN_TEXT_EDITOR_BASIC_SETUP,
+  MainTextEditor,
+  getMainTextEditorAriaLabel,
+} from "./MainTextEditor";
+
+test("MainTextEditor renders a stable wrapper for the content variant", () => {
+  const html = renderToStaticMarkup(
+    <MainTextEditor
+      value="第一行"
+      onChange={() => {}}
+      placeholder="开始写作..."
+      variant="content"
+    />,
+  );
+
+  expect(html).toContain("main-text-editor");
+  expect(html).toContain("main-text-editor--content");
+  expect(html).toContain('aria-label="正文编辑器"');
+});
+
+test("MainTextEditor basic setup enables line numbers and search without code-centric extras", () => {
+  expect(MAIN_TEXT_EDITOR_BASIC_SETUP).toMatchObject({
+    lineNumbers: true,
+    highlightActiveLineGutter: true,
+    history: true,
+    searchKeymap: true,
+    allowMultipleSelections: true,
+    rectangularSelection: true,
+    highlightActiveLine: true,
+    foldGutter: false,
+    autocompletion: false,
+    syntaxHighlighting: false,
+  });
+});
+
+test("getMainTextEditorAriaLabel maps variants to localized labels", () => {
+  expect(getMainTextEditorAriaLabel("content")).toBe("正文编辑器");
+  expect(getMainTextEditorAriaLabel("aux")).toBe("辅助文件编辑器");
+});

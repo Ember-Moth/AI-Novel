@@ -101,6 +101,96 @@
   background: var(--color-scrollbar-thumb);
 }
 
+.main-text-editor {
+  background: var(--color-editor-background);
+  color: var(--color-editor-foreground);
+}
+
+.main-text-editor .cm-editor {
+  height: 100%;
+  background: var(--color-editor-background);
+  color: var(--color-editor-foreground);
+  font-family:
+    "Iosevka", "Sarasa Mono SC", "SFMono-Regular", "JetBrains Mono", "Fira Code", monospace;
+  font-size: 14px;
+  line-height: 1.75rem;
+}
+
+.main-text-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.main-text-editor .cm-scroller {
+  font-family: inherit;
+  scrollbar-color: var(--color-scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+.main-text-editor .cm-scroller::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.main-text-editor .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.main-text-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar-thumb);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+.main-text-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-thumb-hover);
+  background-clip: content-box;
+}
+
+.main-text-editor .cm-scroller::-webkit-scrollbar-thumb:active {
+  background: var(--color-scrollbar-thumb-dragging);
+  background-clip: content-box;
+}
+
+.main-text-editor .cm-gutters {
+  border-right: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-title-bar-background) 82%, transparent);
+  color: var(--color-foreground-muted);
+}
+
+.main-text-editor .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--color-list-hover-background) 70%, transparent);
+  color: var(--color-foreground);
+}
+
+.main-text-editor .cm-content,
+.main-text-editor .cm-gutter {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+.main-text-editor .cm-line {
+  padding-inline: 1rem;
+}
+
+.main-text-editor .cm-activeLine {
+  background: color-mix(in srgb, var(--color-list-hover-background) 45%, transparent);
+}
+
+.main-text-editor .cm-selectionBackground,
+.main-text-editor.cm-focused .cm-selectionBackground,
+.main-text-editor .cm-content ::selection {
+  background: color-mix(in srgb, var(--color-accent-background) 58%, transparent);
+}
+
+.main-text-editor .cm-cursor {
+  border-left-color: var(--color-editor-foreground);
+}
+
+.main-text-editor .cm-placeholder {
+  color: color-mix(in srgb, var(--color-foreground-muted) 78%, transparent);
+}
+
 .scrollbar-panel.simplebar-mouse-entered .simplebar-scrollbar.simplebar-visible::before,
 .scrollbar-card.simplebar-mouse-entered .simplebar-scrollbar.simplebar-visible::before,
 .scrollbar-inline.simplebar-mouse-entered .simplebar-scrollbar.simplebar-visible::before {
