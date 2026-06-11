@@ -1,17 +1,16 @@
 import { useMolecule } from "bunshi/react";
-import { useAtom, useStore } from "jotai";
 import { useCallback, useRef } from "react";
+import { useStore } from "zustand";
 
 import { collapse, expand, reflow, resizeAt, seedHeights } from "./layoutMath";
 import { SidebarLayoutMolecule } from "./layoutMolecule";
 
 export function useSidebarLayout(panelCount: number) {
-  const layout = useMolecule(SidebarLayoutMolecule);
-  const store = useStore();
+  const store = useMolecule(SidebarLayoutMolecule);
 
-  const [heights] = useAtom(layout.heightsAtom);
-  const [collapsed] = useAtom(layout.collapsedAtom);
-  const [initialized] = useAtom(layout.initializedAtom);
+  const heights = useStore(store, (state) => state.heights);
+  const collapsed = useStore(store, (state) => state.collapsed);
+  const initialized = useStore(store, (state) => state.initialized);
 
   // 拖动开始时的高度快照，move 期间基于它计算，避免漂移。
   const dragStartRef = useRef<number[] | null>(null);
@@ -23,39 +22,42 @@ export function useSidebarLayout(panelCount: number) {
         return;
       }
 
-      const wasInitialized = store.get(layout.initializedAtom);
+      const { initialized: wasInitialized } = store.getState();
       if (!wasInitialized) {
-        const current = store.get(layout.collapsedAtom);
+        const current = store.getState().collapsed;
         const collapsedSeed =
           current.length === panelCount ? current : new Array(panelCount).fill(false);
         const seeded = seedHeights(rounded, collapsedSeed);
-        store.set(layout.collapsedAtom, collapsedSeed);
-        store.set(layout.heightsAtom, seeded);
-        store.set(layout.rememberedAtom, seeded.slice());
-        store.set(layout.containerHeightAtom, rounded);
-        store.set(layout.initializedAtom, true);
+        store.setState({
+          collapsed: collapsedSeed,
+          heights: seeded,
+          remembered: seeded.slice(),
+          containerHeight: rounded,
+          initialized: true,
+        });
         return;
       }
 
-      const oldTotal = store.get(layout.containerHeightAtom);
+      const {
+        containerHeight: oldTotal,
+        heights: currentHeights,
+        collapsed: currentCollapsed,
+      } = store.getState();
       if (oldTotal === rounded) {
         return;
       }
-      const reflowed = reflow(
-        store.get(layout.heightsAtom),
-        store.get(layout.collapsedAtom),
-        oldTotal,
-        rounded,
-      );
-      store.set(layout.heightsAtom, reflowed);
-      store.set(layout.containerHeightAtom, rounded);
+      const reflowed = reflow(currentHeights, currentCollapsed, oldTotal, rounded);
+      store.setState({
+        heights: reflowed,
+        containerHeight: rounded,
+      });
     },
-    [layout, store, panelCount],
+    [store, panelCount],
   );
 
   const resizeStart = useCallback(() => {
-    dragStartRef.current = store.get(layout.heightsAtom).slice();
-  }, [layout, store]);
+    dragStartRef.current = store.getState().heights.slice();
+  }, [store]);
 
   const resize = useCallback(
     (handleIndex: number, deltaPx: number) => {
@@ -63,12 +65,11 @@ export function useSidebarLayout(panelCount: number) {
       if (!start) {
         return;
       }
-      store.set(
-        layout.heightsAtom,
-        resizeAt(start, store.get(layout.collapsedAtom), handleIndex, deltaPx),
-      );
+      store.setState((state) => ({
+        heights: resizeAt(start, state.collapsed, handleIndex, deltaPx),
+      }));
     },
-    [layout, store],
+    [store],
   );
 
   const resizeEnd = useCallback(() => {
@@ -77,25 +78,17 @@ export function useSidebarLayout(panelCount: number) {
 
   const toggleCollapse = useCallback(
     (index: number) => {
-      const currentCollapsed = store.get(layout.collapsedAtom);
+      const { collapsed: currentCollapsed, heights: currentHeights, remembered } = store.getState();
       const result = currentCollapsed[index]
-        ? expand(
-            store.get(layout.heightsAtom),
-            currentCollapsed,
-            store.get(layout.rememberedAtom),
-            index,
-          )
-        : collapse(
-            store.get(layout.heightsAtom),
-            currentCollapsed,
-            store.get(layout.rememberedAtom),
-            index,
-          );
-      store.set(layout.heightsAtom, result.heights);
-      store.set(layout.collapsedAtom, result.collapsed);
-      store.set(layout.rememberedAtom, result.remembered);
+        ? expand(currentHeights, currentCollapsed, remembered, index)
+        : collapse(currentHeights, currentCollapsed, remembered, index);
+      store.setState({
+        heights: result.heights,
+        collapsed: result.collapsed,
+        remembered: result.remembered,
+      });
     },
-    [layout, store],
+    [store],
   );
 
   return {
