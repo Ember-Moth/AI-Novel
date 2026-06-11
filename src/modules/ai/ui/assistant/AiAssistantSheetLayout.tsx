@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
-
 import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
-
 import type { AssistantSheetLayout } from "./useAssistantSheetLayout";
+import { AutoTransition } from "auto-transition";
 
 export type AiAssistantSheetLayoutProps = {
   layout: AssistantSheetLayout;
@@ -54,7 +53,9 @@ export function AiAssistantSheetLayout({
             />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-hidden">{messagesViewportPane}</div>
+          <AutoTransition as="div" className="relative min-h-0 flex-1 overflow-hidden">
+            {messagesViewportPane}
+          </AutoTransition>
 
           <div className="shrink-0 border-t border-border">{composerPane}</div>
         </div>

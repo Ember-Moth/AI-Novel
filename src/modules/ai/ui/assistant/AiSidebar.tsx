@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 
 import { AnimatePresence } from "./AiSidebarView";
@@ -223,25 +223,23 @@ export function AiSidebar({
           </>
         }
         messagesViewportPane={
-          <AnimatePresence initial={false} mode="wait">
-            <AiSidebarMessagesViewport
-              key={messagesViewportSessionKey}
-              viewportRef={messagesViewportRef}
-              onViewportScroll={handleMessagesScroll}
-            >
-              <AiSidebarMessagesContent
-                controller={controller}
-                expandedReasoningKeys={expandedReasoningKeys}
-                expandedRunSummaryKeys={expandedRunSummaryKeys}
-                expandedToolTraceKeys={expandedToolTraceKeys}
-                pendingSendSummary={pendingSendSummary}
-                streamedAssistantMessageIds={streamedAssistantMessageIdsRef.current}
-                toggleReasoning={toggleReasoning}
-                toggleRunSummary={toggleRunSummary}
-                toggleToolTrace={toggleToolTrace}
-              />
-            </AiSidebarMessagesViewport>
-          </AnimatePresence>
+          <AiSidebarMessagesViewport
+            key={messagesViewportSessionKey}
+            viewportRef={messagesViewportRef}
+            onViewportScroll={handleMessagesScroll}
+          >
+            <AiSidebarMessagesContent
+              controller={controller}
+              expandedReasoningKeys={expandedReasoningKeys}
+              expandedRunSummaryKeys={expandedRunSummaryKeys}
+              expandedToolTraceKeys={expandedToolTraceKeys}
+              pendingSendSummary={pendingSendSummary}
+              streamedAssistantMessageIds={streamedAssistantMessageIdsRef.current}
+              toggleReasoning={toggleReasoning}
+              toggleRunSummary={toggleRunSummary}
+              toggleToolTrace={toggleToolTrace}
+            />
+          </AiSidebarMessagesViewport>
         }
         composerPane={
           <form className="shrink-0" aria-label="AI 对话输入" onSubmit={controller.handleSubmit}>
@@ -338,7 +336,7 @@ function AiSidebarMessagesViewport({
   viewportRef: { current: HTMLElement | null };
   onViewportScroll: (_event: Event) => void;
 }) {
-  useEffect(() => {
+  useLayoutEffect(() => {
     let frameId = 0;
     let cancelled = false;
 
@@ -350,7 +348,10 @@ function AiSidebarMessagesViewport({
       const viewport = viewportRef.current;
       if (viewport != null) {
         frameId = requestAnimationFrame(() => {
-          viewport.scrollTop = viewport.scrollHeight;
+          viewport.scrollTo({
+            behavior: "instant",
+            top: viewport.scrollHeight,
+          });
         });
         return;
       }
@@ -373,13 +374,7 @@ function AiSidebarMessagesViewport({
   }, [viewportRef]);
 
   return (
-    <motion.div
-      className="flex h-full min-h-0 flex-col overflow-hidden"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.15, ease: "easeOut" }}
-    >
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <OverlayScrollbar
         variant="panel"
         viewportRef={viewportRef}
@@ -387,7 +382,7 @@ function AiSidebarMessagesViewport({
       >
         {children}
       </OverlayScrollbar>
-    </motion.div>
+    </div>
   );
 }
 
