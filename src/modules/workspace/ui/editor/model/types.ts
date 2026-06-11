@@ -20,6 +20,7 @@ export interface AuxTreeNodeVM {
   name: string;
   content: string;
   path: string;
+  symlinkTargetAuxNodeId: string | null;
   symlinkTargetPath: string | null;
   hasTimelineChange: boolean;
   isDeleted: boolean;
@@ -48,6 +49,7 @@ export interface RawAuxTreeNode {
   name: string | null;
   content: string | null;
   path: string;
+  symlinkTargetAuxNodeId: string | null;
   symlinkTargetPath: string | null;
   hasTimelineChange: boolean;
   isDeleted: boolean;

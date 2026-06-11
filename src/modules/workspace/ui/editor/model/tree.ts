@@ -310,6 +310,44 @@ export function collectAuxSubtreeIds(root: AuxTreeNodeVM): Set<string> {
   return ids;
 }
 
+export function wouldRetargetAuxSymlinkCreateCycle(
+  nodeMap: ReadonlyMap<string, AuxTreeNodeVM>,
+  sourceSymlinkId: string,
+  targetNodeId: string,
+) {
+  const seen = new Set<string>();
+  let current = nodeMap.get(targetNodeId) ?? null;
+
+  while (current) {
+    if (current.id === sourceSymlinkId || seen.has(current.id)) {
+      return true;
+    }
+
+    seen.add(current.id);
+    if (current.nodeType !== "symlink" || !current.symlinkTargetAuxNodeId) {
+      return false;
+    }
+    current = nodeMap.get(current.symlinkTargetAuxNodeId) ?? null;
+  }
+
+  return false;
+}
+
+export function collectInvalidAuxSymlinkTargetIds(
+  nodeMap: ReadonlyMap<string, AuxTreeNodeVM>,
+  sourceSymlinkId: string,
+) {
+  const invalidIds = new Set<string>();
+
+  for (const nodeId of nodeMap.keys()) {
+    if (wouldRetargetAuxSymlinkCreateCycle(nodeMap, sourceSymlinkId, nodeId)) {
+      invalidIds.add(nodeId);
+    }
+  }
+
+  return invalidIds;
+}
+
 export function resolveAuxHierarchyMove({
   parentMap,
   nodeMap,

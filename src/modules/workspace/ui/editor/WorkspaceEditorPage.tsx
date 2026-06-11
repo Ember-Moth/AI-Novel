@@ -14,6 +14,7 @@ import { IconButton } from "@/shared/ui/IconButton";
 import { PanelPlaceholder } from "@/shared/ui/PanelPlaceholder";
 import { SidebarLayoutScope, SidebarPanels } from "@/shared/ui/sidebar";
 import { actionAnchorId, clearActionError } from "@/modules/workspace/ui/editor/model/action-error";
+import { collectInvalidAuxSymlinkTargetIds } from "@/modules/workspace/ui/editor/model/tree";
 import { AuxTreePanel } from "@/modules/workspace/ui/editor/panels/AuxTreePanel";
 import { ContentTreePanel } from "@/modules/workspace/ui/editor/panels/ContentTreePanel";
 import { EditorArea } from "@/modules/workspace/ui/editor/panels/EditorArea";
@@ -40,6 +41,7 @@ import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
 const CONTENT_CREATE_SIBLING_ANCHOR = actionAnchorId("content", "create-sibling");
 const AUX_CREATE_DIR_ANCHOR = actionAnchorId("aux", "create-dir");
 const AUX_CREATE_FILE_ANCHOR = actionAnchorId("aux", "create-file");
+const AUX_CANCEL_RETARGET_ANCHOR = actionAnchorId("aux", "cancel-retarget");
 const TIMELINE_ADD_ANCHOR = actionAnchorId("timeline", "add");
 const PAGE_ERROR_ANCHOR = actionAnchorId("sidebar", "page-error");
 
@@ -164,6 +166,12 @@ function ProjectWorkspace({
   const setContentError = useWorkspaceState((state) => state.setContentError);
   const setTimelineError = useWorkspaceState((state) => state.setTimelineError);
   const setAuxError = useWorkspaceState((state) => state.setAuxError);
+  const isAuxSymlinkTargetPickerActive = useWorkspaceState(
+    (state) => state.isAuxSymlinkTargetPickerActive,
+  );
+  const auxSymlinkTargetPickerSourceId = useWorkspaceState(
+    (state) => state.auxSymlinkTargetPickerSourceId,
+  );
   useProjectWorkspaceEffects(workspace, actions.flushBodySave, actions.flushAuxSave);
 
   const { workspaceId, contentRootId, workspaceQuery, workspaceInitialLoading, routeMismatch } =
@@ -204,6 +212,13 @@ function ProjectWorkspace({
   const contentError = useWorkspaceState((state) => state.contentError);
   const timelineError = useWorkspaceState((state) => state.timelineError);
   const auxError = useWorkspaceState((state) => state.auxError);
+  const symlinkTargetPickerSourceNode = auxSymlinkTargetPickerSourceId
+    ? (aux.nodeMap.get(auxSymlinkTargetPickerSourceId) ?? null)
+    : null;
+  const invalidSymlinkTargetIds =
+    symlinkTargetPickerSourceNode?.nodeType === "symlink"
+      ? collectInvalidAuxSymlinkTargetIds(aux.nodeMap, symlinkTargetPickerSourceNode.id)
+      : new Set<string>();
 
   const pageErrorBubble =
     pageError && !pageErrorDismissed ? { message: pageError, anchorId: PAGE_ERROR_ANCHOR } : null;
@@ -395,7 +410,15 @@ function ProjectWorkspace({
                 },
                 {
                   title: "辅助信息",
-                  actions: (
+                  actions: isAuxSymlinkTargetPickerActive ? (
+                    <IconButton
+                      icon="icon-[material-symbols--close]"
+                      title="取消选择目标"
+                      onClick={actions.cancelAuxSymlinkTargetPicker}
+                      disabled={auxPending}
+                      anchorId={AUX_CANCEL_RETARGET_ANCHOR}
+                    />
+                  ) : (
                     <>
                       <IconButton
                         icon="icon-[material-symbols--create-new-folder]"
@@ -426,10 +449,31 @@ function ProjectWorkspace({
                       onCreateChildDir={actions.handleAuxCreateChildDir}
                       onCreateChildFile={actions.handleAuxCreateChildFile}
                       onCreateSymlink={actions.handleAuxCreateSymlink}
+                      onStartRetargetSymlink={(node) =>
+                        actions.enterAuxSymlinkTargetPicker(node.id)
+                      }
                       onRename={actions.handleAuxRename}
                       onMove={actions.handleAuxMove}
                       onDelete={actions.handleAuxDelete}
                       onRestore={actions.handleAuxRestore}
+                      symlinkTargetPicker={
+                        symlinkTargetPickerSourceNode?.nodeType === "symlink"
+                          ? {
+                              active: isAuxSymlinkTargetPickerActive,
+                              sourceNodeId: symlinkTargetPickerSourceNode.id,
+                              selectedTargetNodeId:
+                                symlinkTargetPickerSourceNode.symlinkTargetAuxNodeId,
+                              invalidTargetNodeIds: invalidSymlinkTargetIds,
+                              onPickTarget: actions.submitAuxSymlinkTargetRetarget,
+                            }
+                          : {
+                              active: false,
+                              sourceNodeId: null,
+                              selectedTargetNodeId: null,
+                              invalidTargetNodeIds: new Set<string>(),
+                              onPickTarget: actions.submitAuxSymlinkTargetRetarget,
+                            }
+                      }
                       isBusy={auxBusy}
                       isPending={auxPending}
                       showTimelineChanges={activeTimelinePointId !== ORIGIN_TIMELINE_POINT_ID}
@@ -487,6 +531,7 @@ function ProjectWorkspace({
               contentSaveState={activeSaveState}
               auxSaveState={auxSaveState}
               auxPending={auxPending}
+              isAuxSymlinkTargetPickerActive={isAuxSymlinkTargetPickerActive}
               onBodyChange={actions.handleBodyChange}
               onAuxContentChange={actions.handleAuxContentChange}
             />

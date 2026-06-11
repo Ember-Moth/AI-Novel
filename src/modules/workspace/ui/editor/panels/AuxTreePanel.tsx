@@ -40,6 +40,14 @@ type DropIndicatorRect = {
   height: number;
 };
 
+type AuxSymlinkTargetPickerState = {
+  active: boolean;
+  sourceNodeId: string | null;
+  selectedTargetNodeId: string | null;
+  invalidTargetNodeIds: ReadonlySet<string>;
+  onPickTarget: (_targetNodeId: string) => void;
+};
+
 function AuxTreeNodeRow({
   node,
   depth,
@@ -52,6 +60,7 @@ function AuxTreeNodeRow({
   onCreateChildDir,
   onCreateChildFile,
   onCreateSymlink,
+  onStartRetargetSymlink,
   onDelete,
   onRestore,
   onDragStart,
@@ -60,6 +69,7 @@ function AuxTreeNodeRow({
   isDragging,
   isBusy,
   showTimelineChanges,
+  symlinkTargetPicker,
 }: {
   node: AuxTreeNodeVM;
   depth: number;
@@ -72,6 +82,7 @@ function AuxTreeNodeRow({
   onCreateChildDir: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onCreateChildFile: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onCreateSymlink: (_node: AuxTreeNodeVM, _anchorId: string) => void;
+  onStartRetargetSymlink: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onDelete: (_id: string, _anchorId: string) => void;
   onRestore: (_id: string, _anchorId: string) => void;
   onDragStart: (_nodeId: string) => void;
@@ -80,6 +91,7 @@ function AuxTreeNodeRow({
   isDragging: boolean;
   isBusy: boolean;
   showTimelineChanges: boolean;
+  symlinkTargetPicker: AuxSymlinkTargetPickerState;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const pointerDragRef = useRef<{
@@ -91,7 +103,12 @@ function AuxTreeNodeRow({
   const isDir = node.nodeType === "dir";
   const isDeleted = node.isDeleted;
   const canDrag = !isDeleted;
-  const dragDisabled = isBusy || isEditing || !canDrag;
+  const isSymlinkTargetPickerActive = symlinkTargetPicker.active;
+  const isSymlinkTargetSource = symlinkTargetPicker.sourceNodeId === node.id;
+  const isSymlinkTargetSelected = symlinkTargetPicker.selectedTargetNodeId === node.id;
+  const isSymlinkTargetDisabled = symlinkTargetPicker.invalidTargetNodeIds.has(node.id);
+  const dragDisabled = isBusy || isEditing || !canDrag || isSymlinkTargetPickerActive;
+  const dragHandleId = canDrag && !isSymlinkTargetPickerActive ? node.id : undefined;
   const contentStateClass = isDeleted
     ? "text-red-300 opacity-55"
     : showTimelineChanges && !node.hasTimelineChange
@@ -101,9 +118,32 @@ function AuxTreeNodeRow({
   const addDirAnchorId = actionAnchorId("aux", "add-dir", node.id);
   const addFileAnchorId = actionAnchorId("aux", "add-file", node.id);
   const createSymlinkAnchorId = actionAnchorId("aux", "create-symlink", node.id);
+  const retargetSymlinkAnchorId = actionAnchorId("aux", "retarget-symlink", node.id);
   const deleteAnchorId = actionAnchorId("aux", "delete", node.id);
   const restoreAnchorId = actionAnchorId("aux", "restore", node.id);
   const canRestore = showTimelineChanges && node.hasTimelineChange;
+  const symlinkTargetPickerState: "source" | "selected-target" | "disabled-target" | undefined =
+    isSymlinkTargetSource
+      ? "source"
+      : isSymlinkTargetSelected
+        ? "selected-target"
+        : isSymlinkTargetDisabled
+          ? "disabled-target"
+          : undefined;
+
+  const handleTargetPickerSelect = () => {
+    if (
+      !isSymlinkTargetPickerActive ||
+      isDeleted ||
+      isSymlinkTargetDisabled ||
+      isSymlinkTargetSource ||
+      isSymlinkTargetSelected
+    ) {
+      return;
+    }
+
+    symlinkTargetPicker.onPickTarget(node.id);
+  };
 
   const handleDragPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     if (dragDisabled || event.button !== 0) {
@@ -168,7 +208,7 @@ function AuxTreeNodeRow({
   const icon = (
     <span
       className={`inline-flex shrink-0 touch-none items-center ${contentStateClass}`}
-      data-drag-handle={canDrag ? node.id : undefined}
+      data-drag-handle={dragHandleId}
       {...dragStartProps}
     >
       <AuxNodeIcon nodeType={isDir ? (isExpanded ? "dir-open" : "dir") : node.nodeType} />
@@ -179,7 +219,7 @@ function AuxTreeNodeRow({
     <span className={`min-w-0 flex-1 touch-none ${contentStateClass}`} {...dragStartProps}>
       <InlineEditableText
         value={node.name}
-        disabled={isBusy || isDeleted}
+        disabled={isBusy || isDeleted || isSymlinkTargetPickerActive}
         onEditStart={() => {
           if (!isDeleted) {
             onSelect(node);
@@ -198,10 +238,17 @@ function AuxTreeNodeRow({
     dataNodeId: node.id,
     depth,
     isActive,
-    group: true,
+    group: !isSymlinkTargetPickerActive,
     anchorId: rowAnchorId,
+    dataSymlinkTargetPickerState: symlinkTargetPickerState,
     className: cn(
       "relative list-none",
+      isSymlinkTargetSelected && !isActive
+        ? "bg-list-hover-background ring-1 ring-inset ring-drag-border"
+        : "",
+      isSymlinkTargetPickerActive && isSymlinkTargetDisabled && !isSymlinkTargetSource
+        ? "opacity-45"
+        : "",
       isDragging ? "pointer-events-none z-10 opacity-75 shadow-sm" : "",
     ),
   };
@@ -210,12 +257,16 @@ function AuxTreeNodeRow({
     return (
       <SidebarListRow
         {...sharedProps}
-        onClick={() => {
-          onSelect(node);
-          if (hasChildren && !isExpanded) {
-            onToggle(node.id);
-          }
-        }}
+        onClick={
+          isSymlinkTargetPickerActive
+            ? handleTargetPickerSelect
+            : () => {
+                onSelect(node);
+                if (hasChildren && !isExpanded) {
+                  onToggle(node.id);
+                }
+              }
+        }
         leading={
           <ExpandToggle
             hasChildren={hasChildren}
@@ -226,6 +277,70 @@ function AuxTreeNodeRow({
         icon={icon}
         label={label}
         actions={
+          isSymlinkTargetPickerActive ? null : (
+            <>
+              {canRestore ? (
+                <RowActionButton
+                  anchorId={restoreAnchorId}
+                  onClick={() => onRestore(node.id, restoreAnchorId)}
+                  disabled={isBusy || isEditing}
+                  title="恢复到上一时间点状态"
+                  icon="icon-[material-symbols--undo]"
+                />
+              ) : null}
+              {isDeleted ? null : (
+                <>
+                  <RowActionButton
+                    anchorId={addDirAnchorId}
+                    onClick={() => onCreateChildDir(node, addDirAnchorId)}
+                    disabled={isBusy || isEditing}
+                    title="添加子文件夹"
+                    icon="icon-[material-symbols--create-new-folder]"
+                  />
+                  <RowActionButton
+                    anchorId={addFileAnchorId}
+                    onClick={() => onCreateChildFile(node, addFileAnchorId)}
+                    disabled={isBusy || isEditing}
+                    title="添加子文件"
+                    icon="icon-[material-symbols--note-add]"
+                  />
+                  <RowActionButton
+                    anchorId={createSymlinkAnchorId}
+                    onClick={() => onCreateSymlink(node, createSymlinkAnchorId)}
+                    disabled={isBusy || isEditing}
+                    title="在同目录创建符号链接"
+                    icon="icon-[material-symbols--link]"
+                  />
+                  <RowActionButton
+                    anchorId={deleteAnchorId}
+                    onClick={() => onDelete(node.id, deleteAnchorId)}
+                    disabled={isBusy || isEditing}
+                    title="删除节点"
+                    icon="icon-[material-symbols--close]"
+                  />
+                </>
+              )}
+            </>
+          )
+        }
+      />
+    );
+  }
+
+  return (
+    <SidebarListRow
+      {...sharedProps}
+      onClick={isSymlinkTargetPickerActive ? handleTargetPickerSelect : () => onSelect(node)}
+      leading={<ExpandToggle hasChildren={false} expanded={false} />}
+      icon={icon}
+      label={label}
+      trailing={
+        node.nodeType === "symlink" && node.symlinkTargetPath
+          ? `→ ${node.symlinkTargetPath}`
+          : undefined
+      }
+      actions={
+        isSymlinkTargetPickerActive ? null : (
           <>
             {canRestore ? (
               <RowActionButton
@@ -238,20 +353,15 @@ function AuxTreeNodeRow({
             ) : null}
             {isDeleted ? null : (
               <>
-                <RowActionButton
-                  anchorId={addDirAnchorId}
-                  onClick={() => onCreateChildDir(node, addDirAnchorId)}
-                  disabled={isBusy || isEditing}
-                  title="添加子文件夹"
-                  icon="icon-[material-symbols--create-new-folder]"
-                />
-                <RowActionButton
-                  anchorId={addFileAnchorId}
-                  onClick={() => onCreateChildFile(node, addFileAnchorId)}
-                  disabled={isBusy || isEditing}
-                  title="添加子文件"
-                  icon="icon-[material-symbols--note-add]"
-                />
+                {node.nodeType === "symlink" ? (
+                  <RowActionButton
+                    anchorId={retargetSymlinkAnchorId}
+                    onClick={() => onStartRetargetSymlink(node, retargetSymlinkAnchorId)}
+                    disabled={isBusy || isEditing}
+                    title="修改符号链接目标"
+                    icon="icon-[material-symbols--target]"
+                  />
+                ) : null}
                 <RowActionButton
                   anchorId={createSymlinkAnchorId}
                   onClick={() => onCreateSymlink(node, createSymlinkAnchorId)}
@@ -269,53 +379,7 @@ function AuxTreeNodeRow({
               </>
             )}
           </>
-        }
-      />
-    );
-  }
-
-  return (
-    <SidebarListRow
-      {...sharedProps}
-      onClick={() => onSelect(node)}
-      leading={<ExpandToggle hasChildren={false} expanded={false} />}
-      icon={icon}
-      label={label}
-      trailing={
-        node.nodeType === "symlink" && node.symlinkTargetPath
-          ? `→ ${node.symlinkTargetPath}`
-          : undefined
-      }
-      actions={
-        <>
-          {canRestore ? (
-            <RowActionButton
-              anchorId={restoreAnchorId}
-              onClick={() => onRestore(node.id, restoreAnchorId)}
-              disabled={isBusy || isEditing}
-              title="恢复到上一时间点状态"
-              icon="icon-[material-symbols--undo]"
-            />
-          ) : null}
-          {isDeleted ? null : (
-            <>
-              <RowActionButton
-                anchorId={createSymlinkAnchorId}
-                onClick={() => onCreateSymlink(node, createSymlinkAnchorId)}
-                disabled={isBusy || isEditing}
-                title="在同目录创建符号链接"
-                icon="icon-[material-symbols--link]"
-              />
-              <RowActionButton
-                anchorId={deleteAnchorId}
-                onClick={() => onDelete(node.id, deleteAnchorId)}
-                disabled={isBusy || isEditing}
-                title="删除节点"
-                icon="icon-[material-symbols--close]"
-              />
-            </>
-          )}
-        </>
+        )
       }
     />
   );
@@ -368,9 +432,11 @@ export function AuxTreePanel({
   onCreateChildDir,
   onCreateChildFile,
   onCreateSymlink,
+  onStartRetargetSymlink,
   onMove,
   onDelete,
   onRestore,
+  symlinkTargetPicker,
   isBusy,
   isPending,
   showTimelineChanges,
@@ -385,9 +451,11 @@ export function AuxTreePanel({
   onCreateChildDir: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onCreateChildFile: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onCreateSymlink: (_node: AuxTreeNodeVM, _anchorId: string) => void;
+  onStartRetargetSymlink: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onMove: (_intent: AuxHierarchyMoveIntent) => void;
   onDelete: (_id: string, _anchorId: string) => void;
   onRestore: (_id: string, _anchorId: string) => void;
+  symlinkTargetPicker: AuxSymlinkTargetPickerState;
   isBusy: boolean;
   isPending: boolean;
   showTimelineChanges: boolean;
@@ -586,6 +654,7 @@ export function AuxTreePanel({
       onCreateChildDir={onCreateChildDir}
       onCreateChildFile={onCreateChildFile}
       onCreateSymlink={onCreateSymlink}
+      onStartRetargetSymlink={onStartRetargetSymlink}
       onDelete={onDelete}
       onRestore={onRestore}
       onDragStart={handleDragStart}
@@ -594,6 +663,7 @@ export function AuxTreePanel({
       isDragging={draggedId === ctx.node.id}
       isBusy={isBusy}
       showTimelineChanges={showTimelineChanges}
+      symlinkTargetPicker={symlinkTargetPicker}
     />
   );
 

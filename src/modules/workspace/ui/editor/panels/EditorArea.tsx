@@ -36,6 +36,7 @@ export function EditorArea({
   contentSaveState,
   auxSaveState,
   auxPending,
+  isAuxSymlinkTargetPickerActive,
   onBodyChange,
   onAuxContentChange,
 }: {
@@ -48,6 +49,7 @@ export function EditorArea({
   contentSaveState: SaveState;
   auxSaveState: SaveState;
   auxPending: boolean;
+  isAuxSymlinkTargetPickerActive: boolean;
   onBodyChange: (_value: string) => void;
   onAuxContentChange: (_value: string) => void;
 }) {
@@ -155,7 +157,9 @@ export function EditorArea({
           ) : null}
         </div>
         <div className="flex flex-1 items-center justify-center px-4 text-sm text-foreground-muted">
-          {placeholder}
+          {isAuxSymlinkTargetPickerActive
+            ? "正在选择新的符号链接目标，请从左侧辅助信息树中点击有效节点。"
+            : placeholder}
         </div>
       </div>
     );

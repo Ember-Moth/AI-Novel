@@ -32,6 +32,7 @@ function createAuxFileNode(overrides: Partial<AuxTreeNodeVM> = {}): AuxTreeNodeV
     name: "角色.md",
     content: "",
     path: "/设定/角色.md",
+    symlinkTargetAuxNodeId: null,
     symlinkTargetPath: null,
     hasTimelineChange: false,
     isDeleted: false,

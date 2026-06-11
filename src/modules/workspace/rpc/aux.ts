@@ -12,6 +12,7 @@ import {
   ORIGIN_TIMELINE_POINT_ID,
   readAuxByIdAt,
   readAuxByPathAt,
+  retargetAuxSymlinkAt,
   restoreAuxNodeAt,
   writeFileAt,
 } from "@/modules/workspace/domain";
@@ -57,6 +58,15 @@ export const move = mutation<
 >({
   invalidate: (input) => [rpcTags.auxWorkspace(input.workspaceId)],
   handler: (input) => moveAuxNodeAt(input),
+});
+
+export const retargetSymlink = mutation<
+  Parameters<typeof retargetAuxSymlinkAt>[0],
+  ReturnType<typeof retargetAuxSymlinkAt>,
+  RpcTagList
+>({
+  invalidate: (input) => [rpcTags.auxWorkspace(input.workspaceId)],
+  handler: (input) => retargetAuxSymlinkAt(input),
 });
 
 export const deleteMutation = mutation<Parameters<typeof deleteAuxNodeAt>[0], void, RpcTagList>({

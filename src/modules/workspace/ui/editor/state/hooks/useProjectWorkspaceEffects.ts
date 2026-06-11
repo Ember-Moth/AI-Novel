@@ -24,6 +24,18 @@ export function useProjectWorkspaceEffects(
   const setActiveTimelinePointId = useWorkspaceState((state) => state.setActiveTimelinePointId);
   const setExpandedContentIds = useWorkspaceState((state) => state.setExpandedContentIds);
   const setExpandedAuxIds = useWorkspaceState((state) => state.setExpandedAuxIds);
+  const isAuxSymlinkTargetPickerActive = useWorkspaceState(
+    (state) => state.isAuxSymlinkTargetPickerActive,
+  );
+  const auxSymlinkTargetPickerSourceId = useWorkspaceState(
+    (state) => state.auxSymlinkTargetPickerSourceId,
+  );
+  const setIsAuxSymlinkTargetPickerActive = useWorkspaceState(
+    (state) => state.setIsAuxSymlinkTargetPickerActive,
+  );
+  const setAuxSymlinkTargetPickerSourceId = useWorkspaceState(
+    (state) => state.setAuxSymlinkTargetPickerSourceId,
+  );
   const drafts = useWorkspaceState((state) => state.drafts);
   const committedBodies = useWorkspaceState((state) => state.committedBodies);
   const setCommittedBodies = useWorkspaceState((state) => state.setCommittedBodies);
@@ -178,6 +190,34 @@ export function useProjectWorkspaceEffects(
     pendingAuxNodeId,
     setActiveAuxNodeId,
     setPendingAuxNodeId,
+  ]);
+
+  useEffect(() => {
+    if (!isAuxSymlinkTargetPickerActive) {
+      if (auxSymlinkTargetPickerSourceId) {
+        setAuxSymlinkTargetPickerSourceId(null);
+      }
+      return;
+    }
+
+    const sourceId = auxSymlinkTargetPickerSourceId;
+    const sourceNode = sourceId ? (auxNodeMap.get(sourceId) ?? null) : null;
+    if (
+      !sourceId ||
+      activeAuxNodeId !== sourceId ||
+      sourceNode?.nodeType !== "symlink" ||
+      sourceNode.isDeleted
+    ) {
+      setIsAuxSymlinkTargetPickerActive(false);
+      setAuxSymlinkTargetPickerSourceId(null);
+    }
+  }, [
+    activeAuxNodeId,
+    auxNodeMap,
+    auxSymlinkTargetPickerSourceId,
+    isAuxSymlinkTargetPickerActive,
+    setAuxSymlinkTargetPickerSourceId,
+    setIsAuxSymlinkTargetPickerActive,
   ]);
 
   useEffect(() => {

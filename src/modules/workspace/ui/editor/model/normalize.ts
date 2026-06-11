@@ -122,6 +122,7 @@ function buildAuxNode(
     name: node.name?.trim() || "(未命名)",
     content: node.content ?? "",
     path: node.path,
+    symlinkTargetAuxNodeId: node.symlinkTargetAuxNodeId,
     symlinkTargetPath: node.symlinkTargetPath,
     hasTimelineChange: node.hasTimelineChange,
     isDeleted: node.isDeleted,

@@ -22,6 +22,8 @@ type WorkspaceStateData = {
   activeTimelinePointId: string | null;
   expandedContentIds: Set<string>;
   expandedAuxIds: Set<string>;
+  isAuxSymlinkTargetPickerActive: boolean;
+  auxSymlinkTargetPickerSourceId: string | null;
   // editor buffers
   drafts: Record<string, string>;
   committedBodies: Record<string, string>;
@@ -43,6 +45,8 @@ type WorkspaceStateActions = {
   setActiveTimelinePointId: (updater: Updater<string | null>) => void;
   setExpandedContentIds: (updater: Updater<Set<string>>) => void;
   setExpandedAuxIds: (updater: Updater<Set<string>>) => void;
+  setIsAuxSymlinkTargetPickerActive: (updater: Updater<boolean>) => void;
+  setAuxSymlinkTargetPickerSourceId: (updater: Updater<string | null>) => void;
   setDrafts: (updater: Updater<Record<string, string>>) => void;
   setCommittedBodies: (updater: Updater<Record<string, string>>) => void;
   setPendingSaveCounts: (updater: Updater<Record<string, number>>) => void;
@@ -74,6 +78,8 @@ export function createWorkspaceStore() {
       activeTimelinePointId: null,
       expandedContentIds: new Set<string>(),
       expandedAuxIds: new Set<string>(),
+      isAuxSymlinkTargetPickerActive: false,
+      auxSymlinkTargetPickerSourceId: null,
       drafts: {},
       committedBodies: {},
       pendingSaveCounts: {},
@@ -90,6 +96,8 @@ export function createWorkspaceStore() {
       setActiveTimelinePointId: field("activeTimelinePointId"),
       setExpandedContentIds: field("expandedContentIds"),
       setExpandedAuxIds: field("expandedAuxIds"),
+      setIsAuxSymlinkTargetPickerActive: field("isAuxSymlinkTargetPickerActive"),
+      setAuxSymlinkTargetPickerSourceId: field("auxSymlinkTargetPickerSourceId"),
       setDrafts: field("drafts"),
       setCommittedBodies: field("committedBodies"),
       setPendingSaveCounts: field("pendingSaveCounts"),

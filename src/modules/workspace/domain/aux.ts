@@ -258,6 +258,55 @@ export function moveAuxNodeAt(input: {
   });
 }
 
+export function retargetAuxSymlinkAt(input: {
+  workspaceId: string;
+  timelinePointId?: TimelinePointRef;
+  symlinkNodeId: string;
+  targetNodeId: string;
+}) {
+  return db.transaction((tx) => {
+    const workspace = getWorkspaceOrThrow(tx, input.workspaceId);
+    const timelinePointId = validateTimelinePointRef(tx, workspace.id, input.timelinePointId);
+    const current = readAuxByIdAtInternal(tx, workspace, timelinePointId, input.symlinkNodeId);
+    invariant(current, "辅助信息不存在或在当前时间点不可见。");
+    invariant(current.nodeType === "symlink", "当前辅助信息不是符号链接，无法更新目标。");
+
+    const target = readAuxByIdAtInternal(tx, workspace, timelinePointId, input.targetNodeId);
+    invariant(target, "符号链接目标不存在或在当前时间点不可见。");
+
+    const snapshot = buildReachableAuxSnapshot(tx, workspace, timelinePointId);
+    const seen = new Set<string>();
+    let currentTarget = target;
+    while (true) {
+      invariant(
+        currentTarget.id !== current.id && !seen.has(currentTarget.id),
+        "符号链接目标会形成循环，无法保存。",
+      );
+      seen.add(currentTarget.id);
+      if (currentTarget.nodeType !== "symlink" || !currentTarget.symlinkTargetAuxNodeId) {
+        break;
+      }
+      const nextTarget = snapshot.get(currentTarget.symlinkTargetAuxNodeId);
+      invariant(nextTarget, "符号链接目标不存在或在当前时间点不可见。");
+      currentTarget = nextTarget;
+    }
+
+    putAuxLayer(tx, {
+      workspaceId: workspace.id,
+      timelinePointId,
+      auxNodeId: current.id,
+      isDeleted: false,
+      parentAuxNodeId: current.parentAuxNodeId,
+      name: current.name,
+      content: current.content,
+      symlinkTargetAuxNodeId: target.id,
+    });
+
+    touchWorkspace(tx, workspace.id);
+    return getAuxNodeOrThrow(tx, workspace.id, current.id);
+  });
+}
+
 export function deleteAuxNodeAt(input: {
   workspaceId: string;
   timelinePointId?: TimelinePointRef;

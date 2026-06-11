@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import { buildAuxTreeState, buildContentTreeState } from "./normalize";
 import {
+  collectInvalidAuxSymlinkTargetIds,
   collectAuxSubtreeIds,
   nextAuxSymlinkName,
   resolveAuxHierarchyMove,
@@ -141,6 +142,7 @@ function auxNode(name: string): AuxTreeNodeVM {
     name,
     content: "",
     path: `/${name}`,
+    symlinkTargetAuxNodeId: null,
     symlinkTargetPath: null,
     hasTimelineChange: false,
     isDeleted: false,
@@ -159,6 +161,7 @@ function rawAuxNode(
     name: id,
     content: "",
     path: `/${id}`,
+    symlinkTargetAuxNodeId: null,
     symlinkTargetPath: null,
     hasTimelineChange: false,
     isDeleted: false,
@@ -219,6 +222,36 @@ test("collectAuxSubtreeIds includes descendants", () => {
   };
 
   expect([...collectAuxSubtreeIds(root)]).toEqual(["dir", "child", "leaf"]);
+});
+
+test("collectInvalidAuxSymlinkTargetIds marks self and indirect cycles as invalid", () => {
+  const state = buildAuxTreeState([
+    rawAuxNode("source_link", {
+      nodeType: "symlink",
+      symlinkTargetAuxNodeId: "target_file",
+      symlinkTargetPath: "/target_file",
+    }),
+    rawAuxNode("target_file"),
+    rawAuxNode("safe_link", {
+      nodeType: "symlink",
+      symlinkTargetAuxNodeId: "target_file",
+      symlinkTargetPath: "/target_file",
+    }),
+    rawAuxNode("loop_a", {
+      nodeType: "symlink",
+      symlinkTargetAuxNodeId: "loop_b",
+      symlinkTargetPath: "/loop_b",
+    }),
+    rawAuxNode("loop_b", {
+      nodeType: "symlink",
+      symlinkTargetAuxNodeId: "source_link",
+      symlinkTargetPath: "/source_link",
+    }),
+  ]);
+
+  expect(collectInvalidAuxSymlinkTargetIds(state.nodeMap, "source_link")).toEqual(
+    new Set(["source_link", "loop_a", "loop_b"]),
+  );
 });
 
 test("resolveAuxHierarchyMove moves into a hovered directory", () => {

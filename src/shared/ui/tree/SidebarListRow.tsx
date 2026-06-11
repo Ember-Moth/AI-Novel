@@ -25,6 +25,7 @@ export function SidebarListRow({
   anchorId,
   dataNodeId,
   dataRowId,
+  dataSymlinkTargetPickerState,
   layout,
 }: {
   depth?: number;
@@ -40,6 +41,7 @@ export function SidebarListRow({
   anchorId?: string;
   dataNodeId?: string;
   dataRowId?: string;
+  dataSymlinkTargetPickerState?: "source" | "selected-target" | "disabled-target";
   layout?: boolean | "position";
 }) {
   const stateClass = isActive ? ROW_ACTIVE : ROW_INACTIVE;
@@ -52,6 +54,7 @@ export function SidebarListRow({
       data-action-anchor={anchorId}
       data-tree-node-id={dataNodeId}
       data-row-id={dataRowId}
+      data-symlink-target-picker-state={dataSymlinkTargetPickerState}
       className={cn(ROW_BASE, stateClass, groupClass, interactiveClass, className)}
       initial={false}
       animate={{ paddingLeft: rowPaddingLeft(depth) }}

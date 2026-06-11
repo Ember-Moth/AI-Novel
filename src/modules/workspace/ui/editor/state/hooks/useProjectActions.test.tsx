@@ -17,6 +17,7 @@ function createAuxNode(overrides: Partial<AuxTreeNodeVM> & Pick<AuxTreeNodeVM, "
     name,
     content: "",
     path: `/${name}`,
+    symlinkTargetAuxNodeId: null,
     symlinkTargetPath: null,
     hasTimelineChange: false,
     isDeleted: false,
@@ -56,6 +57,12 @@ function createWorkspaceState(input: {
     timelinePointId: string;
     parentDirId: string;
     name: string;
+    targetNodeId: string;
+  }) => Promise<{ id: string }>;
+  retargetMutate?: (_input: {
+    workspaceId: string;
+    timelinePointId: string;
+    symlinkNodeId: string;
     targetNodeId: string;
   }) => Promise<{ id: string }>;
 }) {
@@ -105,6 +112,14 @@ function createWorkspaceState(input: {
           input.moveMutate ??
           mock(async () => ({
             id: "aux_moved",
+          })),
+      },
+      retargetSymlinkAux: {
+        isPending: false,
+        mutate:
+          input.retargetMutate ??
+          mock(async () => ({
+            id: "aux_retargeted",
           })),
       },
       deleteAux: { isPending: false, mutate: mock(async () => undefined) },
@@ -260,5 +275,153 @@ test("handleAuxMove reports server errors on the source row anchor", async () =>
   expect(store.getState().auxError).toEqual({
     message: "重名冲突",
     anchorId: "aux:row:file_source",
+  });
+});
+
+test("enterAuxSymlinkTargetPicker tracks the source symlink and expands current target ancestors", () => {
+  const workspace = createWorkspaceState({
+    auxTree: [
+      createAuxNode({
+        id: "dir_target",
+        name: "设定",
+        nodeType: "dir",
+        children: [
+          createAuxNode({ id: "current_target", name: "角色.md" }),
+          createAuxNode({
+            id: "source_link",
+            name: "角色入口",
+            nodeType: "symlink",
+            symlinkTargetAuxNodeId: "current_target",
+            symlinkTargetPath: "/设定/角色.md",
+          }),
+        ],
+      }),
+    ],
+  });
+  const { actions, store } = renderActions(workspace);
+
+  actions.enterAuxSymlinkTargetPicker("source_link");
+
+  expect(store.getState().isAuxSymlinkTargetPickerActive).toBe(true);
+  expect(store.getState().auxSymlinkTargetPickerSourceId).toBe("source_link");
+  expect(store.getState().activeAuxNodeId).toBe("source_link");
+  expect(store.getState().expandedAuxIds.has("dir_target")).toBe(true);
+});
+
+test("cancelAuxSymlinkTargetPicker exits without changing selection", () => {
+  const workspace = createWorkspaceState({
+    auxTree: [
+      createAuxNode({
+        id: "source_link",
+        name: "角色入口",
+        nodeType: "symlink",
+        symlinkTargetAuxNodeId: "current_target",
+        symlinkTargetPath: "/设定/角色.md",
+      }),
+      createAuxNode({ id: "current_target", name: "角色.md" }),
+    ],
+  });
+  const { actions, store } = renderActions(workspace);
+
+  store.getState().setActiveAuxNodeId("source_link");
+  store.getState().setIsAuxSymlinkTargetPickerActive(true);
+  store.getState().setAuxSymlinkTargetPickerSourceId("source_link");
+  actions.cancelAuxSymlinkTargetPicker();
+
+  expect(store.getState().isAuxSymlinkTargetPickerActive).toBe(false);
+  expect(store.getState().auxSymlinkTargetPickerSourceId).toBeNull();
+  expect(store.getState().activeAuxNodeId).toBe("source_link");
+});
+
+test("submitAuxSymlinkTargetRetarget updates the source symlink and exits picker mode", async () => {
+  const workspace = createWorkspaceState({
+    auxTree: [
+      createAuxNode({
+        id: "source_link",
+        name: "角色入口",
+        nodeType: "symlink",
+        symlinkTargetAuxNodeId: "old_target",
+        symlinkTargetPath: "/设定/旧角色.md",
+      }),
+      createAuxNode({ id: "old_target", name: "旧角色.md" }),
+      createAuxNode({ id: "new_target", name: "新角色.md" }),
+    ],
+    retargetMutate: mock(async () => ({ id: "source_link" })),
+  });
+  const { actions, store } = renderActions(workspace);
+
+  store.getState().setActiveTimelinePointId("timeline_1");
+  store.getState().setActiveAuxNodeId("source_link");
+  store.getState().setIsAuxSymlinkTargetPickerActive(true);
+  store.getState().setAuxSymlinkTargetPickerSourceId("source_link");
+  await actions.submitAuxSymlinkTargetRetarget("new_target");
+
+  expect(workspace.aux.retargetSymlinkAux.mutate).toHaveBeenCalledWith({
+    workspaceId: "workspace_1",
+    timelinePointId: "timeline_1",
+    symlinkNodeId: "source_link",
+    targetNodeId: "new_target",
+  });
+  expect(store.getState().isAuxSymlinkTargetPickerActive).toBe(false);
+  expect(store.getState().auxSymlinkTargetPickerSourceId).toBeNull();
+  expect(store.getState().activeAuxNodeId).toBe("source_link");
+});
+
+test("submitAuxSymlinkTargetRetarget ignores the current target without requesting changes", async () => {
+  const workspace = createWorkspaceState({
+    auxTree: [
+      createAuxNode({
+        id: "source_link",
+        name: "角色入口",
+        nodeType: "symlink",
+        symlinkTargetAuxNodeId: "current_target",
+        symlinkTargetPath: "/设定/角色.md",
+      }),
+      createAuxNode({ id: "current_target", name: "角色.md" }),
+    ],
+  });
+  const { actions, store } = renderActions(workspace);
+
+  store.getState().setActiveTimelinePointId("timeline_1");
+  store.getState().setActiveAuxNodeId("source_link");
+  store.getState().setIsAuxSymlinkTargetPickerActive(true);
+  store.getState().setAuxSymlinkTargetPickerSourceId("source_link");
+  await actions.submitAuxSymlinkTargetRetarget("current_target");
+
+  expect(workspace.aux.retargetSymlinkAux.mutate).not.toHaveBeenCalled();
+  expect(store.getState().isAuxSymlinkTargetPickerActive).toBe(true);
+  expect(store.getState().auxSymlinkTargetPickerSourceId).toBe("source_link");
+});
+
+test("submitAuxSymlinkTargetRetarget keeps picker mode active and reports errors", async () => {
+  const workspace = createWorkspaceState({
+    auxTree: [
+      createAuxNode({
+        id: "source_link",
+        name: "角色入口",
+        nodeType: "symlink",
+        symlinkTargetAuxNodeId: "old_target",
+        symlinkTargetPath: "/设定/旧角色.md",
+      }),
+      createAuxNode({ id: "old_target", name: "旧角色.md" }),
+      createAuxNode({ id: "new_target", name: "新角色.md" }),
+    ],
+    retargetMutate: mock(async () => {
+      throw new Error("循环冲突");
+    }),
+  });
+  const { actions, store } = renderActions(workspace);
+
+  store.getState().setActiveTimelinePointId("timeline_1");
+  store.getState().setActiveAuxNodeId("source_link");
+  store.getState().setIsAuxSymlinkTargetPickerActive(true);
+  store.getState().setAuxSymlinkTargetPickerSourceId("source_link");
+  await actions.submitAuxSymlinkTargetRetarget("new_target");
+
+  expect(store.getState().isAuxSymlinkTargetPickerActive).toBe(true);
+  expect(store.getState().auxSymlinkTargetPickerSourceId).toBe("source_link");
+  expect(store.getState().auxError).toEqual({
+    message: "循环冲突",
+    anchorId: "aux:row:source_link",
   });
 });

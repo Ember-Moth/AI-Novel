@@ -177,6 +177,167 @@ test("symlink keeps following the same aux node after rename and move", () => {
   expect(exported.nodes[1]?.children.map((node) => node.name)).toEqual(["home", "villa"]);
 });
 
+test("retargetAuxSymlinkAt updates the exported symlink target path", () => {
+  const workspace = seedProject("project_symlink_retarget");
+  const rootId = workspace.auxRootId!;
+
+  const oldTarget = service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "old.md",
+    content: "old",
+  });
+  const newTarget = service.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "state",
+  });
+  const symlink = service.linkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "current",
+    targetNodeId: oldTarget.id,
+  });
+
+  service.retargetAuxSymlinkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    symlinkNodeId: symlink.id,
+    targetNodeId: newTarget.id,
+  });
+
+  const exported = service.exportAuxSnapshotTree(workspace.id);
+  expect(exported.nodes.find((node) => node.id === symlink.id)?.symlinkTargetPath).toBe("/state");
+  expect(
+    service.readAuxByPathAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, "/current")?.id,
+  ).toBe(newTarget.id);
+});
+
+test("retargetAuxSymlinkAt can point to another symlink node", () => {
+  const workspace = seedProject("project_symlink_retarget_symlink");
+  const rootId = workspace.auxRootId!;
+
+  const file = service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "notes.md",
+    content: "notes",
+  });
+  const targetLink = service.linkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "target_link",
+    targetNodeId: file.id,
+  });
+  const sourceLink = service.linkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "source_link",
+    targetNodeId: file.id,
+  });
+
+  service.retargetAuxSymlinkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    symlinkNodeId: sourceLink.id,
+    targetNodeId: targetLink.id,
+  });
+
+  const exported = service.exportAuxSnapshotTree(workspace.id);
+  expect(exported.nodes.find((node) => node.id === sourceLink.id)?.symlinkTargetPath).toBe(
+    "/target_link",
+  );
+  expect(
+    service.readAuxByPathAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, "/source_link")?.id,
+  ).toBe(targetLink.id);
+});
+
+test("retargetAuxSymlinkAt rejects self and indirect cycles", () => {
+  const workspace = seedProject("project_symlink_retarget_cycle");
+  const rootId = workspace.auxRootId!;
+
+  const file = service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "notes.md",
+    content: "notes",
+  });
+  const sourceLink = service.linkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "source_link",
+    targetNodeId: file.id,
+  });
+  const loopB = service.linkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "loop_b",
+    targetNodeId: sourceLink.id,
+  });
+  const loopA = service.linkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "loop_a",
+    targetNodeId: loopB.id,
+  });
+
+  expect(() =>
+    service.retargetAuxSymlinkAt({
+      workspaceId: workspace.id,
+      timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+      symlinkNodeId: sourceLink.id,
+      targetNodeId: sourceLink.id,
+    }),
+  ).toThrow("符号链接目标会形成循环，无法保存。");
+
+  expect(() =>
+    service.retargetAuxSymlinkAt({
+      workspaceId: workspace.id,
+      timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+      symlinkNodeId: sourceLink.id,
+      targetNodeId: loopA.id,
+    }),
+  ).toThrow("符号链接目标会形成循环，无法保存。");
+});
+
+test("retargetAuxSymlinkAt rejects non-symlink sources", () => {
+  const workspace = seedProject("project_symlink_retarget_non_symlink");
+  const rootId = workspace.auxRootId!;
+
+  const file = service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "notes.md",
+    content: "notes",
+  });
+  const dir = service.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "state",
+  });
+
+  expect(() =>
+    service.retargetAuxSymlinkAt({
+      workspaceId: workspace.id,
+      timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+      symlinkNodeId: file.id,
+      targetNodeId: dir.id,
+    }),
+  ).toThrow("当前辅助信息不是符号链接，无法更新目标。");
+});
+
 test("aux node names must stay unique within the same parent", () => {
   const workspace = seedProject("project_aux_unique_names");
   const rootId = workspace.auxRootId!;

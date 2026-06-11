@@ -103,6 +103,7 @@ export const aux = {
   writeFile: auxHandlers.writeFile,
   link: auxHandlers.link,
   move: auxHandlers.move,
+  retargetSymlink: auxHandlers.retargetSymlink,
   delete: auxHandlers.deleteMutation,
   restore: auxHandlers.restore,
   readById: auxHandlers.readById,

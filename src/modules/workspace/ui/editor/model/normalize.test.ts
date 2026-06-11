@@ -63,6 +63,7 @@ test("buildAuxTreeState filters unsupported nodes and builds aux indexes", () =>
       name: "  ",
       content: null,
       path: "/dir",
+      symlinkTargetAuxNodeId: null,
       symlinkTargetPath: null,
       hasTimelineChange: false,
       isDeleted: false,
@@ -73,6 +74,7 @@ test("buildAuxTreeState filters unsupported nodes and builds aux indexes", () =>
           name: "notes.md",
           content: null,
           path: "/dir/notes.md",
+          symlinkTargetAuxNodeId: null,
           symlinkTargetPath: null,
           hasTimelineChange: true,
           isDeleted: true,
@@ -86,6 +88,7 @@ test("buildAuxTreeState filters unsupported nodes and builds aux indexes", () =>
       name: "ignored",
       content: null,
       path: "/ignored",
+      symlinkTargetAuxNodeId: null,
       symlinkTargetPath: null,
       hasTimelineChange: true,
       isDeleted: false,
@@ -96,6 +99,7 @@ test("buildAuxTreeState filters unsupported nodes and builds aux indexes", () =>
           name: "still-ignored.md",
           content: "ignored",
           path: "/ignored/still-ignored.md",
+          symlinkTargetAuxNodeId: null,
           symlinkTargetPath: null,
           hasTimelineChange: true,
           isDeleted: false,
@@ -109,6 +113,7 @@ test("buildAuxTreeState filters unsupported nodes and builds aux indexes", () =>
   expect(state.tree[0]?.name).toBe("(未命名)");
   expect(state.tree[0]?.children.map((node) => node.id)).toEqual(["file"]);
   expect(state.nodeMap.get("file")?.content).toBe("");
+  expect(state.nodeMap.get("file")?.symlinkTargetAuxNodeId).toBeNull();
   expect(state.tree[0]?.hasTimelineChange).toBe(false);
   expect(state.nodeMap.get("file")?.hasTimelineChange).toBe(true);
   expect(state.nodeMap.get("file")?.isDeleted).toBe(true);
@@ -126,6 +131,7 @@ test("getAuxRenameValidationError reports empty and duplicate aux names", () => 
       name: "notes.md",
       content: "notes",
       path: "/notes.md",
+      symlinkTargetAuxNodeId: null,
       symlinkTargetPath: null,
       hasTimelineChange: false,
       isDeleted: false,
@@ -137,6 +143,7 @@ test("getAuxRenameValidationError reports empty and duplicate aux names", () => 
       name: "state",
       content: null,
       path: "/state",
+      symlinkTargetAuxNodeId: null,
       symlinkTargetPath: null,
       hasTimelineChange: false,
       isDeleted: false,

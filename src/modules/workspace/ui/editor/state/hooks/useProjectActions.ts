@@ -9,6 +9,8 @@ import {
 } from "@/modules/workspace/ui/editor/model/action-error";
 import {
   buildContentNodePath,
+  collectAncestorIds,
+  collectInvalidAuxSymlinkTargetIds,
   collectContentSubtreeIds,
   findContentDeleteFallback,
   getAuxRenameValidationError,
@@ -86,6 +88,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       writeFileAux,
       linkAux,
       moveAux,
+      retargetSymlinkAux,
       deleteAux,
       restoreAux,
     },
@@ -419,6 +422,113 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       }
     },
     [auxNodeMap, auxRootId, auxTree, expandAuxParent, linkAux, store, workspaceId],
+  );
+
+  const exitAuxSymlinkTargetPicker = useCallback(() => {
+    const state = store.getState();
+    state.setIsAuxSymlinkTargetPickerActive(false);
+    state.setAuxSymlinkTargetPickerSourceId(null);
+  }, [store]);
+
+  const enterAuxSymlinkTargetPicker = useCallback(
+    (nodeId: string) => {
+      const node = auxNodeMap.get(nodeId) ?? null;
+      if (node?.nodeType !== "symlink" || node.isDeleted) {
+        return;
+      }
+
+      clearActionError(store.getState().setAuxError);
+      store.getState().setExpandedAuxIds((previous) => {
+        const targetId = node.symlinkTargetAuxNodeId;
+        if (!targetId) {
+          return previous;
+        }
+
+        const next = new Set(previous);
+        let changed = false;
+        for (const ancestorId of collectAncestorIds(auxParentMap, targetId)) {
+          if (!next.has(ancestorId)) {
+            next.add(ancestorId);
+            changed = true;
+          }
+        }
+        return changed ? next : previous;
+      });
+
+      const state = store.getState();
+      state.setShouldAutoSelectContent(false);
+      state.setPendingContentNodeId(null);
+      state.setActiveContentNodeId(null);
+      state.setPendingAuxNodeId(null);
+      state.setActiveAuxNodeId(node.id);
+      state.setAuxSymlinkTargetPickerSourceId(node.id);
+      state.setIsAuxSymlinkTargetPickerActive(true);
+    },
+    [auxNodeMap, auxParentMap, store],
+  );
+
+  const cancelAuxSymlinkTargetPicker = useCallback(() => {
+    exitAuxSymlinkTargetPicker();
+  }, [exitAuxSymlinkTargetPicker]);
+
+  const submitAuxSymlinkTargetRetarget = useCallback(
+    async (targetNodeId: string) => {
+      const state = store.getState();
+      const {
+        activeTimelinePointId,
+        auxSymlinkTargetPickerSourceId,
+        setAuxError,
+        isAuxSymlinkTargetPickerActive,
+      } = state;
+      if (
+        !workspaceId ||
+        !activeTimelinePointId ||
+        !isAuxSymlinkTargetPickerActive ||
+        !auxSymlinkTargetPickerSourceId
+      ) {
+        return;
+      }
+
+      const source = auxNodeMap.get(auxSymlinkTargetPickerSourceId) ?? null;
+      if (source?.nodeType !== "symlink" || source.isDeleted) {
+        exitAuxSymlinkTargetPicker();
+        return;
+      }
+
+      if (source.symlinkTargetAuxNodeId === targetNodeId) {
+        return;
+      }
+
+      const invalidTargetIds = collectInvalidAuxSymlinkTargetIds(auxNodeMap, source.id);
+      if (invalidTargetIds.has(targetNodeId)) {
+        return;
+      }
+
+      clearActionError(setAuxError);
+
+      try {
+        await retargetSymlinkAux.mutate({
+          workspaceId,
+          timelinePointId: activeTimelinePointId,
+          symlinkNodeId: source.id,
+          targetNodeId,
+        });
+        const nextState = store.getState();
+        nextState.setShouldAutoSelectContent(false);
+        nextState.setPendingContentNodeId(null);
+        nextState.setActiveContentNodeId(null);
+        nextState.setPendingAuxNodeId(null);
+        nextState.setActiveAuxNodeId(source.id);
+        exitAuxSymlinkTargetPicker();
+      } catch (error) {
+        setActionError(
+          store.getState().setAuxError,
+          error instanceof Error ? error.message : "更新符号链接目标失败，请稍后重试。",
+          actionAnchorId("aux", "row", source.id),
+        );
+      }
+    },
+    [auxNodeMap, exitAuxSymlinkTargetPicker, retargetSymlinkAux, store, workspaceId],
   );
 
   const activateContentNode = useCallback(
@@ -1339,6 +1449,9 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       handleAuxCreateChildDir,
       handleAuxCreateChildFile,
       handleAuxCreateSymlink,
+      enterAuxSymlinkTargetPicker,
+      cancelAuxSymlinkTargetPicker,
+      submitAuxSymlinkTargetRetarget,
       handleAuxRename,
       handleAuxMove,
       handleAuxDelete,
