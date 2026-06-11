@@ -4,6 +4,7 @@ import {
   parseAppRoute,
   resolveCachedWorkspaceRoute,
   resolveLastWorkspaceRoute,
+  resolveProjectRouteTarget,
 } from "./useCachedProjectRoute";
 
 test("parseAppRoute recognizes home, detail, workspace, settings, and unknown routes", () => {
@@ -95,4 +96,35 @@ test("resolveLastWorkspaceRoute clears recent workspace on home route", () => {
     projectId: "project_2",
     workspaceId: "workspace_2",
   });
+});
+
+test("resolveProjectRouteTarget reopens the current or last project detail route", () => {
+  expect(
+    resolveProjectRouteTarget(
+      {
+        kind: "workspace",
+        projectId: "project_1",
+        workspaceId: "workspace_1",
+      },
+      null,
+    ),
+  ).toBe("/project/project_1");
+
+  expect(
+    resolveProjectRouteTarget(
+      {
+        kind: "settings",
+      },
+      "project_2",
+    ),
+  ).toBe("/project/project_2");
+
+  expect(
+    resolveProjectRouteTarget(
+      {
+        kind: "settings",
+      },
+      null,
+    ),
+  ).toBe("/");
 });

@@ -86,6 +86,18 @@ export function resolveLastWorkspaceRoute(
   return lastWorkspaceRoute;
 }
 
+export function resolveProjectRouteTarget(route: AppRoute, lastProjectId: string | null) {
+  if (route.kind === "project" || route.kind === "workspace") {
+    return `/project/${route.projectId}`;
+  }
+
+  if (route.kind === "settings" && lastProjectId) {
+    return `/project/${lastProjectId}`;
+  }
+
+  return "/";
+}
+
 export function useCachedProjectRoute() {
   const [location] = useLocation();
   const [lastProjectId, setLastProjectId] = useAtom(lastProjectIdAtom);
