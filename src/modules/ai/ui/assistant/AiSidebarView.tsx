@@ -696,11 +696,19 @@ export function RunSummaryRow({
           </button>
         ) : null}
       </div>
-      {canExpand && expanded ? (
-        <div className="border-t border-current/10 px-2 py-1.5 text-[10px] leading-4 break-all whitespace-pre-wrap">
-          {errorMessage}
-        </div>
-      ) : null}
+      <AnimatePresence initial={false}>
+        {canExpand && expanded ? (
+          <motion.div
+            className="border-t border-current/10 px-2 py-1.5 text-[10px] leading-4 break-all whitespace-pre-wrap"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+          >
+            {errorMessage}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
