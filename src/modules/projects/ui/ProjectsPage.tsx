@@ -1028,7 +1028,7 @@ function ProjectMetaPanel({
             rows={5}
             onChange={(event) => onDescriptionChange(event.target.value)}
             onBlur={onMetadataCommit}
-            className="w-full resize-y rounded-md border border-border bg-editor-background px-3 py-2 text-sm leading-relaxed text-foreground transition outline-none focus:border-accent-foreground disabled:cursor-wait disabled:opacity-70"
+            className="field-sizing-content w-full resize-none rounded-md border border-border bg-editor-background px-3 py-2 text-sm leading-relaxed text-foreground transition outline-none focus:border-accent-foreground disabled:cursor-wait disabled:opacity-70"
             placeholder="为这个项目补充背景、目标或当前进度。"
           />
         </label>
@@ -1364,7 +1364,7 @@ function BranchDetailPanel({
             rows={4}
             disabled={commitDisabled}
             placeholder="描述这次提交做了什么。"
-            className="w-full resize-y rounded-md border border-border bg-editor-background px-3 py-2 text-sm leading-relaxed text-foreground transition outline-none focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="field-sizing-content w-full resize-none rounded-md border border-border bg-editor-background px-3 py-2 text-sm leading-relaxed text-foreground transition outline-none focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
           />
           {commitError ? <InlineError message={commitError} /> : null}
           <div className="flex justify-end">

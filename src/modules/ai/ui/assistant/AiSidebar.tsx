@@ -514,7 +514,7 @@ export function AiSidebar({
                     controller.isBusy
                   }
                   rows={3}
-                  className="min-h-16 w-full resize-none border-none bg-transparent px-2.5 py-2 text-[13px] leading-5 text-editor-foreground outline-none placeholder:text-foreground-muted/70 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="field-sizing-content w-full resize-none border-none bg-transparent px-2.5 py-2 text-[13px] leading-5 text-editor-foreground outline-none placeholder:text-foreground-muted/70 disabled:cursor-not-allowed disabled:opacity-70"
                   placeholder={
                     controller.isLoadingSelection
                       ? "加载模型选择中..."
