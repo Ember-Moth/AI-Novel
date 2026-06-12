@@ -14,14 +14,53 @@ function seedProject(projectId: string) {
   return service.createDefaultWorkspace(projectId);
 }
 
-test("empty branch reports hasChanges true", () => {
+test("empty branch before first commit reports no diff areas", () => {
   const workspace = seedProject("status_empty_branch");
+
+  const status = service.getWorkingTreeStatus(workspace.branchId);
+
+  expect(status.hasChanges).toBe(false);
+  expect(status.headCommitId).toBeNull();
+  expect(status.areas.content.changed).toBe(false);
+  expect(status.areas.timeline.changed).toBe(false);
+  expect(status.areas.aux.changed).toBe(false);
+});
+
+test("uncommitted edits before first commit appear as additions", () => {
+  const workspace = seedProject("status_first_commit");
+  service.createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    title: "Chapter 1",
+    body: "Once",
+  });
+  service.createTimelinePoint({
+    workspaceId: workspace.id,
+    key: "tp_intro",
+    label: "Intro",
+  });
+  const dir = service.mkdirAt({
+    workspaceId: workspace.id,
+    parentDirId: workspace.auxRootId!,
+    name: "lore",
+  });
+  service.writeFileAt({
+    workspaceId: workspace.id,
+    parentDirId: dir.id,
+    name: "world.md",
+    content: "world building",
+  });
 
   const status = service.getWorkingTreeStatus(workspace.branchId);
 
   expect(status.hasChanges).toBe(true);
   expect(status.headCommitId).toBeNull();
-  expect(status.areas.content.changed).toBe(false);
+  expect(status.areas.content.changes).toEqual([{ label: "Chapter 1", kind: "added" }]);
+  expect(status.areas.timeline.changes).toEqual([{ label: "Intro", kind: "added" }]);
+  expect(status.areas.aux.changes).toEqual([
+    { label: "/lore@原点", kind: "added" },
+    { label: "/lore/world.md@原点", kind: "added" },
+  ]);
 });
 
 test("committed workspace with no edits reports hasChanges false", () => {

@@ -126,11 +126,13 @@ function contentLabel(node: FlatContentNode): string {
 function diffContentTrees(
   executor: DatabaseExecutor,
   currentTreeId: string,
-  headTreeId: string,
+  headTreeId: string | null,
   contentRootId: string,
 ): WorkingTreeChangeItem[] {
   const current = flattenContentTree(executor, currentTreeId);
-  const head = flattenContentTree(executor, headTreeId);
+  const head = headTreeId
+    ? flattenContentTree(executor, headTreeId)
+    : new Map<string, FlatContentNode>();
   const changes: WorkingTreeChangeItem[] = [];
   const allIds = new Set([...current.keys(), ...head.keys()]);
 
@@ -165,10 +167,12 @@ function timelineFingerprint(point: TimelinePayload["points"][number]): string {
 function diffTimelineTrees(
   executor: DatabaseExecutor,
   currentTreeId: string,
-  headTreeId: string,
+  headTreeId: string | null,
 ): WorkingTreeChangeItem[] {
   const currentPoints = loadTreePayload<TimelinePayload>(executor, currentTreeId).points;
-  const headPoints = loadTreePayload<TimelinePayload>(executor, headTreeId).points;
+  const headPoints = headTreeId
+    ? loadTreePayload<TimelinePayload>(executor, headTreeId).points
+    : [];
   const currentMap = new Map(currentPoints.map((point) => [point.id, point]));
   const headMap = new Map(headPoints.map((point) => [point.id, point]));
   const changes: WorkingTreeChangeItem[] = [];
@@ -311,12 +315,18 @@ function formatAuxChangeLabel(
 function diffAuxTrees(
   executor: DatabaseExecutor,
   currentTreeId: string,
-  headTreeId: string,
+  headTreeId: string | null,
   currentTimelineTreeId: string,
-  headTimelineTreeId: string,
+  headTimelineTreeId: string | null,
 ): WorkingTreeChangeItem[] {
   const current = flattenAuxTree(executor, currentTreeId);
-  const head = flattenAuxTree(executor, headTreeId);
+  const head = headTreeId
+    ? flattenAuxTree(executor, headTreeId)
+    : {
+        rootAuxNodeId: current.rootAuxNodeId,
+        nodesById: new Map<string, AuxNodePayload>(),
+        layers: [] as AuxLayerEntry[],
+      };
   const currentMap = new Map(
     current.layers
       .filter((entry) => entry.auxNodeId !== current.rootAuxNodeId)
@@ -329,10 +339,10 @@ function diffAuxTrees(
   );
   const changes: WorkingTreeChangeItem[] = [];
   const allKeys = new Set([...currentMap.keys(), ...headMap.keys()]);
-  const timelineLabels = buildTimelinePointLabelMap(executor, [
-    currentTimelineTreeId,
-    headTimelineTreeId,
-  ]);
+  const timelineLabels = buildTimelinePointLabelMap(
+    executor,
+    headTimelineTreeId ? [currentTimelineTreeId, headTimelineTreeId] : [currentTimelineTreeId],
+  );
 
   const labelForAuxChange = (
     currentEntry: AuxLayerEntry | undefined,
@@ -417,10 +427,31 @@ export function getWorkingTreeStatus(branchId: string): WorkingTreeStatus {
     };
 
     if (!branch.headCommitId) {
+      const currentRoot = loadTreePayload<RootTreePayload>(tx, currentRootId);
+      const contentChanges = diffContentTrees(
+        tx,
+        currentRoot.contentTreeId,
+        null,
+        workspace.contentRootId,
+      );
+      const timelineChanges = diffTimelineTrees(tx, currentRoot.timelineTreeId, null);
+      const auxChanges = diffAuxTrees(
+        tx,
+        currentRoot.auxTreeId,
+        null,
+        currentRoot.timelineTreeId,
+        null,
+      );
+      const areas = {
+        content: areaWithChanges(contentChanges),
+        timeline: areaWithChanges(timelineChanges),
+        aux: areaWithChanges(auxChanges),
+      };
+
       return {
-        hasChanges: true,
+        hasChanges: areas.content.changed || areas.timeline.changed || areas.aux.changed,
         headCommitId: null,
-        areas: emptyAreas,
+        areas,
       };
     }
 

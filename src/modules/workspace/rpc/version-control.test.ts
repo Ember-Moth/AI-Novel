@@ -136,7 +136,7 @@ test("working tree status watches branch, history and workspace tags", async () 
     rpcTags.timelineList(workspace.id),
     rpcTags.auxWorkspace(workspace.id),
   ]);
-  expect(result.data.hasChanges).toBe(true);
+  expect(result.data.hasChanges).toBe(false);
   expect(result.data.headCommitId).toBeNull();
 });
 

@@ -1557,10 +1557,12 @@ function WorkingTreeStatusPanel({
         {discardError ? <InlineError message={discardError} /> : null}
         {loading ? (
           <LoadingBlock label="正在对比工作区与 HEAD..." />
-        ) : status == null ? null : status.headCommitId == null ? (
-          <p className="text-sm text-foreground-muted">尚无提交，可创建首次提交。</p>
-        ) : !status.hasChanges ? (
-          <p className="text-sm text-foreground-muted">工作区与 HEAD 一致，无未提交变更。</p>
+        ) : status == null ? null : !status.hasChanges ? (
+          <p className="text-sm text-foreground-muted">
+            {status.headCommitId == null
+              ? "尚无提交，当前工作区无变更。"
+              : "工作区与 HEAD 一致，无未提交变更。"}
+          </p>
         ) : (
           <div className="space-y-2">
             {(Object.keys(workingTreeAreaLabels) as Array<keyof typeof workingTreeAreaLabels>).map(
