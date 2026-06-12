@@ -1424,8 +1424,11 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for ti
           stepNumber: 0,
           toolResult: {
             toolCallId: "tool_timeline_create",
-            toolName: "create_story_timeline_point",
-            output: { ok: true, data: { action: "created", pointId: "point_created" } },
+            toolName: "create_story_timeline_points",
+            output: {
+              ok: true,
+              data: { action: "created_batch", points: [{ pointId: "point_created" }] },
+            },
           },
         },
         {
@@ -1466,8 +1469,11 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for ti
           toolResults: [
             {
               toolCallId: "tool_timeline_create",
-              toolName: "create_story_timeline_point",
-              output: { ok: true, data: { action: "created", pointId: "point_created" } },
+              toolName: "create_story_timeline_points",
+              output: {
+                ok: true,
+                data: { action: "created_batch", points: [{ pointId: "point_created" }] },
+              },
             },
             {
               toolCallId: "tool_timeline_move",
@@ -1492,7 +1498,7 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for ti
     threadId: thread.id,
     text: "调整时间线",
     activeTools: [
-      "create_story_timeline_point",
+      "create_story_timeline_points",
       "move_story_timeline_point",
       "delete_story_timeline_point",
     ],

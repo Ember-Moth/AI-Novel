@@ -63,34 +63,68 @@ export function createTimelinePoint(input: {
   label: string;
   description?: string | null;
 }) {
+  return createTimelinePoints({
+    workspaceId: input.workspaceId,
+    afterPointId: input.afterPointId,
+    points: [
+      {
+        key: input.key,
+        label: input.label,
+        description: input.description,
+      },
+    ],
+  })[0]!;
+}
+
+export function createTimelinePoints(input: {
+  workspaceId: string;
+  afterPointId?: string | typeof ORIGIN_TIMELINE_POINT_ID;
+  points: Array<{
+    key: string;
+    label: string;
+    description?: string | null;
+  }>;
+}) {
   return db.transaction((tx) => {
     enableDeferredForeignKeys(tx);
 
     const workspace = getWorkspaceOrThrow(tx, input.workspaceId);
     const afterPointId = validateTimelinePointRef(tx, workspace.id, input.afterPointId);
     const successor = getTimelineSuccessor(tx, workspace.id, afterPointId);
-    const pointId = createId("timeline");
     const timestamp = now();
+    const createdPointIds: string[] = [];
+
+    invariant(input.points.length > 0, "至少需要创建一个时间点。");
 
     if (successor) {
-      setTimelinePrevPoint(tx, successor.id, pointId, timestamp);
+      setTimelinePrevPoint(tx, successor.id, createId("timeline_prev_batch_anchor"), timestamp);
     }
 
-    tx.insert(schema.timelinePoints)
-      .values({
-        id: pointId,
-        workspaceId: workspace.id,
-        key: input.key,
-        label: input.label,
-        description: input.description ?? null,
-        prevPointId: afterPointId,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      })
-      .run();
+    let prevPointId = afterPointId;
+    for (const point of input.points) {
+      const pointId = createId("timeline");
+      createdPointIds.push(pointId);
+      tx.insert(schema.timelinePoints)
+        .values({
+          id: pointId,
+          workspaceId: workspace.id,
+          key: point.key,
+          label: point.label,
+          description: point.description ?? null,
+          prevPointId,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+        .run();
+      prevPointId = pointId;
+    }
+
+    if (successor) {
+      setTimelinePrevPoint(tx, successor.id, prevPointId, timestamp);
+    }
 
     touchWorkspace(tx, workspace.id);
-    return getTimelinePointOrThrow(tx, workspace.id, pointId);
+    return createdPointIds.map((pointId) => getTimelinePointOrThrow(tx, workspace.id, pointId));
   });
 }
 

@@ -1,7 +1,7 @@
 import { tool } from "ai";
 
 import {
-  createTimelinePoint,
+  createTimelinePoints,
   deleteTimelinePoint,
   listTimelinePoints,
   moveTimelinePoint,
@@ -91,38 +91,52 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
         });
       },
     }),
-    create_story_timeline_point: tool({
+    create_story_timeline_points: tool({
       description:
-        "在故事时间线上创建新的时间点。用于新增剧情节拍；origin 是内置的全局初始设定原点，story 时间线从第一个自定义时间点开始。省略 afterPointId 时追加到故事时间线末尾。",
+        "在故事时间线上按顺序一次创建多个新时间点。用于批量新增剧情节拍；origin 是内置的全局初始设定原点，story 时间线从第一个自定义时间点开始。省略 afterPointId 时整体追加到故事时间线末尾。",
       inputSchema: jsonSchema<{
-        key: string;
-        label: string;
-        description?: string;
+        points: Array<{
+          key: string;
+          label: string;
+          description?: string;
+        }>;
         afterPointId?: string;
       }>({
         type: "object",
-        required: ["key", "label"],
+        required: ["points"],
         properties: {
-          key: {
-            type: "string",
-            description: "时间点的唯一标识符，用于内部引用，需在当前时间线内唯一。",
-          },
-          label: {
-            type: "string",
-            description: "时间点的显示名称，如「序幕」「第一章」「转折」等。",
-          },
-          description: {
-            type: "string",
-            description: "时间点说明，描述该剧情节拍在故事中的作用。",
+          points: {
+            type: "array",
+            minItems: 1,
+            description: "要按顺序创建的时间点列表。数组顺序就是插入后的故事时间推进顺序。",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["key", "label"],
+              properties: {
+                key: {
+                  type: "string",
+                  description: "时间点的唯一标识符，用于内部引用，需在当前时间线内唯一。",
+                },
+                label: {
+                  type: "string",
+                  description: "时间点的显示名称，如「序幕」「第一章」「转折」等。",
+                },
+                description: {
+                  type: "string",
+                  description: "时间点说明，描述该剧情节拍在故事中的作用。",
+                },
+              },
+            },
           },
           afterPointId: {
             type: "string",
             description:
-              '新时间点将插入到此时间点之后。省略则在故事时间线末尾追加。传入 "origin" 表示插入到全局初始设定原点之后，即故事时间线的最前端。',
+              '新时间点列表将整体插入到此时间点之后。省略则在故事时间线末尾追加。传入 "origin" 表示插入到全局初始设定原点之后，即故事时间线的最前端。',
           },
         },
       }),
-      execute: async ({ key, label, description, afterPointId }) => {
+      execute: async ({ points, afterPointId }) => {
         const workspace = getWorkspaceForProject(projectId);
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"));
@@ -136,22 +150,26 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
                   workspaceId: workspace.id,
                   timelinePointIdOrLabel: afterPointId,
                 });
-          const point = createTimelinePoint({
+          const createdPoints = createTimelinePoints({
             workspaceId: workspace.id,
-            key,
-            label,
-            description: description ?? undefined,
             afterPointId: resolvedAfterPointId,
+            points: points.map((point) => ({
+              key: point.key,
+              label: point.label,
+              description: point.description ?? undefined,
+            })),
           });
 
           return {
             ok: true,
             truncated: false,
             data: {
-              action: "created" as const,
-              pointId: point.id,
-              key: point.key,
-              label: point.label,
+              action: "created_batch" as const,
+              points: createdPoints.map((point) => ({
+                pointId: point.id,
+                key: point.key,
+                label: point.label,
+              })),
             },
           };
         });

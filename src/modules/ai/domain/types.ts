@@ -92,7 +92,7 @@ export const PROJECT_ASSISTANT_WRITE_TOOL_NAMES = [
   "update_manuscript_node",
   "move_manuscript_node",
   "delete_manuscript_node",
-  "create_story_timeline_point",
+  "create_story_timeline_points",
   "update_story_timeline_point",
   "move_story_timeline_point",
   "delete_story_timeline_point",

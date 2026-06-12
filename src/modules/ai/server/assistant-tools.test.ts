@@ -900,7 +900,7 @@ test("set_current_timeline accepts origin", async () => {
   );
 });
 
-test("create_story_timeline_point accepts afterPointId as timeline label", async () => {
+test("create_story_timeline_points accepts afterPointId as timeline label", async () => {
   const workspace = seedProject("assistant_tools_create_timeline_after_label");
   const prologue = workspaceDomain.createTimelinePoint({
     workspaceId: workspace.id,
@@ -919,18 +919,16 @@ test("create_story_timeline_point accepts afterPointId as timeline label", async
     runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.create_story_timeline_point!, {
-    key: "turning-point",
-    label: "转折",
+  const result = await executeTool(tools.create_story_timeline_points!, {
+    points: [{ key: "turning-point", label: "转折" }],
     afterPointId: "序幕",
   });
 
   expect(result).toMatchObject({
     ok: true,
     data: {
-      action: "created",
-      key: "turning-point",
-      label: "转折",
+      action: "created_batch",
+      points: [{ key: "turning-point", label: "转折" }],
     },
   });
   expect(workspaceDomain.listTimelinePoints(workspace.id).map((point) => point.label)).toEqual([
@@ -941,7 +939,7 @@ test("create_story_timeline_point accepts afterPointId as timeline label", async
   ]);
 });
 
-test("create_story_timeline_point prefers exact id over matching label", async () => {
+test("create_story_timeline_points prefers exact id over matching label", async () => {
   const workspace = seedProject("assistant_tools_create_timeline_after_id_priority");
   const firstPoint = workspaceDomain.createTimelinePoint({
     workspaceId: workspace.id,
@@ -960,9 +958,8 @@ test("create_story_timeline_point prefers exact id over matching label", async (
     runtimeContext: createRuntimeContext(),
   });
 
-  await executeTool(tools.create_story_timeline_point!, {
-    key: "gamma",
-    label: "插入点",
+  await executeTool(tools.create_story_timeline_points!, {
+    points: [{ key: "gamma", label: "插入点" }],
     afterPointId: firstPoint.id,
   });
 
@@ -971,6 +968,48 @@ test("create_story_timeline_point prefers exact id over matching label", async (
     "第一章",
     "插入点",
     firstPoint.id,
+  ]);
+});
+
+test("create_story_timeline_points creates multiple points in one batch", async () => {
+  const workspace = seedProject("assistant_tools_create_timeline_batch");
+  workspaceDomain.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    key: "prologue",
+    label: "序幕",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_create_timeline_batch",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  const result = await executeTool(tools.create_story_timeline_points!, {
+    afterPointId: "序幕",
+    points: [
+      { key: "chapter-1", label: "第一章" },
+      { key: "chapter-2", label: "第二章" },
+      { key: "chapter-3", label: "第三章" },
+    ],
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    data: {
+      action: "created_batch",
+      points: [
+        { key: "chapter-1", label: "第一章", pointId: expect.any(String) },
+        { key: "chapter-2", label: "第二章", pointId: expect.any(String) },
+        { key: "chapter-3", label: "第三章", pointId: expect.any(String) },
+      ],
+    },
+  });
+  expect(workspaceDomain.listTimelinePoints(workspace.id).map((point) => point.label)).toEqual([
+    "Origin",
+    "序幕",
+    "第一章",
+    "第二章",
+    "第三章",
   ]);
 });
 

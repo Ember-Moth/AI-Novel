@@ -857,7 +857,7 @@ const AUX_WRITE_TOOL_NAME_SET = new Set<string>([
 
 const TIMELINE_UPDATE_TOOL_NAME = "update_story_timeline_point";
 const TIMELINE_WRITE_TOOL_NAME_SET = new Set<string>([
-  "create_story_timeline_point",
+  "create_story_timeline_points",
   TIMELINE_UPDATE_TOOL_NAME,
   "move_story_timeline_point",
   "delete_story_timeline_point",

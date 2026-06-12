@@ -35,7 +35,7 @@ export const CONTENT_WRITE_TOOL_NAMES = [
 export const TIMELINE_TOOL_NAMES = [
   "list_story_timeline_points",
   "set_current_timeline",
-  "create_story_timeline_point",
+  "create_story_timeline_points",
   "update_story_timeline_point",
   "move_story_timeline_point",
   "delete_story_timeline_point",

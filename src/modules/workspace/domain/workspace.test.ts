@@ -1025,6 +1025,36 @@ test("timeline point insertion at origin rewires the previous head", () => {
   ]);
 });
 
+test("timeline point batch insertion preserves order without requiring intermediate ids", () => {
+  const workspace = seedProject("project_timeline_insert_batch");
+  const pointA = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    key: "point_a",
+    label: "Point A",
+  });
+
+  const created = service.createTimelinePoints({
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    points: [
+      { key: "point_b", label: "Point B" },
+      { key: "point_c", label: "Point C" },
+      { key: "point_d", label: "Point D" },
+    ],
+  });
+
+  const ordered = service.listTimelinePoints(workspace.id);
+  expect(created.map((point) => point.label)).toEqual(["Point B", "Point C", "Point D"]);
+  expect(ordered.map((point) => point.id)).toEqual([
+    service.ORIGIN_TIMELINE_POINT_ID,
+    created[0]!.id,
+    created[1]!.id,
+    created[2]!.id,
+    pointA.id,
+  ]);
+});
+
 test("timeline point move rewires both source and target segments", () => {
   const workspace = seedProject("project_timeline_move");
   const pointA = service.createTimelinePoint({
