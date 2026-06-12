@@ -234,7 +234,9 @@ function getToolResponseData(payload: unknown) {
 }
 
 function getToolResponseTitle(payload: unknown) {
-  return getRecordString(getToolResponseData(payload), "title");
+  const data = getToolResponseData(payload);
+  const node = getRecordField(data, "node");
+  return getRecordString(data, "title") ?? getRecordString(node, "title");
 }
 
 function getToolResponseTimelineLabel(payload: unknown) {
@@ -304,7 +306,10 @@ export function buildAssistantToolTraceSummary({
       return "查看正文目录";
     case "read_manuscript_node": {
       const nodeId = getRecordString(requestPayload, "nodeId");
-      return nodeId == null ? "读取当前正文" : `读取正文 ${formatToolTarget(nodeId, "")}`;
+      return `读取正文 ${formatToolTarget(
+        responseTitle ?? nodeId,
+        nodeId == null ? "当前正文" : "",
+      )}`;
     }
     case "create_manuscript_node":
       return `创建正文 ${formatToolTarget(

@@ -142,6 +142,46 @@ test("buildAssistantToolTraceSummary falls back for unknown tools", () => {
 test("buildAssistantToolTraceSummary prefers returned manuscript titles", () => {
   expect(
     buildAssistantToolTraceSummary({
+      toolName: "read_manuscript_node",
+      requestPayload: {
+        nodeId: "content_123",
+      },
+      responsePayload: {
+        ok: true,
+        data: {
+          node: {
+            id: "content_123",
+            title: "序章：倒数三秒",
+            body: "正文",
+            children: [],
+          },
+        },
+      },
+      status: "success",
+    }),
+  ).toBe("读取正文 序章：倒数三秒");
+
+  expect(
+    buildAssistantToolTraceSummary({
+      toolName: "read_manuscript_node",
+      requestPayload: {},
+      responsePayload: {
+        ok: true,
+        data: {
+          node: {
+            id: "content_123",
+            title: "当前章节",
+            body: "正文",
+            children: [],
+          },
+        },
+      },
+      status: "success",
+    }),
+  ).toBe("读取正文 当前章节");
+
+  expect(
+    buildAssistantToolTraceSummary({
       toolName: "move_manuscript_node",
       requestPayload: {
         nodeId: "content_123",
