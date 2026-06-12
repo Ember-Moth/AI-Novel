@@ -21,7 +21,7 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
   return {
     list_story_timeline_points: tool({
       description:
-        "获取故事时间线上的全部时间点。用于理解章节锚定位置和叙事推进顺序；列表顺序就是故事时间推进顺序。",
+        "获取全部时间点。origin 是内置原点，用于放置全局初始设定，不属于故事推进顺序；第一个自定义时间点才是故事时间线的真正起点。列表按时间推进顺序排列。",
       inputSchema: jsonSchema<Record<string, never>>({
         type: "object",
         additionalProperties: false,
@@ -46,7 +46,7 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
     }),
     create_story_timeline_point: tool({
       description:
-        "在故事时间线上创建新的时间点。用于新增剧情节拍；省略 afterPointId 时追加到时间线末尾。",
+        "在故事时间线上创建新的时间点。用于新增剧情节拍；origin 是内置的全局初始设定原点，story 时间线从第一个自定义时间点开始。省略 afterPointId 时追加到故事时间线末尾。",
       inputSchema: jsonSchema<{
         key: string;
         label: string;
@@ -71,7 +71,7 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
           afterPointId: {
             type: "string",
             description:
-              '新时间点将插入到此时间点之后。省略则在时间线末尾追加。传入 "origin" 表示插入到原点之后。',
+              '新时间点将插入到此时间点之后。省略则在故事时间线末尾追加。传入 "origin" 表示插入到全局初始设定原点之后，即故事时间线的最前端。',
           },
         },
       }),
@@ -104,7 +104,8 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
       },
     }),
     update_story_timeline_point: tool({
-      description: "更新故事时间点的标签或说明。用于调整已有剧情节拍的信息；无法修改原点时间点。",
+      description:
+        "更新时间点的标签或说明。用于调整已有剧情节拍的信息；origin 是内置的全局初始设定锚点，不可修改。",
       inputSchema: jsonSchema<{
         pointId: string;
         label?: string;
@@ -169,7 +170,7 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
           afterPointId: {
             type: "string",
             description:
-              '移动后该时间点将排在此时间点之后。省略则移动到时间线末尾。传入 "origin" 表示移动到原点之后。',
+              '移动后该时间点将排在此时间点之后。省略则移动到故事时间线末尾。传入 "origin" 表示移动到全局初始设定原点之后，即故事时间线的最前端。',
           },
         },
       }),
@@ -209,7 +210,7 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
         properties: {
           pointId: {
             type: "string",
-            description: "要删除的时间点 ID。不能删除原点时间点。",
+            description: "要删除的时间点 ID。不能删除 origin 原点（全局初始设定锚点）。",
           },
           purgeAuxLayers: {
             type: "boolean",

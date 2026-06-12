@@ -16,10 +16,10 @@ import {
 } from "./_shared";
 
 const REFERENCE_OVERLAY_READ_SEMANTICS =
-  "参考资料是按时间点叠加的 overlayfs 式视图：读取某个 overlayTimelinePointId 时，会看到该时间点自己的覆盖层，并自动继承更早时间点仍可见的目录、文件和链接；较新时间点的改动不会改变较早时间点的状态。";
+  "参考资料是按时间点叠加的 overlayfs 式视图：origin 放置全局初始设定，第一个自定义时间点开始才是故事时间线。读取某个 overlayTimelinePointId 时，会看到该时间点自己的覆盖层，并自动继承更早时间点仍可见的目录、文件和链接；较新时间点的改动不会改变较早时间点的状态。";
 
 const OVERLAY_TIMELINE_POINT_READ_DESCRIPTION =
-  '要读取的参考资料叠加视图时间点 ID。省略时使用当前选中的时间点；传入 "origin" 表示原点时间点。';
+  '要读取的参考资料叠加视图时间点 ID。省略时使用当前选中的时间点；传入 "origin" 表示读取全局初始设定原点（故事开始前的初始状态）。';
 
 export function buildAuxReadTools({ projectId, context }: ToolBuildContext) {
   return {

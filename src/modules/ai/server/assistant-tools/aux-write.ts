@@ -24,10 +24,10 @@ import {
 import { invariant } from "@/shared/lib/domain";
 
 const REFERENCE_OVERLAY_WRITE_SEMANTICS =
-  "参考资料是按时间点叠加的 overlayfs 式视图：目标 overlayTimelinePointId 会继承更早时间点可见的目录、文件和链接；本工具只在目标时间点写入/覆盖一层新状态，不会回写或改变任何更早时间点。";
+  "参考资料是按时间点叠加的 overlayfs 式视图：origin 放置全局初始设定，第一个自定义时间点开始才是故事时间线。目标 overlayTimelinePointId 会继承更早时间点可见的目录、文件和链接；本工具只在目标时间点写入/覆盖一层新状态，不会回写或改变任何更早时间点。";
 
 const OVERLAY_TIMELINE_POINT_WRITE_DESCRIPTION =
-  '要写入覆盖层的时间点 ID。省略时使用当前选中的时间点；传入 "origin" 表示原点时间点。写入后，较晚时间点读取时可继承该状态，较早时间点不受影响。';
+  '要写入覆盖层的时间点 ID。省略时使用当前选中的时间点；传入 "origin" 表示写入全局初始设定原点（故事开始前的初始状态，不属于故事推进顺序）。写入后，较晚时间点读取时可继承该状态，较早时间点不受影响。';
 
 export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
   return {
