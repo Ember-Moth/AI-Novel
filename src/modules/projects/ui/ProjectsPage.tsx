@@ -1,6 +1,6 @@
 import { skipToken } from "@codehz/rpc/react";
 import { ScopeProvider } from "bunshi/react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 
 import { AppShell } from "@/app/shell/AppShell";
@@ -20,12 +20,13 @@ import {
   resolveSelectedBranchId,
   sortProjectBranches,
 } from "./projectCockpit";
-import { ProjectDialog } from "./ProjectDialog";
+import { CreateBranchDialog, CreateProjectDialog, ForkBranchDialog } from "./ProjectDialogFields";
 import { ProjectListView } from "./ProjectListView";
 import type { BranchRow, CommitRow, ProjectList } from "./projectTypes";
-import { formatCommitId, InlineError } from "./projectUi";
+import { InlineError } from "./projectUi";
 import { ProjectWorkbenchMain } from "./ProjectWorkbenchMain";
 import { ProjectWorkbenchSidebar } from "./ProjectWorkbenchSidebar";
+import { useProjectPageStoreApi } from "./state/projectPageStore";
 
 type ProjectMutationContext = {
   previousProjects?: ProjectList;
@@ -43,23 +44,7 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
   const createBranchDialogRef = useRef<HTMLDialogElement>(null);
   const forkBranchDialogRef = useRef<HTMLDialogElement>(null);
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [formError, setFormError] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const [detailName, setDetailName] = useState("");
-  const [detailDescription, setDetailDescription] = useState("");
-  const [detailError, setDetailError] = useState<string | null>(null);
-
-  const [newBranchName, setNewBranchName] = useState("");
-  const [newBranchError, setNewBranchError] = useState<string | null>(null);
-  const [forkBranchName, setForkBranchName] = useState("");
-  const [forkBranchError, setForkBranchError] = useState<string | null>(null);
-  const [forkCommit, setForkCommit] = useState<CommitRow | null>(null);
-  const [commitMessage, setCommitMessage] = useState("");
-  const [commitError, setCommitError] = useState<string | null>(null);
-  const [discardError, setDiscardError] = useState<string | null>(null);
+  const projectPageStore = useProjectPageStoreApi();
 
   const projectsQuery = rpc.useQuery("projects.list", projectId ? skipToken : undefined, {
     refetchOnWindowFocus: true,
@@ -189,22 +174,12 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
   const projectList = [...(projectsQuery.data ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
 
   useEffect(() => {
-    if (!project) {
-      setDetailName("");
-      setDetailDescription("");
-      setDetailError(null);
-      return;
-    }
-
-    setDetailName(project.name);
-    setDetailDescription(project.description ?? "");
-    setDetailError(null);
-  }, [project]);
+    projectPageStore.getState().syncProjectDetail(project ?? null);
+  }, [project, projectPageStore]);
 
   useEffect(() => {
-    setCommitMessage("");
-    setCommitError(null);
-  }, [selectedBranchId]);
+    projectPageStore.getState().resetCommitDraft();
+  }, [selectedBranchId, projectPageStore]);
 
   useEffect(() => {
     if (!projectId) {
@@ -224,7 +199,7 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
   }, [projectId, selectedBranchId, setProjectBranchSelection]);
 
   const openCreateProjectDialog = () => {
-    setFormError(null);
+    projectPageStore.getState().setFormError(null);
     if (!createProjectDialogRef.current?.open) {
       createProjectDialogRef.current?.showModal();
     }
@@ -232,14 +207,11 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
 
   const closeCreateProjectDialog = () => {
     createProjectDialogRef.current?.close();
-    setName("");
-    setDescription("");
-    setFormError(null);
+    projectPageStore.getState().resetCreateProjectDialog();
   };
 
   const openCreateBranchDialog = () => {
-    setNewBranchName("");
-    setNewBranchError(null);
+    projectPageStore.getState().resetCreateBranchDialog();
     if (!createBranchDialogRef.current?.open) {
       createBranchDialogRef.current?.showModal();
     }
@@ -247,14 +219,15 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
 
   const closeCreateBranchDialog = () => {
     createBranchDialogRef.current?.close();
-    setNewBranchName("");
-    setNewBranchError(null);
+    projectPageStore.getState().resetCreateBranchDialog();
   };
 
   const openForkDialog = (commit: CommitRow) => {
-    setForkCommit(commit);
-    setForkBranchName("");
-    setForkBranchError(null);
+    projectPageStore.setState({
+      forkCommit: commit,
+      forkBranchName: "",
+      forkBranchError: null,
+    });
     if (!forkBranchDialogRef.current?.open) {
       forkBranchDialogRef.current?.showModal();
     }
@@ -262,9 +235,7 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
 
   const closeForkDialog = () => {
     forkBranchDialogRef.current?.close();
-    setForkCommit(null);
-    setForkBranchName("");
-    setForkBranchError(null);
+    projectPageStore.getState().resetForkBranchDialog();
   };
 
   const rememberSelectedBranch = (nextBranchId: string | null) => {
@@ -292,6 +263,7 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
 
   const handleCreateProject = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const { name, description, setFormError } = projectPageStore.getState();
     const trimmedName = name.trim();
     const trimmedDescription = description.trim();
 
@@ -317,6 +289,8 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
   };
 
   const handleDeleteProject = async (id: string, projectName: string) => {
+    const { setDeletingId } = projectPageStore.getState();
+
     if (!confirm(`确认删除项目“${projectName}”吗？`)) {
       return;
     }
@@ -340,6 +314,8 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
       return;
     }
 
+    const { detailName, detailDescription, setDetailError, setDetailName, setDetailDescription } =
+      projectPageStore.getState();
     const trimmedName = detailName.trim();
     const trimmedDescription = detailDescription.trim();
     const currentDescription = project.description ?? "";
@@ -386,6 +362,7 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
       return;
     }
 
+    const { newBranchName, setNewBranchError } = projectPageStore.getState();
     const trimmedName = newBranchName.trim();
     if (!trimmedName) {
       setNewBranchError("分支名称不能为空。");
@@ -411,6 +388,8 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
 
   const handleForkBranch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const { forkBranchName, forkCommit, setForkBranchError } = projectPageStore.getState();
+
     if (!project || !forkCommit) {
       return;
     }
@@ -447,15 +426,17 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
     }
 
     try {
-      setDiscardError(null);
+      projectPageStore.getState().setDiscardError(null);
       await checkoutCommit.mutate({
         workspaceId: selectedWorkspace.id,
         commitId: selectedBranch.headCommitId,
       });
     } catch (mutationError) {
-      setDiscardError(
-        mutationError instanceof Error ? mutationError.message : "撤回修改失败，请稍后重试。",
-      );
+      projectPageStore
+        .getState()
+        .setDiscardError(
+          mutationError instanceof Error ? mutationError.message : "撤回修改失败，请稍后重试。",
+        );
     }
   };
 
@@ -471,6 +452,7 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
       return;
     }
 
+    const { commitMessage, setCommitError, setCommitMessage } = projectPageStore.getState();
     const trimmedMessage = commitMessage.trim();
     if (!trimmedMessage) {
       setCommitError("提交信息不能为空。");
@@ -544,12 +526,8 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
                 branchesLoading={branchesQuery.isInitialLoading && sortedBranches.length === 0}
                 branchesError={branchesQuery.error?.message ?? null}
                 selectedBranch={selectedBranch}
-                detailName={detailName}
-                detailDescription={detailDescription}
-                detailError={detailError ?? updateProject.error?.message ?? null}
+                metadataErrorMessage={updateProject.error?.message ?? null}
                 isSaving={updateProject.isPending}
-                onNameChange={setDetailName}
-                onDescriptionChange={setDetailDescription}
                 onMetadataCommit={() => void commitProjectMetadata()}
                 onSelectBranch={rememberSelectedBranch}
                 onCreateBranch={openCreateBranchDialog}
@@ -564,7 +542,6 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
             lastProjectId={lastProjectId}
             isLoading={projectsQuery.isInitialLoading}
             isDeleting={deleteProject.isPending}
-            deletingId={deletingId}
             renderError={renderListError}
             onCreateProject={openCreateProjectDialog}
             onOpenProject={(nextProjectId) => navigate(`/project/${nextProjectId}`)}
@@ -597,9 +574,8 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
               workingTreeStatusQuery.isInitialLoading && workingTreeStatus == null
             }
             workingTreeStatusError={workingTreeStatusQuery.error?.message ?? null}
-            discardError={discardError ?? checkoutCommit.error?.message ?? null}
-            commitMessage={commitMessage}
-            commitError={commitError ?? createCommit.error?.message ?? null}
+            discardErrorMessage={checkoutCommit.error?.message ?? null}
+            commitErrorMessage={createCommit.error?.message ?? null}
             isCommitting={createCommit.isPending}
             isDiscardingChanges={checkoutCommit.isPending}
             isSettingDefault={setDefaultBranch.isPending}
@@ -613,7 +589,6 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
               selectedBranch ? void handleDeleteBranch(selectedBranch) : undefined
             }
             onOpenFork={openForkDialog}
-            onCommitMessageChange={setCommitMessage}
             onSubmitCommit={(event) => void handleCommit(event)}
             onDiscardChanges={() => void handleDiscardChanges()}
           />
@@ -627,88 +602,29 @@ export function ProjectsPage({ projectId = null }: { projectId?: string | null }
         )}
       </AppShell>
 
-      <ProjectDialog
+      <CreateProjectDialog
         dialogRef={createProjectDialogRef}
-        title="新建项目"
-        icon="icon-[material-symbols--add-circle-outline]"
         onClose={closeCreateProjectDialog}
         onSubmit={handleCreateProject}
-        error={formError ?? createProject.error?.message ?? null}
+        mutationError={createProject.error?.message ?? null}
         isPending={createProject.isPending}
-        pendingLabel="创建中"
-        submitLabel="创建"
-      >
-        <label className="block space-y-1.5">
-          <span className="text-xs font-medium text-foreground-muted">项目名</span>
-          <input
-            autoFocus
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="例如：雾港编年史"
-            className="w-full rounded-md border border-border bg-editor-background px-3 py-1.5 text-sm text-foreground transition outline-none placeholder:text-foreground-muted/50 focus:border-accent-foreground"
-          />
-        </label>
+      />
 
-        <label className="block space-y-1.5">
-          <span className="text-xs font-medium text-foreground-muted">描述</span>
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            rows={3}
-            placeholder="可选"
-            className="w-full resize-none rounded-md border border-border bg-editor-background px-3 py-1.5 text-sm leading-relaxed text-foreground transition outline-none placeholder:text-foreground-muted/50 focus:border-accent-foreground"
-          />
-        </label>
-      </ProjectDialog>
-
-      <ProjectDialog
+      <CreateBranchDialog
         dialogRef={createBranchDialogRef}
-        title="新建分支"
-        icon="icon-[material-symbols--account-tree]"
         onClose={closeCreateBranchDialog}
         onSubmit={handleCreateBranch}
-        error={newBranchError ?? createBranchWithWorkspace.error?.message ?? null}
+        mutationError={createBranchWithWorkspace.error?.message ?? null}
         isPending={createBranchWithWorkspace.isPending}
-        pendingLabel="创建中"
-        submitLabel="创建分支"
-      >
-        <label className="block space-y-1.5">
-          <span className="text-xs font-medium text-foreground-muted">分支名</span>
-          <input
-            autoFocus
-            value={newBranchName}
-            onChange={(event) => setNewBranchName(event.target.value)}
-            placeholder="例如：feature-outline"
-            className="w-full rounded-md border border-border bg-editor-background px-3 py-1.5 text-sm text-foreground transition outline-none placeholder:text-foreground-muted/50 focus:border-accent-foreground"
-          />
-        </label>
-      </ProjectDialog>
+      />
 
-      <ProjectDialog
+      <ForkBranchDialog
         dialogRef={forkBranchDialogRef}
-        title="Fork 分支"
-        icon="icon-[material-symbols--fork-right]"
         onClose={closeForkDialog}
         onSubmit={handleForkBranch}
-        error={forkBranchError ?? createBranchWithWorkspace.error?.message ?? null}
+        mutationError={createBranchWithWorkspace.error?.message ?? null}
         isPending={createBranchWithWorkspace.isPending}
-        pendingLabel="Fork 中"
-        submitLabel="创建 Fork"
-      >
-        <div className="rounded-md border border-border bg-editor-background px-3 py-2 text-xs text-foreground-muted">
-          来源提交：{forkCommit ? `${forkCommit.message} · ${formatCommitId(forkCommit.id)}` : "—"}
-        </div>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-medium text-foreground-muted">分支名</span>
-          <input
-            autoFocus
-            value={forkBranchName}
-            onChange={(event) => setForkBranchName(event.target.value)}
-            placeholder="例如：fork-alt-ending"
-            className="w-full rounded-md border border-border bg-editor-background px-3 py-1.5 text-sm text-foreground transition outline-none placeholder:text-foreground-muted/50 focus:border-accent-foreground"
-          />
-        </label>
-      </ProjectDialog>
+      />
     </>
   );
 }

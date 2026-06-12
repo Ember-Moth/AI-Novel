@@ -3,13 +3,13 @@ import { LoadingBlock } from "@/shared/ui/Loading";
 
 import type { ProjectList } from "./projectTypes";
 import { dateFormatter, PageHeader } from "./projectUi";
+import { useProjectPageState } from "./state/projectPageStore";
 
 export function ProjectListView({
   projectList,
   lastProjectId,
   isLoading,
   isDeleting,
-  deletingId,
   renderError,
   onCreateProject,
   onOpenProject,
@@ -19,12 +19,13 @@ export function ProjectListView({
   lastProjectId: string | null;
   isLoading: boolean;
   isDeleting: boolean;
-  deletingId: string | null;
   renderError: React.ReactNode;
   onCreateProject: () => void;
   onOpenProject: (_projectId: string) => void;
   onDeleteProject: (_projectId: string, _projectName: string) => void;
 }) {
+  const deletingId = useProjectPageState((state) => state.deletingId);
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader

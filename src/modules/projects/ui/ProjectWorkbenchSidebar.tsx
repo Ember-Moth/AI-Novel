@@ -7,6 +7,7 @@ import { SidebarListRow } from "@/shared/ui/tree";
 
 import type { BranchList, BranchRow, ProjectRow } from "./projectTypes";
 import { dateFormatter, formatCommitId, InlineError } from "./projectUi";
+import { useProjectPageState } from "./state/projectPageStore";
 
 export function ProjectWorkbenchSidebar({
   project,
@@ -14,12 +15,8 @@ export function ProjectWorkbenchSidebar({
   branchesLoading,
   branchesError,
   selectedBranch,
-  detailName,
-  detailDescription,
-  detailError,
+  metadataErrorMessage,
   isSaving,
-  onNameChange,
-  onDescriptionChange,
   onMetadataCommit,
   onSelectBranch,
   onCreateBranch,
@@ -29,12 +26,8 @@ export function ProjectWorkbenchSidebar({
   branchesLoading: boolean;
   branchesError: string | null;
   selectedBranch: BranchRow | null;
-  detailName: string;
-  detailDescription: string;
-  detailError: string | null;
+  metadataErrorMessage: string | null;
   isSaving: boolean;
-  onNameChange: (_value: string) => void;
-  onDescriptionChange: (_value: string) => void;
   onMetadataCommit: () => void;
   onSelectBranch: (_branchId: string | null) => void;
   onCreateBranch: () => void;
@@ -75,13 +68,9 @@ export function ProjectWorkbenchSidebar({
             content: (
               <ProjectMetaPanel
                 project={project}
-                detailName={detailName}
-                detailDescription={detailDescription}
-                detailError={detailError}
+                metadataErrorMessage={metadataErrorMessage}
                 isSaving={isSaving}
                 branchCount={branches.length}
-                onNameChange={onNameChange}
-                onDescriptionChange={onDescriptionChange}
                 onMetadataCommit={onMetadataCommit}
               />
             ),
@@ -162,25 +151,23 @@ function ProjectBranchListPanel({
 
 function ProjectMetaPanel({
   project,
-  detailName,
-  detailDescription,
-  detailError,
+  metadataErrorMessage,
   isSaving,
   branchCount,
-  onNameChange,
-  onDescriptionChange,
   onMetadataCommit,
 }: {
   project: ProjectRow;
-  detailName: string;
-  detailDescription: string;
-  detailError: string | null;
+  metadataErrorMessage: string | null;
   isSaving: boolean;
   branchCount: number;
-  onNameChange: (_value: string) => void;
-  onDescriptionChange: (_value: string) => void;
   onMetadataCommit: () => void;
 }) {
+  const detailName = useProjectPageState((state) => state.detailName);
+  const detailDescription = useProjectPageState((state) => state.detailDescription);
+  const detailError = useProjectPageState((state) => state.detailError);
+  const setDetailName = useProjectPageState((state) => state.setDetailName);
+  const setDetailDescription = useProjectPageState((state) => state.setDetailDescription);
+
   return (
     <OverlayScrollbar className="h-full min-h-0 w-full">
       <div className="space-y-4 p-3">
@@ -189,7 +176,7 @@ function ProjectMetaPanel({
           <input
             value={detailName}
             disabled={isSaving}
-            onChange={(event) => onNameChange(event.target.value)}
+            onChange={(event) => setDetailName(event.target.value)}
             onBlur={onMetadataCommit}
             className="w-full rounded-md border border-border bg-editor-background px-3 py-2 text-sm text-foreground transition outline-none focus:border-accent-foreground disabled:cursor-wait disabled:opacity-70"
           />
@@ -201,14 +188,16 @@ function ProjectMetaPanel({
             value={detailDescription}
             disabled={isSaving}
             rows={5}
-            onChange={(event) => onDescriptionChange(event.target.value)}
+            onChange={(event) => setDetailDescription(event.target.value)}
             onBlur={onMetadataCommit}
             className="field-sizing-content w-full resize-none rounded-md border border-border bg-editor-background px-3 py-2 text-sm leading-relaxed text-foreground transition outline-none focus:border-accent-foreground disabled:cursor-wait disabled:opacity-70"
             placeholder="为这个项目补充背景、目标或当前进度。"
           />
         </label>
 
-        {detailError ? <InlineError message={detailError} /> : null}
+        {detailError || metadataErrorMessage ? (
+          <InlineError message={detailError ?? metadataErrorMessage ?? ""} />
+        ) : null}
 
         <div className="rounded-md border border-border bg-editor-background p-3">
           <div className="text-[11px] tracking-wide text-foreground-muted/70 uppercase">Stats</div>

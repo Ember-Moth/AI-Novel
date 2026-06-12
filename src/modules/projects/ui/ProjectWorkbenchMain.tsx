@@ -21,6 +21,7 @@ import {
   primaryButton,
   secondaryButton,
 } from "./projectUi";
+import { useProjectPageState } from "./state/projectPageStore";
 
 export function ProjectWorkbenchMain({
   project,
@@ -32,9 +33,8 @@ export function ProjectWorkbenchMain({
   workingTreeStatus,
   workingTreeStatusLoading,
   workingTreeStatusError,
-  discardError,
-  commitMessage,
-  commitError,
+  discardErrorMessage,
+  commitErrorMessage,
   isCommitting,
   isDiscardingChanges,
   isSettingDefault,
@@ -44,7 +44,6 @@ export function ProjectWorkbenchMain({
   onSetDefaultBranch,
   onDeleteBranch,
   onOpenFork,
-  onCommitMessageChange,
   onSubmitCommit,
   onDiscardChanges,
 }: {
@@ -57,9 +56,8 @@ export function ProjectWorkbenchMain({
   workingTreeStatus: WorkingTreeStatus | null;
   workingTreeStatusLoading: boolean;
   workingTreeStatusError: string | null;
-  discardError: string | null;
-  commitMessage: string;
-  commitError: string | null;
+  discardErrorMessage: string | null;
+  commitErrorMessage: string | null;
   isCommitting: boolean;
   isDiscardingChanges: boolean;
   isSettingDefault: boolean;
@@ -69,7 +67,6 @@ export function ProjectWorkbenchMain({
   onSetDefaultBranch: (_branch: BranchRow) => void;
   onDeleteBranch: () => void;
   onOpenFork: (_commit: CommitRow) => void;
-  onCommitMessageChange: (_value: string) => void;
   onSubmitCommit: (_event: FormEvent<HTMLFormElement>) => void;
   onDiscardChanges: () => void;
 }) {
@@ -98,9 +95,8 @@ export function ProjectWorkbenchMain({
           workingTreeStatus={workingTreeStatus}
           workingTreeStatusLoading={workingTreeStatusLoading}
           workingTreeStatusError={workingTreeStatusError}
-          discardError={discardError}
-          commitMessage={commitMessage}
-          commitError={commitError}
+          discardErrorMessage={discardErrorMessage}
+          commitErrorMessage={commitErrorMessage}
           isCommitting={isCommitting}
           isDiscardingChanges={isDiscardingChanges}
           isSettingDefault={isSettingDefault}
@@ -109,7 +105,6 @@ export function ProjectWorkbenchMain({
           onSetDefaultBranch={onSetDefaultBranch}
           onDeleteBranch={onDeleteBranch}
           onOpenFork={onOpenFork}
-          onCommitMessageChange={onCommitMessageChange}
           onSubmitCommit={onSubmitCommit}
           onDiscardChanges={onDiscardChanges}
         />
@@ -128,9 +123,8 @@ function BranchDetailPanel({
   workingTreeStatus,
   workingTreeStatusLoading,
   workingTreeStatusError,
-  discardError,
-  commitMessage,
-  commitError,
+  discardErrorMessage,
+  commitErrorMessage,
   isCommitting,
   isDiscardingChanges,
   isSettingDefault,
@@ -139,7 +133,6 @@ function BranchDetailPanel({
   onSetDefaultBranch,
   onDeleteBranch,
   onOpenFork,
-  onCommitMessageChange,
   onSubmitCommit,
   onDiscardChanges,
 }: {
@@ -152,9 +145,8 @@ function BranchDetailPanel({
   workingTreeStatus: WorkingTreeStatus | null;
   workingTreeStatusLoading: boolean;
   workingTreeStatusError: string | null;
-  discardError: string | null;
-  commitMessage: string;
-  commitError: string | null;
+  discardErrorMessage: string | null;
+  commitErrorMessage: string | null;
   isCommitting: boolean;
   isDiscardingChanges: boolean;
   isSettingDefault: boolean;
@@ -163,10 +155,14 @@ function BranchDetailPanel({
   onSetDefaultBranch: (_branch: BranchRow) => void;
   onDeleteBranch: () => void;
   onOpenFork: (_commit: CommitRow) => void;
-  onCommitMessageChange: (_value: string) => void;
   onSubmitCommit: (_event: FormEvent<HTMLFormElement>) => void;
   onDiscardChanges: () => void;
 }) {
+  const commitMessage = useProjectPageState((state) => state.commitMessage);
+  const commitError = useProjectPageState((state) => state.commitError);
+  const discardError = useProjectPageState((state) => state.discardError);
+  const setCommitMessage = useProjectPageState((state) => state.setCommitMessage);
+
   if (!selectedBranch) {
     return (
       <FullPageMessage
@@ -319,7 +315,7 @@ function BranchDetailPanel({
             status={workingTreeStatus}
             loading={workingTreeStatusLoading}
             error={workingTreeStatusError}
-            discardError={discardError}
+            discardError={discardError ?? discardErrorMessage}
             canDiscardChanges={canDiscardChanges}
             isDiscardingChanges={isDiscardingChanges}
             onDiscardChanges={onDiscardChanges}
@@ -329,13 +325,15 @@ function BranchDetailPanel({
         <form className="mt-2 grid gap-2" onSubmit={onSubmitCommit}>
           <textarea
             value={commitMessage}
-            onChange={(event) => onCommitMessageChange(event.target.value)}
+            onChange={(event) => setCommitMessage(event.target.value)}
             rows={4}
             disabled={commitDisabled}
             placeholder="描述这次提交做了什么。"
             className="field-sizing-content w-full resize-none rounded-md border border-border bg-editor-background px-3 py-2 text-sm leading-relaxed text-foreground transition outline-none focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
           />
-          {commitError ? <InlineError message={commitError} /> : null}
+          {commitError || commitErrorMessage ? (
+            <InlineError message={commitError ?? commitErrorMessage ?? ""} />
+          ) : null}
           <div className="flex justify-end">
             <button type="submit" disabled={commitDisabled} className={primaryButton}>
               <span
