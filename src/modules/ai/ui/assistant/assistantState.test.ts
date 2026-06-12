@@ -139,6 +139,26 @@ test("buildAssistantToolTraceSummary falls back for unknown tools", () => {
   ).toBe("lookup 执行失败");
 });
 
+test("buildAssistantToolTraceSummary prefers returned manuscript titles", () => {
+  expect(
+    buildAssistantToolTraceSummary({
+      toolName: "move_manuscript_node",
+      requestPayload: {
+        nodeId: "content_123",
+      },
+      responsePayload: {
+        ok: true,
+        data: {
+          action: "moved",
+          nodeId: "content_123",
+          title: "雨夜重逢",
+        },
+      },
+      status: "success",
+    }),
+  ).toBe("移动正文 雨夜重逢");
+});
+
 test("getAssistantToolTrace marks tool failures from tool result payloads", () => {
   expect(
     getAssistantToolTrace(

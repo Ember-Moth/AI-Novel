@@ -147,15 +147,22 @@ test("applyStreamEvent keeps reasoning, text, and tool traces aligned in one str
       type: "tool-call" as const,
       assistantNodeId: "assistant_1",
       toolCallId: "tool_1",
-      toolName: "write_file",
-      input: { path: "/世界观/核心设定.md", content: "设定正文" },
+      toolName: "move_manuscript_node",
+      input: { nodeId: "content_123", newParentId: "content_parent" },
     },
     {
       type: "tool-result" as const,
       toolNodeId: "tool_node_1",
       toolCallId: "tool_1",
-      toolName: "write_file",
-      output: { ok: true },
+      toolName: "move_manuscript_node",
+      output: {
+        ok: true,
+        data: {
+          action: "moved",
+          nodeId: "content_123",
+          title: "雨夜重逢",
+        },
+      },
       status: "success" as const,
     },
   ].reduce(applyStreamEvent, overlay);
@@ -183,13 +190,20 @@ test("applyStreamEvent keeps reasoning, text, and tool traces aligned in one str
       toolTrace: [
         {
           toolCallId: "tool_1",
-          toolName: "write_file",
+          toolName: "move_manuscript_node",
           status: "success",
-          summary: "写入辅助信息 /世界观/核心设定.md",
+          summary: "移动正文 雨夜重逢",
           nodeId: "assistant_1",
           runId: null,
-          requestPayload: { path: "/世界观/核心设定.md", content: "设定正文" },
-          responsePayload: { ok: true },
+          requestPayload: { nodeId: "content_123", newParentId: "content_parent" },
+          responsePayload: {
+            ok: true,
+            data: {
+              action: "moved",
+              nodeId: "content_123",
+              title: "雨夜重逢",
+            },
+          },
         },
       ],
     },

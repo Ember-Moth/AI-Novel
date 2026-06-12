@@ -226,16 +226,30 @@ function getFirstTimelinePointLabel(input: unknown) {
   return getRecordString(points[0], "label");
 }
 
+function getToolResponseData(payload: unknown) {
+  const value = getRecordField(payload, "value");
+  const envelope = value && typeof value === "object" ? value : payload;
+  const data = getRecordField(envelope, "data");
+  return data && typeof data === "object" ? data : null;
+}
+
+function getToolResponseTitle(payload: unknown) {
+  return getRecordString(getToolResponseData(payload), "title");
+}
+
 export function buildAssistantToolTraceSummary({
   toolName,
   requestPayload,
+  responsePayload,
   status = "pending",
 }: {
   toolName: string;
   requestPayload: unknown;
+  responsePayload?: unknown;
   status?: AgentToolTraceStatus | "pending";
 }) {
   const fallback = status === "error" ? `${toolName} 执行失败` : `调用 ${toolName}`;
+  const responseTitle = getToolResponseTitle(responsePayload);
 
   switch (toolName) {
     case "list_files":
@@ -273,16 +287,27 @@ export function buildAssistantToolTraceSummary({
       return nodeId == null ? "读取当前正文" : `读取正文 ${formatToolTarget(nodeId, "")}`;
     }
     case "create_manuscript_node":
-      return `创建正文 ${formatToolTarget(getRecordString(requestPayload, "title"), "")}`.trim();
+      return `创建正文 ${formatToolTarget(
+        responseTitle ?? getRecordString(requestPayload, "title"),
+        "",
+      )}`.trim();
     case "update_manuscript_node":
       return `更新正文 ${formatToolTarget(
-        getRecordString(requestPayload, "title") ?? getRecordString(requestPayload, "nodeId"),
+        responseTitle ??
+          getRecordString(requestPayload, "title") ??
+          getRecordString(requestPayload, "nodeId"),
         "",
       )}`.trim();
     case "move_manuscript_node":
-      return `移动正文 ${formatToolTarget(getRecordString(requestPayload, "nodeId"), "")}`.trim();
+      return `移动正文 ${formatToolTarget(
+        responseTitle ?? getRecordString(requestPayload, "nodeId"),
+        "",
+      )}`.trim();
     case "delete_manuscript_node":
-      return `删除正文 ${formatToolTarget(getRecordString(requestPayload, "nodeId"), "")}`.trim();
+      return `删除正文 ${formatToolTarget(
+        responseTitle ?? getRecordString(requestPayload, "nodeId"),
+        "",
+      )}`.trim();
     case "list_story_timeline_points":
       return "查看故事时间线";
     case "list_current_timeline_aux_changes":
@@ -425,6 +450,7 @@ export function getAssistantToolTrace(
           fallbackEntry.summary = buildAssistantToolTraceSummary({
             toolName: fallbackEntry.toolName,
             requestPayload: fallbackEntry.requestPayload,
+            responsePayload: fallbackEntry.responsePayload,
             status: fallbackEntry.status,
           });
           entries.push(fallbackEntry);
@@ -439,6 +465,7 @@ export function getAssistantToolTrace(
       targetEntry.summary = buildAssistantToolTraceSummary({
         toolName: targetEntry.toolName,
         requestPayload: targetEntry.requestPayload,
+        responsePayload: targetEntry.responsePayload,
         status: targetEntry.status,
       });
     });

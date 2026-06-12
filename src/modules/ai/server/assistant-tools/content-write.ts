@@ -4,6 +4,7 @@ import {
   createContentNode,
   deleteContentNode,
   moveContentNode,
+  readManuscriptNode,
   updateContentNode,
 } from "@/modules/workspace/domain";
 
@@ -93,6 +94,7 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
                 data: {
                   action: "created" as const,
                   nodeId: node.id,
+                  title: node.title,
                   parentId: node.parentId,
                   timelinePointId: resolvedTimelinePointId,
                 },
@@ -175,6 +177,7 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
             data: {
               action: "updated" as const,
               nodeId: node.id,
+              title: node.title,
             },
           };
         });
@@ -227,6 +230,7 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
             data: {
               action: "moved" as const,
               nodeId: node.id,
+              title: node.title,
               newParentId: node.parentId,
             },
           };
@@ -253,6 +257,7 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
         }
 
         return withEnvelope(() => {
+          const node = readManuscriptNode(workspace.id, nodeId);
           deleteContentNode({
             workspaceId: workspace.id,
             nodeId,
@@ -264,6 +269,7 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
             data: {
               action: "deleted" as const,
               nodeId,
+              title: node.title,
             },
           };
         });

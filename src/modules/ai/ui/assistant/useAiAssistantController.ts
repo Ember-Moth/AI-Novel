@@ -229,6 +229,7 @@ function updateStreamToolTrace(
         summary: buildAssistantToolTraceSummary({
           toolName: event.toolName,
           requestPayload: null,
+          responsePayload: event.output,
           status: event.status,
         }),
         nodeId: event.toolNodeId,
@@ -247,6 +248,7 @@ function updateStreamToolTrace(
           summary: buildAssistantToolTraceSummary({
             toolName: entry.toolName,
             requestPayload: entry.requestPayload,
+            responsePayload: event.output,
             status: event.status,
           }),
           responsePayload: event.output,

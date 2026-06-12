@@ -379,6 +379,7 @@ test("create_manuscript_node anchors new content to the current timeline point",
     data: {
       action: "created",
       parentId: workspace.contentRootId,
+      title: "新场景",
       timelinePointId: timelinePoint.id,
     },
   });
@@ -432,6 +433,64 @@ test("create_manuscript_node preserves call order when parallel calls share an i
       .listManuscriptNodes(workspace.id, workspace.contentRootId!, { depth: 1 })
       .nodes.map((node) => node.title),
   ).toEqual(["第七章", "第八章", "第九章", "第十章", "终章"]);
+});
+
+test("content write tools return manuscript titles for model and UI summaries", async () => {
+  const workspace = seedProject("assistant_tools_content_write_titles");
+  const chapter = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    title: "旧标题",
+  });
+  const parent = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    title: "第二卷",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_content_write_titles",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  await expect(
+    executeTool(tools.update_manuscript_node!, {
+      nodeId: chapter.id,
+      title: "新标题",
+    }),
+  ).resolves.toMatchObject({
+    ok: true,
+    data: {
+      action: "updated",
+      nodeId: chapter.id,
+      title: "新标题",
+    },
+  });
+
+  await expect(
+    executeTool(tools.move_manuscript_node!, {
+      nodeId: chapter.id,
+      newParentId: parent.id,
+    }),
+  ).resolves.toMatchObject({
+    ok: true,
+    data: {
+      action: "moved",
+      nodeId: chapter.id,
+      title: "新标题",
+      newParentId: parent.id,
+    },
+  });
+
+  await expect(
+    executeTool(tools.delete_manuscript_node!, { nodeId: chapter.id }),
+  ).resolves.toMatchObject({
+    ok: true,
+    data: {
+      action: "deleted",
+      nodeId: chapter.id,
+      title: "新标题",
+    },
+  });
 });
 
 test("list_files returns a recursive tree by default and does not recurse into symlinks", async () => {
