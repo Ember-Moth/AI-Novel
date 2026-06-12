@@ -17,7 +17,7 @@ function createWorkspaceMutationEvent(
     workspaceId: "workspace_1",
     area: "aux",
     timelinePointId: "timeline_1",
-    toolName: "write_aux_file",
+    toolName: "write_reference_file",
     action: "updated",
     path: "/设定/角色.md",
     nodeId: "aux_1",
@@ -98,7 +98,7 @@ test("isActiveAuxFileMutationTarget matches the active file by node id before fa
   expect(
     isActiveAuxFileMutationTarget({
       event: createWorkspaceMutationEvent({
-        toolName: "move_aux_node",
+        toolName: "move_reference_node",
         action: "moved",
         nodeId: "aux_1",
         path: "/资料库/主角.md",
@@ -170,13 +170,13 @@ test("handleAuxWorkspaceMutationForEditor refetches without clearing unrelated d
   expect(clearActiveAuxDraftState).not.toHaveBeenCalled();
 });
 
-test("handleAuxWorkspaceMutationForEditor clears active drafts for move_aux_node matched by node id", () => {
+test("handleAuxWorkspaceMutationForEditor clears active drafts for move_reference_node matched by node id", () => {
   const refetchAux = mock(() => {});
   const clearActiveAuxDraftState = mock(() => {});
 
   const handled = handleAuxWorkspaceMutationForEditor({
     event: createWorkspaceMutationEvent({
-      toolName: "move_aux_node",
+      toolName: "move_reference_node",
       action: "moved",
       path: "/资料库/主角.md",
       previousPath: "/设定/角色.md",
@@ -194,13 +194,13 @@ test("handleAuxWorkspaceMutationForEditor clears active drafts for move_aux_node
   expect(clearActiveAuxDraftState).toHaveBeenCalledWith("aux_1");
 });
 
-test("handleAuxWorkspaceMutationForEditor refetches for create_aux_symlink without clearing unrelated drafts", () => {
+test("handleAuxWorkspaceMutationForEditor refetches for create_reference_link without clearing unrelated drafts", () => {
   const refetchAux = mock(() => {});
   const clearActiveAuxDraftState = mock(() => {});
 
   const handled = handleAuxWorkspaceMutationForEditor({
     event: createWorkspaceMutationEvent({
-      toolName: "create_aux_symlink",
+      toolName: "create_reference_link",
       action: "created",
       path: "/索引/角色.md",
       targetPath: "/设定/角色.md",

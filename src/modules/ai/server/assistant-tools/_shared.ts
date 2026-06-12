@@ -15,29 +15,29 @@ export type ToolBuildContext = {
 // The union of all domain tool names must equal ProjectAssistantToolName.
 // This is verified at compile time in _registry.ts.
 
-export const WRITING_CONTEXT_TOOL_NAMES = ["read_current_writing_context"] as const;
-export const CONTENT_READ_TOOL_NAMES = ["read_content_subtree"] as const;
+export const WRITING_CONTEXT_TOOL_NAMES = ["get_writing_context"] as const;
+export const CONTENT_READ_TOOL_NAMES = ["get_manuscript_subtree"] as const;
 export const CONTENT_WRITE_TOOL_NAMES = [
-  "create_content_node",
-  "update_content_node",
-  "move_content_node",
-  "delete_content_node",
+  "create_manuscript_node",
+  "update_manuscript_node",
+  "move_manuscript_node",
+  "delete_manuscript_node",
 ] as const;
 export const TIMELINE_TOOL_NAMES = [
-  "list_timeline_points",
-  "create_timeline_point",
-  "update_timeline_point",
-  "move_timeline_point",
-  "delete_timeline_point",
+  "list_story_timeline_points",
+  "create_story_timeline_point",
+  "update_story_timeline_point",
+  "move_story_timeline_point",
+  "delete_story_timeline_point",
 ] as const;
-export const AUX_READ_TOOL_NAMES = ["list_aux_dir", "read_aux_path"] as const;
+export const AUX_READ_TOOL_NAMES = ["list_reference_dir", "read_reference_path"] as const;
 export const AUX_WRITE_TOOL_NAMES = [
-  "mkdir_aux_dir",
-  "write_aux_file",
-  "move_aux_node",
-  "delete_aux_node",
-  "create_aux_symlink",
-  "retarget_aux_symlink",
+  "create_reference_dir",
+  "write_reference_file",
+  "move_reference_node",
+  "delete_reference_node",
+  "create_reference_link",
+  "retarget_reference_link",
 ] as const;
 
 export type WritingContextToolName = (typeof WRITING_CONTEXT_TOOL_NAMES)[number];

@@ -13,14 +13,15 @@ import {
 
 export function buildContentReadTools({ projectId }: ToolBuildContext) {
   return {
-    read_content_subtree: tool({
-      description: "读取正文树中的一个节点及其子树，适合分析章节结构、层级和相邻正文内容。",
+    get_manuscript_subtree: tool({
+      description:
+        "获取正文树中某个节点及其子树。用于分析章节结构、层级和相邻正文内容；省略 rootNodeId 时读取整棵正文树。",
       inputSchema: jsonSchema<{ rootNodeId?: string }>({
         type: "object",
         properties: {
           rootNodeId: {
             type: "string",
-            description: "要读取的正文根节点 ID。省略时默认读取整个正文树根。",
+            description: "要读取的正文根节点 ID。省略时读取整个正文树根。",
           },
         },
       }),

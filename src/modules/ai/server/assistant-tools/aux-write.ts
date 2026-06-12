@@ -25,15 +25,15 @@ import { invariant } from "@/shared/lib/domain";
 
 export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
   return {
-    mkdir_aux_dir: tool({
-      description: "在当前时间点下创建一个辅助资料目录。只会创建目标路径的最后一级目录。",
+    create_reference_dir: tool({
+      description: "在当前时间点创建参考资料目录。只创建目标路径的最后一级目录，父目录必须已存在。",
       inputSchema: jsonSchema<{ path: string }>({
         type: "object",
         required: ["path"],
         properties: {
           path: {
             type: "string",
-            description: "要创建的辅助资料目录绝对路径，例如 /设定/角色。",
+            description: "要创建的参考资料目录绝对路径，例如 /设定/角色。",
           },
         },
       }),
@@ -75,20 +75,20 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    write_aux_file: tool({
+    write_reference_file: tool({
       description:
-        "在当前时间点下创建或覆盖一个辅助资料文件。若文件已存在则整文件覆盖；若不存在则创建。",
+        "在当前时间点创建或覆盖参考资料文件。若文件已存在会整文件覆盖；仅在用户明确要求写入素材/设定时使用。",
       inputSchema: jsonSchema<{ path: string; content: string }>({
         type: "object",
         required: ["path", "content"],
         properties: {
           path: {
             type: "string",
-            description: "要写入的辅助资料文件绝对路径，例如 /设定/角色/主角.md。",
+            description: "要写入的参考资料文件绝对路径，例如 /设定/角色/主角.md。",
           },
           content: {
             type: "string",
-            description: "要写入文件的完整内容。",
+            description: "要写入文件的完整内容；会替换目标文件原有内容。",
           },
         },
       }),
@@ -149,20 +149,20 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    move_aux_node: tool({
+    move_reference_node: tool({
       description:
-        "在当前时间点下移动或重命名一个辅助资料节点。支持文件、目录或符号链接，但不支持辅助资料根目录。",
+        "在当前时间点移动或重命名参考资料节点。支持文件、目录和链接；会改变路径，不能移动根目录。",
       inputSchema: jsonSchema<{ path: string; newPath: string }>({
         type: "object",
         required: ["path", "newPath"],
         properties: {
           path: {
             type: "string",
-            description: "要移动的辅助资料绝对路径，例如 /设定/角色.md。",
+            description: "要移动的参考资料绝对路径，例如 /设定/角色.md。",
           },
           newPath: {
             type: "string",
-            description: "移动后的目标绝对路径，例如 /资料库/人物/主角.md。",
+            description: "移动后的目标绝对路径，例如 /资料库/人物/主角.md；目标路径不能已存在。",
           },
         },
       }),
@@ -222,16 +222,16 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    delete_aux_node: tool({
+    delete_reference_node: tool({
       description:
-        "删除当前时间点下的一个辅助资料节点。若是目录会连同所有子项一起删除。此操作不可逆。",
+        "删除当前时间点的参考资料节点。若是目录会连同所有子项一起删除；此操作不可逆，仅在用户明确要求删除时使用。",
       inputSchema: jsonSchema<{ path: string }>({
         type: "object",
         required: ["path"],
         properties: {
           path: {
             type: "string",
-            description: "要删除的辅助资料绝对路径，例如 /设定/旧角色.md。",
+            description: "要删除的参考资料绝对路径，例如 /设定/旧角色.md。",
           },
         },
       }),
@@ -269,20 +269,20 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    create_aux_symlink: tool({
+    create_reference_link: tool({
       description:
-        "在当前时间点下创建一个辅助资料符号链接。链接本身写入到指定路径，目标路径必须在当前时间点可见。",
+        "在当前时间点创建参考资料链接。链接本身写入到指定路径，目标路径必须在当前时间点可见。",
       inputSchema: jsonSchema<{ path: string; targetPath: string }>({
         type: "object",
         required: ["path", "targetPath"],
         properties: {
           path: {
             type: "string",
-            description: "要创建的符号链接绝对路径，例如 /索引/角色.md。",
+            description: "要创建的链接绝对路径，例如 /索引/角色.md。",
           },
           targetPath: {
             type: "string",
-            description: "符号链接目标绝对路径，例如 /设定/角色/主角.md。",
+            description: "链接目标绝对路径，例如 /设定/角色/主角.md；目标必须已存在且当前可见。",
           },
         },
       }),
@@ -336,19 +336,20 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    retarget_aux_symlink: tool({
-      description: "修改辅助资料符号链接的目标路径。链接本身不变，只是指向新的目标。",
+    retarget_reference_link: tool({
+      description:
+        "修改参考资料链接的目标路径。链接自身路径不变，只改变指向；新目标必须在当前时间点可见。",
       inputSchema: jsonSchema<{ path: string; newTargetPath: string }>({
         type: "object",
         required: ["path", "newTargetPath"],
         properties: {
           path: {
             type: "string",
-            description: "要重定向的符号链接绝对路径，例如 /索引/角色.md。",
+            description: "要重定向的链接绝对路径，例如 /索引/角色.md。",
           },
           newTargetPath: {
             type: "string",
-            description: "新的目标绝对路径，例如 /设定/角色/主角.md。",
+            description: "新的目标绝对路径，例如 /设定/角色/主角.md；目标必须已存在且当前可见。",
           },
         },
       }),

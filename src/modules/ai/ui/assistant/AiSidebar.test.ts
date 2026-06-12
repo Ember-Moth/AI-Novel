@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
 
+import {
+  PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES,
+  PROJECT_ASSISTANT_WRITE_TOOL_NAMES,
+} from "@/modules/ai/domain/types";
+
 import { getMessagesViewportSessionKey, shouldAnimateMessageMount } from "./AiSidebar";
 import {
   applyStreamEvent,
@@ -208,28 +213,11 @@ test("getMessagesViewportSessionKey falls back for empty thread selection", () =
 
 test("buildProjectAssistantSendActiveTools adds write tools only when writes are enabled", () => {
   expect(buildProjectAssistantSendActiveTools({ allowWrites: false })).toEqual([
-    "read_current_writing_context",
-    "read_content_subtree",
-    "list_timeline_points",
-    "list_aux_dir",
-    "read_aux_path",
+    ...PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES,
   ]);
   expect(buildProjectAssistantSendActiveTools({ allowWrites: true })).toEqual([
-    "read_current_writing_context",
-    "read_content_subtree",
-    "list_timeline_points",
-    "list_aux_dir",
-    "read_aux_path",
-    "create_content_node",
-    "update_content_node",
-    "move_content_node",
-    "delete_content_node",
-    "mkdir_aux_dir",
-    "write_aux_file",
-    "move_aux_node",
-    "delete_aux_node",
-    "create_aux_symlink",
-    "retarget_aux_symlink",
+    ...PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES,
+    ...PROJECT_ASSISTANT_WRITE_TOOL_NAMES,
   ]);
 });
 
@@ -238,15 +226,11 @@ test("project assistant send tools include writes by default", () => {
     buildProjectAssistantSendActiveTools({
       allowWrites: DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND,
     }),
-  ).toContain("write_aux_file");
+  ).toContain("write_reference_file");
 });
 
 test("buildProjectAssistantRetryActiveTools stays read-only", () => {
   expect(buildProjectAssistantRetryActiveTools()).toEqual([
-    "read_current_writing_context",
-    "read_content_subtree",
-    "list_timeline_points",
-    "list_aux_dir",
-    "read_aux_path",
+    ...PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES,
   ]);
 });

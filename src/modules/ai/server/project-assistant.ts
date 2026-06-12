@@ -813,10 +813,10 @@ function isWriteToolName(value: unknown): value is ProjectAssistantWriteToolName
 }
 
 const CONTENT_WRITE_TOOL_NAME_SET = new Set<string>([
-  "create_content_node",
-  "update_content_node",
-  "move_content_node",
-  "delete_content_node",
+  "create_manuscript_node",
+  "update_manuscript_node",
+  "move_manuscript_node",
+  "delete_manuscript_node",
 ]);
 
 function extractWorkspaceMutationEventFromToolResult({

@@ -12,9 +12,9 @@ import { failure, getWorkspaceForProject, jsonSchema, withEnvelope } from "./_sh
 
 export function buildContentWriteTools({ projectId }: ToolBuildContext) {
   return {
-    create_content_node: tool({
+    create_manuscript_node: tool({
       description:
-        "在正文树中创建一个新的章节节点。若省略 afterSiblingId 则插入为父节点的第一个子节点。",
+        "在正文树中创建新的章节节点。仅在用户明确要求新增正文/章节时使用；省略 afterSiblingId 时插入为父节点的第一个子节点。",
       inputSchema: jsonSchema<{
         parentId: string;
         afterSiblingId?: string;
@@ -26,11 +26,11 @@ export function buildContentWriteTools({ projectId }: ToolBuildContext) {
         properties: {
           parentId: {
             type: "string",
-            description: "父正文节点 ID，新节点将作为其子节点。",
+            description: "父正文节点 ID。新节点会作为该节点的子节点。",
           },
           afterSiblingId: {
             type: "string",
-            description: "插入到该兄弟节点之后。省略时新节点将成为父节点的第一个子节点。",
+            description: "插入到该兄弟节点之后。省略时插入为父节点的第一个子节点。",
           },
           title: {
             type: "string",
@@ -69,8 +69,9 @@ export function buildContentWriteTools({ projectId }: ToolBuildContext) {
         });
       },
     }),
-    update_content_node: tool({
-      description: "更新正文节点的标题、正文、类型或锚定时间点。省略的字段不做修改。",
+    update_manuscript_node: tool({
+      description:
+        "更新正文节点的标题、正文或锚定时间点。仅在用户明确要求修改正文时使用；省略的字段不会改变。",
       inputSchema: jsonSchema<{
         nodeId: string;
         title?: string;
@@ -86,15 +87,15 @@ export function buildContentWriteTools({ projectId }: ToolBuildContext) {
           },
           title: {
             type: "string",
-            description: "新的章节标题，传 null 可清除。",
+            description: "新的章节标题。省略则不修改；传 null 可清除。",
           },
           body: {
             type: "string",
-            description: "新的正文内容，传 null 可清除。",
+            description: "新的正文完整内容。省略则不修改；传 null 可清除。",
           },
           anchorPointId: {
             type: "string",
-            description: "新的锚定时间点 ID。",
+            description: "新的锚定时间点 ID。省略则不修改锚定关系。",
           },
         },
       }),
@@ -124,9 +125,9 @@ export function buildContentWriteTools({ projectId }: ToolBuildContext) {
         });
       },
     }),
-    move_content_node: tool({
+    move_manuscript_node: tool({
       description:
-        "移动或重排序正文节点。将节点移动到新的父节点下，可选地插入到指定兄弟节点之后。若省略 afterSiblingId 则插入为新父节点的第一个子节点。",
+        "移动或重排正文节点。会改变正文结构和章节顺序；省略 afterSiblingId 时插入为新父节点的第一个子节点。",
       inputSchema: jsonSchema<{
         nodeId: string;
         newParentId: string;
@@ -141,11 +142,11 @@ export function buildContentWriteTools({ projectId }: ToolBuildContext) {
           },
           newParentId: {
             type: "string",
-            description: "新父正文节点 ID。",
+            description: "新父正文节点 ID。目标节点会被移动到该节点下。",
           },
           afterSiblingId: {
             type: "string",
-            description: "移动后插入到该兄弟节点之后。省略时新节点将成为新父节点的第一个子节点。",
+            description: "移动后插入到该兄弟节点之后。省略时插入为新父节点的第一个子节点。",
           },
         },
       }),
@@ -175,8 +176,9 @@ export function buildContentWriteTools({ projectId }: ToolBuildContext) {
         });
       },
     }),
-    delete_content_node: tool({
-      description: "删除正文节点。注意：删除非叶节点会连同所有子节点一起删除，此操作不可逆。",
+    delete_manuscript_node: tool({
+      description:
+        "删除正文节点。删除非叶节点会连同所有子节点一起删除；此操作不可逆，仅在用户明确要求删除时使用。",
       inputSchema: jsonSchema<{ nodeId: string }>({
         type: "object",
         required: ["nodeId"],

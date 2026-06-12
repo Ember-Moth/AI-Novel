@@ -79,28 +79,28 @@ export type AgentToolTraceStatus = "success" | "error";
 export type ProjectAssistantStreamToolStatus = AgentToolTraceStatus;
 
 export const PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES = [
-  "read_current_writing_context",
-  "read_content_subtree",
-  "list_timeline_points",
-  "list_aux_dir",
-  "read_aux_path",
+  "get_writing_context",
+  "get_manuscript_subtree",
+  "list_story_timeline_points",
+  "list_reference_dir",
+  "read_reference_path",
 ] as const;
 
 export const PROJECT_ASSISTANT_WRITE_TOOL_NAMES = [
-  "create_content_node",
-  "update_content_node",
-  "move_content_node",
-  "delete_content_node",
-  "create_timeline_point",
-  "update_timeline_point",
-  "move_timeline_point",
-  "delete_timeline_point",
-  "mkdir_aux_dir",
-  "write_aux_file",
-  "move_aux_node",
-  "delete_aux_node",
-  "create_aux_symlink",
-  "retarget_aux_symlink",
+  "create_manuscript_node",
+  "update_manuscript_node",
+  "move_manuscript_node",
+  "delete_manuscript_node",
+  "create_story_timeline_point",
+  "update_story_timeline_point",
+  "move_story_timeline_point",
+  "delete_story_timeline_point",
+  "create_reference_dir",
+  "write_reference_file",
+  "move_reference_node",
+  "delete_reference_node",
+  "create_reference_link",
+  "retarget_reference_link",
 ] as const;
 
 export const PROJECT_ASSISTANT_TOOL_NAMES = [

@@ -19,15 +19,15 @@ import type { AssistantToolSuccess } from "./_shared";
 
 export function buildWritingContextTools({ projectId, context }: ToolBuildContext) {
   return {
-    read_current_writing_context: tool({
+    get_writing_context: tool({
       description:
-        "读取当前正文节点的写作上下文，包括当前正文节点、其锚定时间点，以及该时间点下可见的辅助资料快照。",
+        "获取指定正文节点的写作上下文。用于回答或续写前先了解当前章节、锚定时间点和该时间点可见的参考资料；省略 contentNodeId 时读取当前选中正文节点。",
       inputSchema: jsonSchema<{ contentNodeId?: string }>({
         type: "object",
         properties: {
           contentNodeId: {
             type: "string",
-            description: "要读取写作上下文的正文节点 ID。省略时默认使用当前选中的正文节点。",
+            description: "正文节点 ID。省略时使用当前选中的正文节点；没有选中节点时会失败。",
           },
         },
       }),

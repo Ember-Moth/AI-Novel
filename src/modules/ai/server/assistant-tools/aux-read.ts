@@ -17,15 +17,15 @@ import {
 
 export function buildAuxReadTools({ projectId, context }: ToolBuildContext) {
   return {
-    list_aux_dir: tool({
+    list_reference_dir: tool({
       description:
-        "读取当前时间点下某个辅助资料目录的目录项摘要。省略路径时默认读取辅助资料根目录。",
+        "列出当前时间点可见的参考资料目录。用于先查看有哪些设定/素材文件；省略 path 时读取参考资料根目录。",
       inputSchema: jsonSchema<{ path?: string }>({
         type: "object",
         properties: {
           path: {
             type: "string",
-            description: "辅助资料目录路径。省略时读取辅助资料根目录。",
+            description: "参考资料目录绝对路径。省略时读取根目录 /。",
           },
         },
       }),
@@ -60,14 +60,16 @@ export function buildAuxReadTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    read_aux_path: tool({
-      description: "读取当前时间点下某个辅助资料路径对应的节点。",
+    read_reference_path: tool({
+      description:
+        "读取当前时间点可见的参考资料节点。用于查看具体设定/素材内容；省略 path 时读取当前选中的参考资料路径。",
       inputSchema: jsonSchema<{ path?: string }>({
         type: "object",
         properties: {
           path: {
             type: "string",
-            description: "辅助资料路径。省略时默认使用当前选中的辅助资料路径。",
+            description:
+              "参考资料绝对路径。省略时使用当前选中的参考资料路径；没有选中路径时会失败。",
           },
         },
       }),

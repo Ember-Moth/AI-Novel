@@ -19,11 +19,9 @@ import {
 
 export function buildTimelineTools({ projectId }: ToolBuildContext) {
   return {
-    list_timeline_points: tool({
+    list_story_timeline_points: tool({
       description:
-        "读取当前项目默认工作区的时间线列表。" +
-        "时间线是小说创作的骨架，定义故事推进的每个关键节拍，" +
-        "章节通过锚定时间点来关联时间轴位置，时间线的排列顺序即为叙事的推进顺序。",
+        "获取故事时间线上的全部时间点。用于理解章节锚定位置和叙事推进顺序；列表顺序就是故事时间推进顺序。",
       inputSchema: jsonSchema<Record<string, never>>({
         type: "object",
         additionalProperties: false,
@@ -46,10 +44,9 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
         });
       },
     }),
-    create_timeline_point: tool({
+    create_story_timeline_point: tool({
       description:
-        "在时间线上创建新的时间点。时间线是小说创作的骨架，定义故事推进的每个关键节拍；" +
-        "新时间点将插入到指定前驱时间点之后，省略 afterPointId 则插入到时间线末尾。",
+        "在故事时间线上创建新的时间点。用于新增剧情节拍；省略 afterPointId 时追加到时间线末尾。",
       inputSchema: jsonSchema<{
         key: string;
         label: string;
@@ -61,7 +58,7 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
         properties: {
           key: {
             type: "string",
-            description: "时间点的唯一标识符，用于内部引用。",
+            description: "时间点的唯一标识符，用于内部引用，需在当前时间线内唯一。",
           },
           label: {
             type: "string",
@@ -69,7 +66,7 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
           },
           description: {
             type: "string",
-            description: "时间点的详细说明，描述该节拍在故事中的作用。",
+            description: "时间点说明，描述该剧情节拍在故事中的作用。",
           },
           afterPointId: {
             type: "string",
@@ -106,8 +103,8 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
         });
       },
     }),
-    update_timeline_point: tool({
-      description: "更新时间点的标签或描述。无法修改原点时间点。",
+    update_story_timeline_point: tool({
+      description: "更新故事时间点的标签或说明。用于调整已有剧情节拍的信息；无法修改原点时间点。",
       inputSchema: jsonSchema<{
         pointId: string;
         label?: string;
@@ -126,7 +123,7 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
           },
           description: {
             type: "string",
-            description: "新的时间点描述，传空字符串可清除。",
+            description: "新的时间点说明。传空字符串可清除。",
           },
         },
       }),
@@ -155,10 +152,9 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
         });
       },
     }),
-    move_timeline_point: tool({
+    move_story_timeline_point: tool({
       description:
-        "在时间线上重排时间点。将指定时间点移动到另一个时间点之后，从而改变叙事的推进顺序。" +
-        "时间线的排列顺序即为故事的时间推进顺序，重新排列会直接影响读者体验。",
+        "重排故事时间线上的时间点。会改变故事时间推进顺序和章节锚定语境；省略 afterPointId 时移动到末尾。",
       inputSchema: jsonSchema<{
         pointId: string;
         afterPointId?: string;
@@ -201,10 +197,9 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
         });
       },
     }),
-    delete_timeline_point: tool({
+    delete_story_timeline_point: tool({
       description:
-        "删除时间线上的时间点。若该时间点有章节锚定或辅助资料关联，删除将被阻止并提示原因。" +
-        "此操作不可逆。",
+        "删除故事时间线上的时间点。若有章节锚定或参考资料关联会被阻止，除非允许清理关联参考资料层；此操作不可逆。",
       inputSchema: jsonSchema<{
         pointId: string;
         purgeAuxLayers?: boolean;
@@ -219,7 +214,7 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
           purgeAuxLayers: {
             type: "boolean",
             description:
-              "是否一并删除该时间点关联的辅助资料层。若不设为 true，存在辅助资料关联时删除将失败。",
+              "是否一并删除该时间点关联的参考资料层。若不设为 true，存在参考资料关联时删除会失败。",
           },
         },
       }),
