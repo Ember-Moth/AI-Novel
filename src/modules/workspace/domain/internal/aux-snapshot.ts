@@ -3,6 +3,7 @@ import { and, eq, inArray, type InferInsertModel, isNull, or } from "drizzle-orm
 
 import { type DatabaseExecutor, schema } from "@/db";
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
+import { compareNaturalSortText } from "@/shared/lib/natural-sort";
 
 import type { ExportedAuxNode, ResolvedAuxSnapshotNode } from "../types";
 import type { AuxLayerChangeView } from "../types";
@@ -13,6 +14,16 @@ import { pointCondition, pointIdOrOrigin } from "./timeline-point";
 
 type WorkspaceRow = InferSelectModel<typeof schema.workspaces>;
 type AuxNodeLayerRow = InferSelectModel<typeof schema.auxNodeLayers>;
+
+function compareAuxNodeTreeOrder(
+  left: Pick<ResolvedAuxSnapshotNode, "nodeType" | "name">,
+  right: Pick<ResolvedAuxSnapshotNode, "nodeType" | "name">,
+) {
+  const leftTypeRank = left.nodeType === "dir" ? 0 : 1;
+  const rightTypeRank = right.nodeType === "dir" ? 0 : 1;
+
+  return leftTypeRank - rightTypeRank || compareNaturalSortText(left.name ?? "", right.name ?? "");
+}
 
 function formatAuxSnapshotPointLabel(
   executor: DatabaseExecutor,
@@ -233,7 +244,7 @@ export function listChildrenFromSnapshot(
 ) {
   return [...snapshot.values()]
     .filter((node) => node.parentAuxNodeId === parentId)
-    .sort((left, right) => (left.name ?? "").localeCompare(right.name ?? ""));
+    .sort(compareAuxNodeTreeOrder);
 }
 
 export function collectChangedAuxNodeIds(
@@ -342,9 +353,7 @@ function listAuxExportChildren(
     );
   }
 
-  return children.sort((left, right) =>
-    (left.node.name ?? "").localeCompare(right.node.name ?? ""),
-  );
+  return children.sort((left, right) => compareAuxNodeTreeOrder(left.node, right.node));
 }
 
 export function exportAuxNode(

@@ -165,9 +165,13 @@ test("symlink keeps following the same aux node after rename and move", () => {
 
   const exported = service.exportAuxSnapshotTree(workspace.id, point.id);
   expect(exported.timelinePointId).toBe(point.id);
-  expect(exported.nodes.map((node) => node.name)).toEqual(["current_location", "places"]);
-  expect(exported.nodes[0]?.symlinkTargetPath).toBe("/places/villa/main_bathroom");
-  expect(exported.nodes[1]?.children.map((node) => node.name)).toEqual(["home", "villa"]);
+  expect(exported.nodes.map((node) => node.name)).toEqual(["places", "current_location"]);
+  expect(exported.nodes.find((node) => node.name === "current_location")?.symlinkTargetPath).toBe(
+    "/places/villa/main_bathroom",
+  );
+  expect(
+    exported.nodes.find((node) => node.name === "places")?.children.map((node) => node.name),
+  ).toEqual(["home", "villa"]);
 });
 
 test("retargetAuxSymlinkAt updates the exported symlink target path", () => {
@@ -397,8 +401,8 @@ test("aux node names must stay unique within the same parent", () => {
   );
 
   expect(service.exportAuxSnapshotTree(workspace.id).nodes.map((node) => node.path)).toEqual([
-    "/notes.md",
     "/state",
+    "/notes.md",
   ]);
 });
 
@@ -434,6 +438,99 @@ test("origin aux creation rejects names that would duplicate in descendant timel
   expect(
     service.exportAuxSnapshotTree(workspace.id, point.id).nodes.map((node) => node.path),
   ).toEqual(["/新文件 1"]);
+});
+
+test("aux snapshot sorts folders first then naturally inside each group", () => {
+  const workspace = seedProject("project_aux_natural_sort");
+  const rootId = workspace.auxRootId!;
+
+  service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "文件10",
+    content: "",
+  });
+  service.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "目录十",
+  });
+  service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "文件2",
+    content: "",
+  });
+  service.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "目录二",
+  });
+  service.linkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "文件１ - 链接",
+    targetNodeId: rootId,
+  });
+
+  expect(service.exportAuxSnapshotTree(workspace.id).nodes.map((node) => node.path)).toEqual([
+    "/目录二",
+    "/目录十",
+    "/文件１ - 链接",
+    "/文件2",
+    "/文件10",
+  ]);
+});
+
+test("aux snapshot sorts deleted ghost nodes with visible siblings", () => {
+  const workspace = seedProject("project_aux_deleted_ghost_natural_sort");
+  const rootId = workspace.auxRootId!;
+
+  const file10 = service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "文件10",
+    content: "",
+  });
+  service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "文件2",
+    content: "",
+  });
+
+  const point = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    label: "After delete file 10",
+  });
+  service.deleteAuxNodeAt({
+    workspaceId: workspace.id,
+    timelinePointId: point.id,
+    nodeId: file10.id,
+  });
+  service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: point.id,
+    parentDirId: rootId,
+    name: "文件1",
+    content: "",
+  });
+
+  const snapshot = service.exportAuxSnapshotTree(workspace.id, point.id);
+
+  expect(snapshot.nodes.map((node) => [node.path, node.isDeleted])).toEqual([
+    ["/文件1", false],
+    ["/文件2", false],
+    ["/文件10", true],
+  ]);
 });
 
 test("aux snapshot marks visible nodes with layers at the active timeline point", () => {
