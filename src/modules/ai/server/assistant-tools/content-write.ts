@@ -13,11 +13,23 @@ import { resolveCurrentTimelinePointId } from "./timeline-helpers";
 import type { ContentWriteToolName } from "./tool-names";
 import { getWorkspaceForProject } from "./workspace";
 
+type QueuedCreateAnchor = string | null;
+
+function createManuscriptInsertQueueKey(input: {
+  workspaceId: string;
+  parentId: string;
+  afterSiblingId: string | null;
+}) {
+  return `${input.workspaceId}:${input.parentId}:${input.afterSiblingId ?? "head"}`;
+}
+
 export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildContext) {
+  const createManuscriptNodeQueues = new Map<string, Promise<QueuedCreateAnchor>>();
+
   return {
     create_manuscript_node: tool({
       description:
-        "在正文树中创建新的章节节点，并自动锚定到当前故事时间轴的时间点。仅在用户明确要求新增正文/章节时使用；parentId 决定新节点归属在哪个父节点下，afterSiblingId 只决定同一父节点下的排序位置。",
+        "在正文树中创建新的章节节点，并自动锚定到当前故事时间轴的时间点。仅在用户明确要求新增正文/章节时使用；parentId 决定新节点归属在哪个父节点下，afterSiblingId 只决定同一父节点下的排序位置。同一轮里连续创建到同一位置的节点会按工具调用顺序排列。",
       inputSchema: jsonSchema<{
         parentId: string;
         afterSiblingId?: string;
@@ -33,7 +45,8 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
           },
           afterSiblingId: {
             type: "string",
-            description: "插入到该兄弟节点之后。省略时插入为父节点的第一个子节点。",
+            description:
+              "插入到该兄弟节点之后。省略时插入为父节点的第一个子节点；同一轮里连续省略时按工具调用顺序排列。",
           },
           title: {
             type: "string",
@@ -51,28 +64,64 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
           return failure(new Error("当前项目没有默认工作区。"));
         }
 
-        return withEnvelope(() => {
-          const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
-          const node = createContentNode({
-            workspaceId: workspace.id,
-            parentId,
-            afterSiblingId: afterSiblingId ?? undefined,
-            anchorPointId: resolvedTimelinePointId,
-            title: title ?? undefined,
-            body: body ?? undefined,
+        const normalizedAfterSiblingId = afterSiblingId ?? null;
+        const queueKey = createManuscriptInsertQueueKey({
+          workspaceId: workspace.id,
+          parentId,
+          afterSiblingId: normalizedAfterSiblingId,
+        });
+        const previousCreate = createManuscriptNodeQueues.get(queueKey) ?? Promise.resolve(null);
+
+        const resultPromise = previousCreate
+          .catch(() => normalizedAfterSiblingId)
+          .then((queuedAfterSiblingId) => {
+            const effectiveAfterSiblingId = queuedAfterSiblingId ?? normalizedAfterSiblingId;
+            const result = withEnvelope(() => {
+              const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
+              const node = createContentNode({
+                workspaceId: workspace.id,
+                parentId,
+                afterSiblingId: effectiveAfterSiblingId ?? undefined,
+                anchorPointId: resolvedTimelinePointId,
+                title: title ?? undefined,
+                body: body ?? undefined,
+              });
+
+              return {
+                ok: true,
+                truncated: false,
+                data: {
+                  action: "created" as const,
+                  nodeId: node.id,
+                  parentId: node.parentId,
+                  timelinePointId: resolvedTimelinePointId,
+                },
+              };
+            });
+
+            if (!result.ok) {
+              throw result;
+            }
+
+            return result;
           });
 
-          return {
-            ok: true,
-            truncated: false,
-            data: {
-              action: "created" as const,
-              nodeId: node.id,
-              parentId: node.parentId,
-              timelinePointId: resolvedTimelinePointId,
-            },
-          };
-        });
+        createManuscriptNodeQueues.set(
+          queueKey,
+          resultPromise.then(
+            (result) => result.data.nodeId,
+            () => normalizedAfterSiblingId,
+          ),
+        );
+
+        try {
+          return await resultPromise;
+        } catch (error) {
+          if (error && typeof error === "object" && Reflect.get(error, "ok") === false) {
+            return error as ReturnType<typeof failure>;
+          }
+          return failure(error);
+        }
       },
     }),
     update_manuscript_node: tool({

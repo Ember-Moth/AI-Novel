@@ -391,6 +391,49 @@ test("create_manuscript_node anchors new content to the current timeline point",
   });
 });
 
+test("create_manuscript_node preserves call order when parallel calls share an insertion point", async () => {
+  const workspace = seedProject("assistant_tools_create_manuscript_parallel_order");
+  const chapter7 = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    title: "第七章",
+  });
+  workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    afterSiblingId: chapter7.id,
+    title: "终章",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_create_manuscript_parallel_order",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  await Promise.all([
+    executeTool(tools.create_manuscript_node!, {
+      parentId: workspace.contentRootId!,
+      afterSiblingId: chapter7.id,
+      title: "第八章",
+    }),
+    executeTool(tools.create_manuscript_node!, {
+      parentId: workspace.contentRootId!,
+      afterSiblingId: chapter7.id,
+      title: "第九章",
+    }),
+    executeTool(tools.create_manuscript_node!, {
+      parentId: workspace.contentRootId!,
+      afterSiblingId: chapter7.id,
+      title: "第十章",
+    }),
+  ]);
+
+  expect(
+    workspaceDomain
+      .listManuscriptNodes(workspace.id, workspace.contentRootId!, { depth: 1 })
+      .nodes.map((node) => node.title),
+  ).toEqual(["第七章", "第八章", "第九章", "第十章", "终章"]);
+});
+
 test("list_files returns a recursive tree by default and does not recurse into symlinks", async () => {
   const workspace = seedProject("assistant_tools_list_tree_default");
   const settingsDir = workspaceDomain.mkdirAt({
