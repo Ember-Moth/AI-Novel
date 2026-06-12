@@ -24,6 +24,10 @@
   }
 }
 
+@utility interpolate-size {
+  interpolate-size: allow-keywords;
+}
+
 @theme {
   /* Editor area */
   --color-editor-background: #1e1e1e;
