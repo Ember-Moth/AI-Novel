@@ -2418,6 +2418,17 @@ test("openai follow-up send uses previous response id and only sends incremental
     },
   });
   expect(
+    String(
+      Reflect.get(
+        (capturedInput.providerOptions as Record<string, unknown>).openai as Record<
+          string,
+          unknown
+        >,
+        "instructions",
+      ),
+    ),
+  ).not.toContain("当前编辑上下文：");
+  expect(
     typeof Reflect.get(
       (capturedInput.providerOptions as Record<string, unknown>).openai as Record<string, unknown>,
       "instructions",

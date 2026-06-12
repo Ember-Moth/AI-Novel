@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   AgentThreadView,
-  ProjectAssistantContextSnapshot,
   ProjectAssistantStreamEvent,
   ProjectAssistantToolName,
   TimelineSelectionUpdatedEvent,
@@ -419,7 +418,6 @@ function patchAssistantOverviewState({
 
 export function useAiAssistantController(
   projectId: string,
-  contextSnapshot: ProjectAssistantContextSnapshot,
   onWorkspaceRefreshRequested?: (
     _event: WorkspaceRefreshRequestedEvent | TimelineSelectionUpdatedEvent,
   ) => void,
@@ -434,7 +432,6 @@ export function useAiAssistantController(
   const [expectedActiveThreadId, setExpectedActiveThreadId] = useState<string | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [activeStream, setActiveStream] = useState<AssistantStreamOverlay | null>(null);
-  const [includeContext, setIncludeContext] = useState(true);
   const [allowWritesForNextSend, setAllowWritesForNextSend] = useState(
     DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND,
   );
@@ -630,7 +627,6 @@ export function useAiAssistantController(
             projectId,
             threadId: activeThreadId,
             text,
-            context: includeContext ? contextSnapshot : null,
             activeTools,
           },
           {
@@ -686,9 +682,7 @@ export function useAiAssistantController(
       allowWritesForNextSend,
       assistantOverviewQuery,
       canSubmit,
-      contextSnapshot,
       draft,
-      includeContext,
       onWorkspaceRefreshRequested,
       projectId,
       sendMessageStream,
@@ -718,7 +712,6 @@ export function useAiAssistantController(
             projectId,
             threadId: activeThreadId,
             triggerNodeId,
-            context: includeContext ? contextSnapshot : null,
             activeTools: selectedModelSupportsToolUse
               ? buildProjectAssistantRetryActiveTools()
               : null,
@@ -769,8 +762,6 @@ export function useAiAssistantController(
     [
       activeThreadId,
       assistantOverviewQuery,
-      contextSnapshot,
-      includeContext,
       projectId,
       retryMessageStream,
       selectedModelSupportsToolUse,
@@ -1032,7 +1023,6 @@ export function useAiAssistantController(
     handleSubmit,
     handleAbort,
     allowWritesForNextSend,
-    includeContext,
     isBusy,
     isGenerating,
     isLoadingSelection,
@@ -1053,12 +1043,10 @@ export function useAiAssistantController(
     sessionRows,
     setAllowWritesForNextSend,
     setDraft,
-    setIncludeContext,
     showArchivedThreads,
     setShowArchivedThreads,
     showEmptyState,
     assistantStateIsInitialLoading: assistantOverviewQuery.isInitialLoading,
-    contextSnapshot,
     hasDraft: draft.trim().length > 0,
   };
 }

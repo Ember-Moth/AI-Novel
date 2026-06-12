@@ -5,7 +5,6 @@ import { AnimatePresence } from "./AiSidebarView";
 import { AiMarkdown } from "./AiMarkdown";
 import type {
   AgentRunSummaryView,
-  ProjectAssistantContextSnapshot,
   TimelineSelectionUpdatedEvent,
   WorkspaceRefreshRequestedEvent,
 } from "@/modules/ai/domain/types";
@@ -29,21 +28,15 @@ import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
 
 export function AiSidebar({
   projectId,
-  contextSnapshot,
   onWorkspaceRefreshRequested,
 }: {
   projectId: string;
-  contextSnapshot: ProjectAssistantContextSnapshot;
   onWorkspaceRefreshRequested?: (
     _event: WorkspaceRefreshRequestedEvent | TimelineSelectionUpdatedEvent,
   ) => void;
 }) {
   const messagesViewportRef = useRef<HTMLElement | null>(null);
-  const controller = useAiAssistantController(
-    projectId,
-    contextSnapshot,
-    onWorkspaceRefreshRequested,
-  );
+  const controller = useAiAssistantController(projectId, onWorkspaceRefreshRequested);
   const layout = useAssistantSheetLayout({
     defaultState: "peek",
   });
@@ -320,24 +313,6 @@ export function AiSidebar({
               </div>
 
               <div className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
-                <button
-                  type="button"
-                  onClick={() => controller.setIncludeContext((current) => !current)}
-                  className={`inline-flex items-center gap-1 rounded border px-1.5 py-px text-[10px] leading-4 transition ${
-                    controller.includeContext
-                      ? "border-border bg-editor-background text-foreground"
-                      : "border-border/50 bg-editor-background/50 text-foreground-muted/60"
-                  }`}
-                >
-                  <span
-                    className={`shrink-0 text-[12px] ${
-                      controller.includeContext
-                        ? "icon-[material-symbols--my-location] text-accent-foreground"
-                        : "icon-[material-symbols--my-location-outline] text-foreground-muted/60"
-                    }`}
-                  />
-                  <span>当前上下文</span>
-                </button>
                 <button
                   type="button"
                   disabled={controller.isBusy || !controller.selectedModelSupportsToolUse}

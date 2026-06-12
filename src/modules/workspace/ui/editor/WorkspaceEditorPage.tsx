@@ -1,9 +1,8 @@
 import { ScopeProvider } from "bunshi/react";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 
 import { AppShell, AppSidebar } from "@/app/shell/AppShell";
 import type {
-  ProjectAssistantContextSnapshot,
   TimelineSelectionUpdatedEvent,
   WorkspaceRefreshRequestedEvent,
 } from "@/modules/ai/domain/types";
@@ -207,7 +206,6 @@ function ProjectWorkspace({
     activeContentNode,
     activeAuxNode,
     activeTimelineLabel,
-    browsingTimelineLabel,
   } = selection;
   const { editorBody, editorContent, activeSaveState, auxSaveState, editorTarget } = editorView;
   const { pageErrorDismissed, setPageErrorDismissed } = pageErrorState;
@@ -224,27 +222,6 @@ function ProjectWorkspace({
 
   const pageErrorBubble =
     pageError && !pageErrorDismissed ? { message: pageError, anchorId: PAGE_ERROR_ANCHOR } : null;
-  const assistantContext = useMemo<ProjectAssistantContextSnapshot>(
-    () => ({
-      workspaceId: workspaceId ?? null,
-      activeContentNodeId,
-      activeContentTitle: activeContentNode?.title ?? null,
-      activeAuxNodeId,
-      activeAuxPath: activeAuxNode?.path ?? null,
-      activeTimelinePointId,
-      activeTimelineLabel: browsingTimelineLabel ?? activeTimelineLabel,
-    }),
-    [
-      activeAuxNode?.path,
-      activeAuxNodeId,
-      activeContentNode?.title,
-      activeContentNodeId,
-      activeTimelineLabel,
-      activeTimelinePointId,
-      browsingTimelineLabel,
-      workspaceId,
-    ],
-  );
   const handleAssistantWorkspaceRefreshRequested = useCallback(
     (event: WorkspaceRefreshRequestedEvent | TimelineSelectionUpdatedEvent) => {
       if (!shouldHandleWorkspaceRefreshRequested({ event, workspaceId })) {
@@ -534,7 +511,6 @@ function ProjectWorkspace({
           </div>
           <AiSidebar
             projectId={projectId}
-            contextSnapshot={assistantContext}
             onWorkspaceRefreshRequested={handleAssistantWorkspaceRefreshRequested}
           />
         </div>
