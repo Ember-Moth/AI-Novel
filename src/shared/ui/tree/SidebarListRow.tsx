@@ -122,7 +122,7 @@ function RowHoverSlot({ actions, badge }: { actions?: ReactNode; badge?: ReactNo
   return (
     <div className="grid h-5 shrink-0 items-center">
       {actions ? (
-        <div className="pointer-events-none col-start-1 row-start-1 flex items-center justify-end gap-1 justify-self-end opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100">
+        <div className="pointer-events-none col-start-1 row-start-1 flex w-0 items-center justify-end gap-1 justify-self-end overflow-hidden opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:w-auto group-hover:opacity-100">
           {actions}
         </div>
       ) : null}
