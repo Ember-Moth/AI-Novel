@@ -237,12 +237,12 @@ export const contentNodes = sqliteTable(
       columns: [table.workspaceId, table.nextSiblingId],
       foreignColumns: [table.workspaceId, table.id],
       name: "content_nodes_next_sibling_same_workspace_fk",
-    }).onDelete("set null"),
+    }),
     foreignKey({
       columns: [table.workspaceId, table.anchorTimelinePointId],
       foreignColumns: [timelinePoints.workspaceId, timelinePoints.id],
       name: "content_nodes_anchor_same_workspace_fk",
-    }).onDelete("set null"),
+    }),
     uniqueIndex("content_nodes_next_sibling_idx").on(table.workspaceId, table.nextSiblingId),
     index("content_nodes_workspace_idx").on(table.workspaceId),
     index("content_nodes_parent_idx").on(table.workspaceId, table.parentId),
@@ -742,7 +742,7 @@ export const auxNodeLayers = sqliteTable(
       columns: [table.workspaceId, table.timelinePointId],
       foreignColumns: [timelinePoints.workspaceId, timelinePoints.id],
       name: "aux_node_layers_timeline_point_fk",
-    }).onDelete("restrict"),
+    }),
     foreignKey({
       columns: [table.workspaceId, table.auxNodeId],
       foreignColumns: [auxNodes.workspaceId, auxNodes.id],
@@ -752,12 +752,12 @@ export const auxNodeLayers = sqliteTable(
       columns: [table.workspaceId, table.parentAuxNodeId],
       foreignColumns: [auxNodes.workspaceId, auxNodes.id],
       name: "aux_node_layers_parent_aux_node_fk",
-    }).onDelete("restrict"),
+    }),
     foreignKey({
       columns: [table.workspaceId, table.symlinkTargetAuxNodeId],
       foreignColumns: [auxNodes.workspaceId, auxNodes.id],
       name: "aux_node_layers_symlink_target_fk",
-    }).onDelete("restrict"),
+    }),
     uniqueIndex("aux_node_layers_origin_aux_idx")
       .on(table.workspaceId, table.auxNodeId)
       .where(sql`${table.timelinePointId} IS NULL`),

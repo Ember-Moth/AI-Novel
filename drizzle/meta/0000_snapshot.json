@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1c8e52fd-62c6-4bed-bdb2-c9af1d860af0",
+  "id": "6a63ca72-c0ca-43fd-bcfb-1146f0009752",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "agent_artifacts": {
@@ -2044,7 +2044,7 @@
           "tableTo": "timeline_points",
           "columnsFrom": ["workspace_id", "timeline_point_id"],
           "columnsTo": ["workspace_id", "id"],
-          "onDelete": "restrict",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "aux_node_layers_aux_node_fk": {
@@ -2062,7 +2062,7 @@
           "tableTo": "aux_nodes",
           "columnsFrom": ["workspace_id", "parent_aux_node_id"],
           "columnsTo": ["workspace_id", "id"],
-          "onDelete": "restrict",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "aux_node_layers_symlink_target_fk": {
@@ -2071,7 +2071,7 @@
           "tableTo": "aux_nodes",
           "columnsFrom": ["workspace_id", "symlink_target_aux_node_id"],
           "columnsTo": ["workspace_id", "id"],
-          "onDelete": "restrict",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -2596,7 +2596,7 @@
           "tableTo": "content_nodes",
           "columnsFrom": ["workspace_id", "next_sibling_id"],
           "columnsTo": ["workspace_id", "id"],
-          "onDelete": "set null",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "content_nodes_anchor_same_workspace_fk": {
@@ -2605,7 +2605,7 @@
           "tableTo": "timeline_points",
           "columnsFrom": ["workspace_id", "anchor_timeline_point_id"],
           "columnsTo": ["workspace_id", "id"],
-          "onDelete": "set null",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },

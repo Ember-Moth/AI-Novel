@@ -307,10 +307,10 @@ CREATE TABLE `aux_node_layers` (
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`workspace_id`,`timeline_point_id`) REFERENCES `timeline_points`(`workspace_id`,`id`) ON UPDATE no action ON DELETE restrict,
+	FOREIGN KEY (`workspace_id`,`timeline_point_id`) REFERENCES `timeline_points`(`workspace_id`,`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`workspace_id`,`aux_node_id`) REFERENCES `aux_nodes`(`workspace_id`,`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`workspace_id`,`parent_aux_node_id`) REFERENCES `aux_nodes`(`workspace_id`,`id`) ON UPDATE no action ON DELETE restrict,
-	FOREIGN KEY (`workspace_id`,`symlink_target_aux_node_id`) REFERENCES `aux_nodes`(`workspace_id`,`id`) ON UPDATE no action ON DELETE restrict,
+	FOREIGN KEY (`workspace_id`,`parent_aux_node_id`) REFERENCES `aux_nodes`(`workspace_id`,`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`workspace_id`,`symlink_target_aux_node_id`) REFERENCES `aux_nodes`(`workspace_id`,`id`) ON UPDATE no action ON DELETE no action,
 	CONSTRAINT "aux_node_layers_not_deleted_or_has_payload" CHECK("aux_node_layers"."is_deleted" = 1 OR "aux_node_layers"."parent_aux_node_id" IS NOT NULL OR "aux_node_layers"."name" IS NOT NULL OR "aux_node_layers"."content" IS NOT NULL OR "aux_node_layers"."symlink_target_aux_node_id" IS NOT NULL)
 );
 --> statement-breakpoint
@@ -395,8 +395,8 @@ CREATE TABLE `content_nodes` (
 	PRIMARY KEY(`workspace_id`, `id`),
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`workspace_id`,`parent_id`) REFERENCES `content_nodes`(`workspace_id`,`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`workspace_id`,`next_sibling_id`) REFERENCES `content_nodes`(`workspace_id`,`id`) ON UPDATE no action ON DELETE set null,
-	FOREIGN KEY (`workspace_id`,`anchor_timeline_point_id`) REFERENCES `timeline_points`(`workspace_id`,`id`) ON UPDATE no action ON DELETE set null,
+	FOREIGN KEY (`workspace_id`,`next_sibling_id`) REFERENCES `content_nodes`(`workspace_id`,`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`workspace_id`,`anchor_timeline_point_id`) REFERENCES `timeline_points`(`workspace_id`,`id`) ON UPDATE no action ON DELETE no action,
 	CONSTRAINT "content_nodes_parent_not_self" CHECK("content_nodes"."parent_id" IS NULL OR "content_nodes"."parent_id" <> "content_nodes"."id"),
 	CONSTRAINT "content_nodes_next_sibling_not_self" CHECK("content_nodes"."next_sibling_id" IS NULL OR "content_nodes"."next_sibling_id" <> "content_nodes"."id")
 );
