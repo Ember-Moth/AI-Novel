@@ -245,6 +245,51 @@ function ProjectWorkspace({
   );
   const handleAssistantWorkspaceMutation = useCallback(
     (event: WorkspaceMutationEvent) => {
+      if (event.area === "content") {
+        if (
+          workspaceId != null &&
+          event.workspaceId === workspaceId &&
+          activeTimelinePointId != null &&
+          event.timelinePointId === activeTimelinePointId
+        ) {
+          void contentQuery.refetch();
+          if (event.nodeId && activeContentNodeId === event.nodeId) {
+            workspaceStore.getState().setDrafts((previous) => {
+              if (!(activeContentNodeId in previous)) {
+                return previous;
+              }
+              const next = { ...previous };
+              delete next[activeContentNodeId];
+              return next;
+            });
+            workspaceStore.getState().setCommittedBodies((previous) => {
+              if (!(activeContentNodeId in previous)) {
+                return previous;
+              }
+              const next = { ...previous };
+              delete next[activeContentNodeId];
+              return next;
+            });
+            workspaceStore.getState().setPendingSaveCounts((previous) => {
+              if (!(activeContentNodeId in previous)) {
+                return previous;
+              }
+              const next = { ...previous };
+              delete next[activeContentNodeId];
+              return next;
+            });
+            workspaceStore.getState().setSaveErrors((previous) => {
+              if (!(activeContentNodeId in previous)) {
+                return previous;
+              }
+              const next = { ...previous };
+              delete next[activeContentNodeId];
+              return next;
+            });
+          }
+        }
+        return;
+      }
       handleAuxWorkspaceMutationForEditor({
         event,
         workspaceId,
@@ -289,7 +334,15 @@ function ProjectWorkspace({
         },
       });
     },
-    [activeAuxNode, activeTimelinePointId, aux.query, workspaceId, workspaceStore],
+    [
+      activeAuxNode,
+      activeContentNodeId,
+      activeTimelinePointId,
+      aux.query,
+      contentQuery,
+      workspaceId,
+      workspaceStore,
+    ],
   );
 
   if (workspaceInitialLoading) {

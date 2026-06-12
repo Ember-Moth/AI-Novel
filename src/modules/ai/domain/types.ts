@@ -274,7 +274,7 @@ export interface WorkspaceMutationEvent {
   timelinePointId: string;
   toolName: ProjectAssistantWriteToolName;
   action: WorkspaceMutationAction;
-  path: string;
+  path?: string | null;
   nodeId: string | null;
   previousPath?: string | null;
   targetPath?: string | null;

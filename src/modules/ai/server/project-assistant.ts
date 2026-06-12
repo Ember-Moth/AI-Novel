@@ -740,6 +740,13 @@ function isWriteToolName(value: unknown): value is ProjectAssistantWriteToolName
   );
 }
 
+const CONTENT_WRITE_TOOL_NAME_SET = new Set<string>([
+  "create_content_node",
+  "update_content_node",
+  "move_content_node",
+  "delete_content_node",
+]);
+
 function extractWorkspaceMutationEventFromToolResult({
   projectId,
   context,
@@ -774,25 +781,40 @@ function extractWorkspaceMutationEventFromToolResult({
   }
 
   const action = Reflect.get(data as Record<string, unknown>, "action");
-  const path = Reflect.get(data as Record<string, unknown>, "path");
   const nodeId = Reflect.get(data as Record<string, unknown>, "nodeId");
+  const path = Reflect.get(data as Record<string, unknown>, "path");
   const previousPath = Reflect.get(data as Record<string, unknown>, "previousPath");
   const targetPath = Reflect.get(data as Record<string, unknown>, "targetPath");
-  if (
-    (action !== "created" && action !== "updated" && action !== "moved") ||
-    typeof path !== "string"
-  ) {
-    return null;
+
+  const isContent = CONTENT_WRITE_TOOL_NAME_SET.has(toolName as string);
+  const area = isContent ? "content" : "aux";
+
+  if (isContent) {
+    if (
+      action !== "created" &&
+      action !== "updated" &&
+      action !== "moved" &&
+      action !== "deleted"
+    ) {
+      return null;
+    }
+  } else {
+    if (
+      (action !== "created" && action !== "updated" && action !== "moved") ||
+      typeof path !== "string"
+    ) {
+      return null;
+    }
   }
 
   return {
     type: "workspace-mutated",
     workspaceId: workspace.id,
-    area: "aux",
+    area,
     timelinePointId: context?.activeTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID,
     toolName,
     action: action as WorkspaceMutationAction,
-    path,
+    path: typeof path === "string" ? path : undefined,
     nodeId: typeof nodeId === "string" && nodeId.trim().length > 0 ? nodeId : null,
     previousPath:
       typeof previousPath === "string" && previousPath.trim().length > 0 ? previousPath : null,
