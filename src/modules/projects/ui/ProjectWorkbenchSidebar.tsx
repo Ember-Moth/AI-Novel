@@ -7,7 +7,7 @@ import { SidebarListRow } from "@/shared/ui/tree";
 
 import type { BranchList, BranchRow, ProjectRow } from "./projectTypes";
 import { dateFormatter, formatCommitId, InlineError } from "./projectUi";
-import { useProjectPageState } from "./state/projectPageStore";
+import { useProjectWorkbenchState } from "./state/projectWorkbenchStore";
 
 export function ProjectWorkbenchSidebar({
   project,
@@ -162,11 +162,11 @@ function ProjectMetaPanel({
   branchCount: number;
   onMetadataCommit: () => void;
 }) {
-  const detailName = useProjectPageState((state) => state.detailName);
-  const detailDescription = useProjectPageState((state) => state.detailDescription);
-  const detailError = useProjectPageState((state) => state.detailError);
-  const setDetailName = useProjectPageState((state) => state.setDetailName);
-  const setDetailDescription = useProjectPageState((state) => state.setDetailDescription);
+  const detailName = useProjectWorkbenchState((state) => state.detailName);
+  const detailDescription = useProjectWorkbenchState((state) => state.detailDescription);
+  const detailError = useProjectWorkbenchState((state) => state.detailError);
+  const setDetailName = useProjectWorkbenchState((state) => state.setDetailName);
+  const setDetailDescription = useProjectWorkbenchState((state) => state.setDetailDescription);
 
   return (
     <OverlayScrollbar className="h-full min-h-0 w-full">

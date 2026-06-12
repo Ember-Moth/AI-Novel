@@ -3,7 +3,7 @@ import { LoadingBlock } from "@/shared/ui/Loading";
 
 import type { ProjectList } from "./projectTypes";
 import { dateFormatter, PageHeader } from "./projectUi";
-import { useProjectPageState } from "./state/projectPageStore";
+import { useProjectListState } from "./state/projectListStore";
 
 export function ProjectListView({
   projectList,
@@ -24,7 +24,7 @@ export function ProjectListView({
   onOpenProject: (_projectId: string) => void;
   onDeleteProject: (_projectId: string, _projectName: string) => void;
 }) {
-  const deletingId = useProjectPageState((state) => state.deletingId);
+  const deletingId = useProjectListState((state) => state.deletingProjectId);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

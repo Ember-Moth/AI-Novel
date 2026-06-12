@@ -3,18 +3,9 @@ import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 import type { CommitRow } from "../projectTypes";
+import { resolveNext, type Updater } from "./storeUtils";
 
-export type Updater<T> = T | ((current: T) => T);
-
-function resolveNext<T>(updater: Updater<T>, current: T): T {
-  return typeof updater === "function" ? (updater as (current: T) => T)(current) : updater;
-}
-
-type ProjectPageStateData = {
-  name: string;
-  description: string;
-  formError: string | null;
-  deletingId: string | null;
+type ProjectWorkbenchStateData = {
   detailName: string;
   detailDescription: string;
   detailError: string | null;
@@ -28,11 +19,7 @@ type ProjectPageStateData = {
   discardError: string | null;
 };
 
-type ProjectPageStateActions = {
-  setName: (updater: Updater<string>) => void;
-  setDescription: (updater: Updater<string>) => void;
-  setFormError: (updater: Updater<string | null>) => void;
-  setDeletingId: (updater: Updater<string | null>) => void;
+type ProjectWorkbenchStateActions = {
   setDetailName: (updater: Updater<string>) => void;
   setDetailDescription: (updater: Updater<string>) => void;
   setDetailError: (updater: Updater<string | null>) => void;
@@ -44,30 +31,26 @@ type ProjectPageStateActions = {
   setCommitMessage: (updater: Updater<string>) => void;
   setCommitError: (updater: Updater<string | null>) => void;
   setDiscardError: (updater: Updater<string | null>) => void;
-  resetCreateProjectDialog: () => void;
   resetCreateBranchDialog: () => void;
   resetForkBranchDialog: () => void;
   resetCommitDraft: () => void;
   syncProjectDetail: (project: { name: string; description: string | null } | null) => void;
 };
 
-export type ProjectPageState = ProjectPageStateData & ProjectPageStateActions;
-export type ProjectPageStore = ReturnType<typeof createProjectPageStore>;
+export type ProjectWorkbenchState = ProjectWorkbenchStateData & ProjectWorkbenchStateActions;
+export type ProjectWorkbenchStore = ReturnType<typeof createProjectWorkbenchStore>;
 
-export function createProjectPageStore() {
-  return createStore<ProjectPageState>()((set) => {
+export function createProjectWorkbenchStore() {
+  return createStore<ProjectWorkbenchState>()((set) => {
     const field =
-      <K extends keyof ProjectPageStateData>(key: K) =>
-      (updater: Updater<ProjectPageStateData[K]>) =>
+      <K extends keyof ProjectWorkbenchStateData>(key: K) =>
+      (updater: Updater<ProjectWorkbenchStateData[K]>) =>
         set(
-          (state) => ({ [key]: resolveNext(updater, state[key]) }) as Pick<ProjectPageStateData, K>,
+          (state) =>
+            ({ [key]: resolveNext(updater, state[key]) }) as Pick<ProjectWorkbenchStateData, K>,
         );
 
     return {
-      name: "",
-      description: "",
-      formError: null,
-      deletingId: null,
       detailName: "",
       detailDescription: "",
       detailError: null,
@@ -79,10 +62,6 @@ export function createProjectPageStore() {
       commitMessage: "",
       commitError: null,
       discardError: null,
-      setName: field("name"),
-      setDescription: field("description"),
-      setFormError: field("formError"),
-      setDeletingId: field("deletingId"),
       setDetailName: field("detailName"),
       setDetailDescription: field("detailDescription"),
       setDetailError: field("detailError"),
@@ -94,12 +73,6 @@ export function createProjectPageStore() {
       setCommitMessage: field("commitMessage"),
       setCommitError: field("commitError"),
       setDiscardError: field("discardError"),
-      resetCreateProjectDialog: () =>
-        set({
-          name: "",
-          description: "",
-          formError: null,
-        }),
       resetCreateBranchDialog: () =>
         set({
           newBranchName: "",
@@ -126,12 +99,12 @@ export function createProjectPageStore() {
   });
 }
 
-export const ProjectPageStateMolecule = molecule(() => createProjectPageStore());
+export const ProjectWorkbenchStateMolecule = molecule(() => createProjectWorkbenchStore());
 
-export function useProjectPageStoreApi(): ProjectPageStore {
-  return useMolecule(ProjectPageStateMolecule);
+export function useProjectWorkbenchStoreApi(): ProjectWorkbenchStore {
+  return useMolecule(ProjectWorkbenchStateMolecule);
 }
 
-export function useProjectPageState<T>(selector: (state: ProjectPageState) => T): T {
-  return useStore(useMolecule(ProjectPageStateMolecule), selector);
+export function useProjectWorkbenchState<T>(selector: (state: ProjectWorkbenchState) => T): T {
+  return useStore(useMolecule(ProjectWorkbenchStateMolecule), selector);
 }

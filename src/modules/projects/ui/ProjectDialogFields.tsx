@@ -2,7 +2,8 @@ import { type FormEvent } from "react";
 
 import { ProjectDialog } from "./ProjectDialog";
 import { formatCommitId } from "./projectUi";
-import { useProjectPageState } from "./state/projectPageStore";
+import { useProjectListState } from "./state/projectListStore";
+import { useProjectWorkbenchState } from "./state/projectWorkbenchStore";
 
 export function CreateProjectDialog({
   dialogRef,
@@ -17,7 +18,7 @@ export function CreateProjectDialog({
   onClose: () => void;
   onSubmit: (_event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const formError = useProjectPageState((state) => state.formError);
+  const formError = useProjectListState((state) => state.createProjectError);
 
   return (
     <ProjectDialog
@@ -49,7 +50,7 @@ export function CreateBranchDialog({
   onClose: () => void;
   onSubmit: (_event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const newBranchError = useProjectPageState((state) => state.newBranchError);
+  const newBranchError = useProjectWorkbenchState((state) => state.newBranchError);
 
   return (
     <ProjectDialog
@@ -81,7 +82,7 @@ export function ForkBranchDialog({
   onClose: () => void;
   onSubmit: (_event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const forkBranchError = useProjectPageState((state) => state.forkBranchError);
+  const forkBranchError = useProjectWorkbenchState((state) => state.forkBranchError);
 
   return (
     <ProjectDialog
@@ -101,10 +102,10 @@ export function ForkBranchDialog({
 }
 
 function CreateProjectDialogFields() {
-  const name = useProjectPageState((state) => state.name);
-  const description = useProjectPageState((state) => state.description);
-  const setName = useProjectPageState((state) => state.setName);
-  const setDescription = useProjectPageState((state) => state.setDescription);
+  const name = useProjectListState((state) => state.createProjectName);
+  const description = useProjectListState((state) => state.createProjectDescription);
+  const setName = useProjectListState((state) => state.setCreateProjectName);
+  const setDescription = useProjectListState((state) => state.setCreateProjectDescription);
 
   return (
     <>
@@ -134,8 +135,8 @@ function CreateProjectDialogFields() {
 }
 
 function CreateBranchDialogFields() {
-  const newBranchName = useProjectPageState((state) => state.newBranchName);
-  const setNewBranchName = useProjectPageState((state) => state.setNewBranchName);
+  const newBranchName = useProjectWorkbenchState((state) => state.newBranchName);
+  const setNewBranchName = useProjectWorkbenchState((state) => state.setNewBranchName);
 
   return (
     <label className="block space-y-1.5">
@@ -152,9 +153,9 @@ function CreateBranchDialogFields() {
 }
 
 function ForkBranchDialogFields() {
-  const forkBranchName = useProjectPageState((state) => state.forkBranchName);
-  const forkCommit = useProjectPageState((state) => state.forkCommit);
-  const setForkBranchName = useProjectPageState((state) => state.setForkBranchName);
+  const forkBranchName = useProjectWorkbenchState((state) => state.forkBranchName);
+  const forkCommit = useProjectWorkbenchState((state) => state.forkCommit);
+  const setForkBranchName = useProjectWorkbenchState((state) => state.setForkBranchName);
 
   return (
     <>

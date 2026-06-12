@@ -21,7 +21,7 @@ import {
   primaryButton,
   secondaryButton,
 } from "./projectUi";
-import { useProjectPageState } from "./state/projectPageStore";
+import { useProjectWorkbenchState } from "./state/projectWorkbenchStore";
 
 export function ProjectWorkbenchMain({
   project,
@@ -158,10 +158,10 @@ function BranchDetailPanel({
   onSubmitCommit: (_event: FormEvent<HTMLFormElement>) => void;
   onDiscardChanges: () => void;
 }) {
-  const commitMessage = useProjectPageState((state) => state.commitMessage);
-  const commitError = useProjectPageState((state) => state.commitError);
-  const discardError = useProjectPageState((state) => state.discardError);
-  const setCommitMessage = useProjectPageState((state) => state.setCommitMessage);
+  const commitMessage = useProjectWorkbenchState((state) => state.commitMessage);
+  const commitError = useProjectWorkbenchState((state) => state.commitError);
+  const discardError = useProjectWorkbenchState((state) => state.discardError);
+  const setCommitMessage = useProjectWorkbenchState((state) => state.setCommitMessage);
 
   if (!selectedBranch) {
     return (
