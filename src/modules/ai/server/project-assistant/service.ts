@@ -1,0 +1,339 @@
+import {
+  archiveThread,
+  createThread,
+  getNodeCandidates,
+  getRunTrace,
+  getThreadView,
+  listChildRuns,
+  listThreads,
+  PROJECT_ASSISTANT_AGENT_PROFILE,
+  renameThread,
+  resolveActiveThread,
+  selectActiveTip,
+  setActiveThread,
+} from "@/modules/ai/domain/logs";
+import type {
+  AgentRunTraceView,
+  AgentRunView,
+  AgentThreadNodeView,
+  AgentThreadStateView,
+  AgentThreadView,
+  ProjectAssistantContextSnapshot,
+  ProjectAssistantToolName,
+} from "@/modules/ai/domain/types";
+import { getAiAssistantModelSelection } from "@/modules/config/domain/ai-assistant-model-selection";
+import { invariant } from "@/shared/lib/domain";
+
+import { BufferedEventRelay, executeProjectAssistantRun } from "./execution";
+import { buildContinueRun, buildEditRun, buildRetryRun, buildSendRun } from "./prepared-runs";
+import { defaultStreamAssistantText } from "./streaming";
+import type {
+  ActiveExecutionHandle,
+  PreparedProjectAssistantRun,
+  ProjectAssistantDependencies,
+} from "./types-internal";
+
+export interface ProjectAssistantStateView extends AgentThreadStateView {}
+
+export interface ProjectAssistantSendResult {
+  thread: AgentThreadView;
+  userNode: AgentThreadNodeView;
+  assistantNode: AgentThreadNodeView | null;
+  run: AgentRunView;
+  state: AgentThreadStateView;
+}
+
+export interface ProjectAssistantRetryResult {
+  thread: AgentThreadView;
+  assistantNode: AgentThreadNodeView | null;
+  run: AgentRunView;
+  state: AgentThreadStateView;
+}
+
+export interface ProjectAssistantEditResult {
+  thread: AgentThreadView;
+  replacementNode: AgentThreadNodeView;
+  assistantNode: AgentThreadNodeView | null;
+  run: AgentRunView;
+  state: AgentThreadStateView;
+}
+
+export interface ProjectAssistantContinueResult {
+  thread: AgentThreadView;
+  assistantNode: AgentThreadNodeView | null;
+  run: AgentRunView;
+  parentRun: AgentRunView;
+  state: AgentThreadStateView;
+}
+
+export interface ProjectAssistantOverview {
+  activeThreadId: string | null;
+  threads: AgentThreadView[];
+  state: AgentThreadStateView;
+}
+
+export function createProjectAssistantService(
+  dependencies: Partial<ProjectAssistantDependencies> = {},
+) {
+  const streamAssistantTextImpl = dependencies.streamAssistantText ?? defaultStreamAssistantText;
+  const readStoredSelection = dependencies.readStoredSelection ?? getAiAssistantModelSelection;
+  const activeExecutions = new Map<string, ActiveExecutionHandle>();
+
+  function startExecution<TResult>(prepared: PreparedProjectAssistantRun<TResult>) {
+    let resolveFinal!: (_value: TResult) => void;
+    let rejectFinal!: (_reason?: unknown) => void;
+    const finalResult = new Promise<TResult>((resolve, reject) => {
+      resolveFinal = resolve;
+      rejectFinal = reject;
+    });
+    const relay = new BufferedEventRelay(prepared.initialResult, finalResult);
+    const abortController = new AbortController();
+    activeExecutions.set(prepared.run.id, {
+      abortController,
+    });
+    relay.emit(prepared.runStartedEvent);
+    void executeProjectAssistantRun({
+      prepared,
+      streamAssistantText: streamAssistantTextImpl,
+      relay,
+      abortSignal: abortController.signal,
+    })
+      .then(resolveFinal, rejectFinal)
+      .finally(() => {
+        activeExecutions.delete(prepared.run.id);
+      });
+    return relay;
+  }
+
+  return {
+    getProjectAssistantState(projectId: string): ProjectAssistantOverview {
+      const threads = listThreads(projectId, {
+        agentProfile: PROJECT_ASSISTANT_AGENT_PROFILE,
+      });
+      const activeThread = resolveActiveThread(projectId, PROJECT_ASSISTANT_AGENT_PROFILE);
+      return {
+        activeThreadId: activeThread?.id ?? null,
+        threads,
+        state: activeThread
+          ? getThreadView(activeThread.id)
+          : { thread: null, activePath: [], candidateGroups: [], latestRuns: [], runSummaries: [] },
+      };
+    },
+
+    createProjectAssistantThread(projectId: string) {
+      return createThread({
+        projectId,
+        agentProfile: PROJECT_ASSISTANT_AGENT_PROFILE,
+      });
+    },
+
+    setProjectAssistantActiveThread(projectId: string, threadId: string) {
+      return setActiveThread(projectId, threadId);
+    },
+
+    renameProjectAssistantThread(threadId: string, title: string) {
+      return renameThread(threadId, title);
+    },
+
+    archiveProjectAssistantThread(threadId: string, archived: boolean) {
+      return archiveThread(threadId, archived);
+    },
+
+    getThreadView(threadId: string) {
+      return getThreadView(threadId);
+    },
+
+    getRunTrace(runId: string): AgentRunTraceView {
+      return getRunTrace(runId);
+    },
+
+    getNodeCandidates(parentNodeId: string) {
+      return getNodeCandidates(parentNodeId);
+    },
+
+    getChildRuns(runId: string) {
+      return listChildRuns(runId);
+    },
+
+    selectThreadTip(threadId: string, tipNodeId: string) {
+      return selectActiveTip(threadId, tipNodeId);
+    },
+
+    sendProjectAssistantMessageStream({
+      projectId,
+      threadId,
+      text,
+      context,
+      activeTools,
+    }: {
+      projectId: string;
+      threadId: string;
+      text: string;
+      context?: ProjectAssistantContextSnapshot | null;
+      activeTools?: readonly ProjectAssistantToolName[] | null;
+    }) {
+      return startExecution(
+        buildSendRun({
+          projectId,
+          threadId,
+          text,
+          context,
+          activeTools,
+          readStoredSelection,
+        }),
+      );
+    },
+
+    retryProjectAssistantMessageStream({
+      projectId,
+      threadId,
+      triggerNodeId,
+      context,
+      activeTools,
+    }: {
+      projectId: string;
+      threadId: string;
+      triggerNodeId: string;
+      context?: ProjectAssistantContextSnapshot | null;
+      activeTools?: readonly ProjectAssistantToolName[] | null;
+    }) {
+      return startExecution(
+        buildRetryRun({
+          projectId,
+          threadId,
+          triggerNodeId,
+          context,
+          activeTools,
+          readStoredSelection,
+        }),
+      );
+    },
+
+    editProjectAssistantMessageStream({
+      projectId,
+      threadId,
+      nodeId,
+      text,
+      context,
+      activeTools,
+    }: {
+      projectId: string;
+      threadId: string;
+      nodeId: string;
+      text: string;
+      context?: ProjectAssistantContextSnapshot | null;
+      activeTools?: readonly ProjectAssistantToolName[] | null;
+    }) {
+      return startExecution(
+        buildEditRun({
+          projectId,
+          threadId,
+          nodeId,
+          text,
+          context,
+          activeTools,
+          readStoredSelection,
+        }),
+      );
+    },
+
+    continueProjectAssistantRunStream({
+      projectId,
+      threadId,
+      runId,
+    }: {
+      projectId: string;
+      threadId: string;
+      runId: string;
+    }) {
+      return startExecution(
+        buildContinueRun({
+          projectId,
+          threadId,
+          runId,
+        }),
+      );
+    },
+
+    cancelProjectAssistantRun({
+      projectId,
+      threadId,
+      runId,
+    }: {
+      projectId: string;
+      threadId: string;
+      runId: string;
+    }) {
+      const threadView = getThreadView(threadId);
+      const thread = threadView.thread;
+      invariant(thread, "未找到当前会话。");
+      invariant(thread.projectId === projectId, "AI 会话不属于当前项目。");
+
+      const trace = getRunTrace(runId);
+      invariant(trace.run.threadId === thread.id, "run 不属于当前会话。");
+      invariant(
+        trace.run.status === "running" || trace.run.status === "queued",
+        "run 当前不可取消。",
+      );
+
+      const activeExecution = activeExecutions.get(runId);
+      invariant(activeExecution, "run 当前没有活动执行。");
+      activeExecution.abortController.abort(new Error("run cancelled"));
+
+      return {
+        runId,
+      };
+    },
+
+    async sendProjectAssistantMessage(args: {
+      projectId: string;
+      threadId: string;
+      text: string;
+      context?: ProjectAssistantContextSnapshot | null;
+      activeTools?: readonly ProjectAssistantToolName[] | null;
+    }): Promise<ProjectAssistantSendResult> {
+      return this.sendProjectAssistantMessageStream(args).finalResult;
+    },
+
+    async retryProjectAssistantMessage(args: {
+      projectId: string;
+      threadId: string;
+      triggerNodeId: string;
+      context?: ProjectAssistantContextSnapshot | null;
+      activeTools?: readonly ProjectAssistantToolName[] | null;
+    }): Promise<ProjectAssistantRetryResult> {
+      return this.retryProjectAssistantMessageStream(args).finalResult;
+    },
+
+    async editProjectAssistantMessage(args: {
+      projectId: string;
+      threadId: string;
+      nodeId: string;
+      text: string;
+      context?: ProjectAssistantContextSnapshot | null;
+      activeTools?: readonly ProjectAssistantToolName[] | null;
+    }): Promise<ProjectAssistantEditResult> {
+      return this.editProjectAssistantMessageStream(args).finalResult;
+    },
+
+    async continueProjectAssistantRun(args: {
+      projectId: string;
+      threadId: string;
+      runId: string;
+    }): Promise<ProjectAssistantContinueResult> {
+      return this.continueProjectAssistantRunStream(args).finalResult;
+    },
+  };
+}
+
+export type ProjectAssistantService = ReturnType<typeof createProjectAssistantService>;
+
+let activeProjectAssistantService: ProjectAssistantService = createProjectAssistantService();
+
+export function getProjectAssistantService() {
+  return activeProjectAssistantService;
+}
+
+export function setProjectAssistantServiceForTests(service: ProjectAssistantService) {
+  activeProjectAssistantService = service;
+}
