@@ -178,23 +178,150 @@ export function getAssistantReasoning(node: AgentThreadNodeView | null | undefin
     });
 }
 
-function summarizeToolPayload(payload: unknown, fallback: string) {
-  if (!payload || typeof payload !== "object") {
-    return fallback;
-  }
-  const toolName = Reflect.get(payload as Record<string, unknown>, "toolName");
-  if (typeof toolName === "string" && toolName.trim().length > 0) {
-    return fallback.replace("{tool}", toolName);
-  }
-  return fallback.replace("{tool}", "工具");
-}
-
 function getToolPayloadField(payload: unknown, key: string) {
   if (!payload || typeof payload !== "object") {
     return null;
   }
 
   return Reflect.get(payload as Record<string, unknown>, key) ?? null;
+}
+
+function getRecordField(payload: unknown, key: string) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  return Reflect.get(payload as Record<string, unknown>, key) ?? null;
+}
+
+function getRecordString(payload: unknown, key: string) {
+  const value = getRecordField(payload, key);
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function formatToolTarget(value: string | null, fallback: string) {
+  if (value == null) {
+    return fallback;
+  }
+
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (normalized.length <= 80) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 79)}…`;
+}
+
+function getTimelinePointCount(input: unknown) {
+  const points = getRecordField(input, "points");
+  return Array.isArray(points) ? points.length : null;
+}
+
+function getFirstTimelinePointLabel(input: unknown) {
+  const points = getRecordField(input, "points");
+  if (!Array.isArray(points) || points.length !== 1) {
+    return null;
+  }
+
+  return getRecordString(points[0], "label");
+}
+
+export function buildAssistantToolTraceSummary({
+  toolName,
+  requestPayload,
+  status = "pending",
+}: {
+  toolName: string;
+  requestPayload: unknown;
+  status?: AgentToolTraceStatus | "pending";
+}) {
+  const fallback = status === "error" ? `${toolName} 执行失败` : `调用 ${toolName}`;
+
+  switch (toolName) {
+    case "list_files":
+      return `查看辅助信息 ${formatToolTarget(getRecordString(requestPayload, "path"), "/")}`;
+    case "read_file":
+      return `读取辅助信息 ${formatToolTarget(
+        getRecordString(requestPayload, "path"),
+        "当前选中",
+      )}`;
+    case "create_dir":
+      return `创建辅助目录 ${formatToolTarget(getRecordString(requestPayload, "path"), "")}`;
+    case "write_file":
+      return `写入辅助信息 ${formatToolTarget(getRecordString(requestPayload, "path"), "")}`;
+    case "move_path":
+      return `移动辅助信息 ${formatToolTarget(
+        getRecordString(requestPayload, "path"),
+        "",
+      )} -> ${formatToolTarget(getRecordString(requestPayload, "newPath"), "")}`;
+    case "delete_path":
+      return `删除辅助信息 ${formatToolTarget(getRecordString(requestPayload, "path"), "")}`;
+    case "create_symlink":
+      return `创建辅助链接 ${formatToolTarget(
+        getRecordString(requestPayload, "path"),
+        "",
+      )} -> ${formatToolTarget(getRecordString(requestPayload, "targetPath"), "")}`;
+    case "retarget_symlink":
+      return `重定向辅助链接 ${formatToolTarget(
+        getRecordString(requestPayload, "path"),
+        "",
+      )} -> ${formatToolTarget(getRecordString(requestPayload, "targetPath"), "")}`;
+    case "list_manuscript_nodes":
+      return "查看正文目录";
+    case "read_manuscript_node": {
+      const nodeId = getRecordString(requestPayload, "nodeId");
+      return nodeId == null ? "读取当前正文" : `读取正文 ${formatToolTarget(nodeId, "")}`;
+    }
+    case "create_manuscript_node":
+      return `创建正文 ${formatToolTarget(getRecordString(requestPayload, "title"), "")}`.trim();
+    case "update_manuscript_node":
+      return `更新正文 ${formatToolTarget(
+        getRecordString(requestPayload, "title") ?? getRecordString(requestPayload, "nodeId"),
+        "",
+      )}`.trim();
+    case "move_manuscript_node":
+      return `移动正文 ${formatToolTarget(getRecordString(requestPayload, "nodeId"), "")}`.trim();
+    case "delete_manuscript_node":
+      return `删除正文 ${formatToolTarget(getRecordString(requestPayload, "nodeId"), "")}`.trim();
+    case "list_story_timeline_points":
+      return "查看故事时间线";
+    case "list_current_timeline_aux_changes":
+      return `查看时间点辅助变更 ${formatToolTarget(
+        getRecordString(requestPayload, "timelinePointId"),
+        "当前",
+      )}`;
+    case "set_current_timeline":
+      return `切换时间点 ${formatToolTarget(
+        getRecordString(requestPayload, "timelinePointId"),
+        "",
+      )}`.trim();
+    case "create_story_timeline_points": {
+      const label = getFirstTimelinePointLabel(requestPayload);
+      if (label != null) {
+        return `创建时间点 ${formatToolTarget(label, "")}`;
+      }
+
+      const count = getTimelinePointCount(requestPayload);
+      return count == null ? "创建时间点" : `创建时间点 ${count} 个`;
+    }
+    case "update_story_timeline_point":
+      return `更新时间点 ${formatToolTarget(
+        getRecordString(requestPayload, "label") ?? getRecordString(requestPayload, "pointId"),
+        "",
+      )}`.trim();
+    case "move_story_timeline_point":
+      return `移动时间点 ${formatToolTarget(
+        getRecordString(requestPayload, "pointId"),
+        "",
+      )}`.trim();
+    case "delete_story_timeline_point":
+      return `删除时间点 ${formatToolTarget(
+        getRecordString(requestPayload, "pointId"),
+        "",
+      )}`.trim();
+    default:
+      return fallback;
+  }
 }
 
 function getToolPayloadString(payload: unknown, key: string) {
@@ -232,14 +359,15 @@ function createToolTraceEntry({
   payload: unknown;
 }): AssistantToolTraceEntry {
   const toolName = getToolPayloadString(payload, "toolName") ?? "tool";
+  const requestPayload = getToolPayloadField(payload, "input");
   return {
     toolCallId: getToolPayloadString(payload, "toolCallId"),
     toolName,
     status: "pending",
-    summary: summarizeToolPayload(payload, "调用 {tool}"),
+    summary: buildAssistantToolTraceSummary({ toolName, requestPayload }),
     nodeId: node.id,
     runId: node.createdByRunId ?? null,
-    requestPayload: getToolPayloadField(payload, "input"),
+    requestPayload,
     responsePayload: null,
   };
 }
@@ -293,11 +421,12 @@ export function getAssistantToolTrace(
               payload: part.payload,
             }),
             status: getToolResultStatus(part.payload, part.partKind),
-            summary:
-              getToolResultStatus(part.payload, part.partKind) === "error"
-                ? summarizeToolPayload(part.payload, "{tool} 执行失败")
-                : summarizeToolPayload(part.payload, "调用 {tool}"),
           } satisfies AssistantToolTraceEntry;
+          fallbackEntry.summary = buildAssistantToolTraceSummary({
+            toolName: fallbackEntry.toolName,
+            requestPayload: fallbackEntry.requestPayload,
+            status: fallbackEntry.status,
+          });
           entries.push(fallbackEntry);
           if (fallbackEntry.toolCallId) {
             entryByCallId.set(fallbackEntry.toolCallId, fallbackEntry);
@@ -307,9 +436,11 @@ export function getAssistantToolTrace(
 
       targetEntry.status = getToolResultStatus(part.payload, part.partKind);
       targetEntry.responsePayload = getToolPayloadField(part.payload, "output");
-      if (targetEntry.status === "error") {
-        targetEntry.summary = summarizeToolPayload(part.payload, "{tool} 执行失败");
-      }
+      targetEntry.summary = buildAssistantToolTraceSummary({
+        toolName: targetEntry.toolName,
+        requestPayload: targetEntry.requestPayload,
+        status: targetEntry.status,
+      });
     });
   }
 

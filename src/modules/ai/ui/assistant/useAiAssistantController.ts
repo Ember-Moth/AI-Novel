@@ -16,6 +16,7 @@ import {
 import { rpc } from "@/rpc/client";
 
 import {
+  buildAssistantToolTraceSummary,
   canSendAssistantMessage,
   EMPTY_ASSISTANT_STATE,
   EMPTY_THREADS,
@@ -202,7 +203,10 @@ function updateStreamToolTrace(
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         status: "pending" as const,
-        summary: `调用 ${event.toolName}`,
+        summary: buildAssistantToolTraceSummary({
+          toolName: event.toolName,
+          requestPayload: event.input,
+        }),
         nodeId: event.assistantNodeId,
         runId: null,
         requestPayload: event.input,
@@ -222,7 +226,11 @@ function updateStreamToolTrace(
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         status: event.status,
-        summary: event.status === "error" ? `${event.toolName} 执行失败` : `调用 ${event.toolName}`,
+        summary: buildAssistantToolTraceSummary({
+          toolName: event.toolName,
+          requestPayload: null,
+          status: event.status,
+        }),
         nodeId: event.toolNodeId,
         runId: null,
         requestPayload: null,
@@ -236,7 +244,11 @@ function updateStreamToolTrace(
       ? {
           ...entry,
           status: event.status,
-          summary: event.status === "error" ? `${event.toolName} 执行失败` : entry.summary,
+          summary: buildAssistantToolTraceSummary({
+            toolName: entry.toolName,
+            requestPayload: entry.requestPayload,
+            status: event.status,
+          }),
           responsePayload: event.output,
         }
       : entry,

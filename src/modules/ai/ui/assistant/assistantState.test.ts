@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  buildAssistantToolTraceSummary,
   getAssistantContentBlocks,
   getAssistantReasoning,
   getRunSummaryByDisplayNode,
@@ -104,6 +105,38 @@ test("getAssistantToolTrace merges tool call and tool result into one trace entr
       responsePayload: { type: "json", value: { ok: true, data: { answer: 42 } } },
     },
   ]);
+});
+
+test("buildAssistantToolTraceSummary describes auxiliary file writes", () => {
+  expect(
+    buildAssistantToolTraceSummary({
+      toolName: "write_file",
+      requestPayload: {
+        path: "/世界观/核心设定.md",
+        content: "这段大文本不应该进入折叠摘要。",
+      },
+    }),
+  ).toBe("写入辅助信息 /世界观/核心设定.md");
+});
+
+test("buildAssistantToolTraceSummary falls back for unknown tools", () => {
+  expect(
+    buildAssistantToolTraceSummary({
+      toolName: "lookup",
+      requestPayload: {
+        query: "scene",
+      },
+    }),
+  ).toBe("调用 lookup");
+  expect(
+    buildAssistantToolTraceSummary({
+      toolName: "lookup",
+      requestPayload: {
+        query: "scene",
+      },
+      status: "error",
+    }),
+  ).toBe("lookup 执行失败");
 });
 
 test("getAssistantToolTrace marks tool failures from tool result payloads", () => {

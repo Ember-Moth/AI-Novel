@@ -913,7 +913,7 @@ function ToolTraceCard({
         className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-[11px] leading-4 disabled:cursor-default"
       >
         <span className="icon-[material-symbols--build-outline] shrink-0 text-[13px]" />
-        <span className="min-w-0 flex-1 truncate">{entry.toolName}</span>
+        <span className="min-w-0 flex-1 truncate">{entry.summary}</span>
         <span className="shrink-0 text-[10px] tracking-[0.08em] uppercase opacity-70">
           {statusLabel}
         </span>
