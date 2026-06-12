@@ -68,7 +68,12 @@ export function putAuxLayer(
     executor
       .update(schema.auxNodeLayers)
       .set(payload)
-      .where(eq(schema.auxNodeLayers.id, existing.id))
+      .where(
+        and(
+          eq(schema.auxNodeLayers.workspaceId, input.workspaceId),
+          eq(schema.auxNodeLayers.id, existing.id),
+        ),
+      )
       .run();
     return { ...existing, ...payload };
   }
@@ -587,7 +592,10 @@ export function gcOrphanAuxNodes(executor: DatabaseExecutor, workspaceId: string
         .all();
 
       if (layers.length === 0) {
-        executor.delete(schema.auxNodes).where(eq(schema.auxNodes.id, node.id)).run();
+        executor
+          .delete(schema.auxNodes)
+          .where(and(eq(schema.auxNodes.workspaceId, workspaceId), eq(schema.auxNodes.id, node.id)))
+          .run();
         removed += 1;
         changed = true;
         continue;
@@ -603,7 +611,10 @@ export function gcOrphanAuxNodes(executor: DatabaseExecutor, workspaceId: string
             ),
           )
           .run();
-        executor.delete(schema.auxNodes).where(eq(schema.auxNodes.id, node.id)).run();
+        executor
+          .delete(schema.auxNodes)
+          .where(and(eq(schema.auxNodes.workspaceId, workspaceId), eq(schema.auxNodes.id, node.id)))
+          .run();
         removed += 1;
         changed = true;
       }

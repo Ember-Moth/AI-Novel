@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { type DatabaseExecutor, db, schema } from "@/db";
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
@@ -30,13 +30,19 @@ function enableDeferredForeignKeys(tx: DatabaseExecutor) {
 
 function setTimelinePrevPoint(
   tx: DatabaseExecutor,
+  workspaceId: string,
   pointId: string,
   prevPointId: string | null,
   updatedAt: number,
 ) {
   tx.update(schema.timelinePoints)
     .set({ prevPointId, updatedAt })
-    .where(eq(schema.timelinePoints.id, pointId))
+    .where(
+      and(
+        eq(schema.timelinePoints.workspaceId, workspaceId),
+        eq(schema.timelinePoints.id, pointId),
+      ),
+    )
     .run();
 }
 
@@ -93,7 +99,13 @@ export function createTimelinePoints(input: {
     invariant(input.points.length > 0, "至少需要创建一个时间点。");
 
     if (successor) {
-      setTimelinePrevPoint(tx, successor.id, createId("timeline_prev_batch_anchor"), timestamp);
+      setTimelinePrevPoint(
+        tx,
+        workspace.id,
+        successor.id,
+        createId("timeline_prev_batch_anchor"),
+        timestamp,
+      );
     }
 
     let prevPointId = afterPointId;
@@ -115,7 +127,7 @@ export function createTimelinePoints(input: {
     }
 
     if (successor) {
-      setTimelinePrevPoint(tx, successor.id, prevPointId, timestamp);
+      setTimelinePrevPoint(tx, workspace.id, successor.id, prevPointId, timestamp);
     }
 
     touchWorkspace(tx, workspace.id);
@@ -145,21 +157,27 @@ export function moveTimelinePoint(input: {
     const targetSuccessorNeedsRewire = targetSuccessor && targetSuccessor.id !== point.id;
 
     if (targetSuccessorNeedsRewire) {
-      setTimelinePrevPoint(tx, targetSuccessor.id, createId("timeline_prev"), timestamp);
+      setTimelinePrevPoint(
+        tx,
+        workspace.id,
+        targetSuccessor.id,
+        createId("timeline_prev"),
+        timestamp,
+      );
     }
 
     if (successor) {
-      setTimelinePrevPoint(tx, successor.id, createId("timeline_prev"), timestamp);
+      setTimelinePrevPoint(tx, workspace.id, successor.id, createId("timeline_prev"), timestamp);
     }
 
-    setTimelinePrevPoint(tx, point.id, afterPointId, timestamp);
+    setTimelinePrevPoint(tx, workspace.id, point.id, afterPointId, timestamp);
 
     if (successor) {
-      setTimelinePrevPoint(tx, successor.id, point.prevPointId, timestamp);
+      setTimelinePrevPoint(tx, workspace.id, successor.id, point.prevPointId, timestamp);
     }
 
     if (targetSuccessorNeedsRewire) {
-      setTimelinePrevPoint(tx, targetSuccessor.id, point.id, timestamp);
+      setTimelinePrevPoint(tx, workspace.id, targetSuccessor.id, point.id, timestamp);
     }
 
     touchWorkspace(tx, workspace.id);
@@ -185,7 +203,12 @@ export function updateTimelinePoint(input: {
         description: input.description === undefined ? point.description : input.description,
         updatedAt: now(),
       })
-      .where(eq(schema.timelinePoints.id, point.id))
+      .where(
+        and(
+          eq(schema.timelinePoints.workspaceId, workspace.id),
+          eq(schema.timelinePoints.id, point.id),
+        ),
+      )
       .run();
 
     touchWorkspace(tx, workspace.id);
@@ -224,7 +247,12 @@ export function deleteTimelinePoint(
     const contentAnchors = tx
       .select()
       .from(schema.contentNodes)
-      .where(eq(schema.contentNodes.anchorTimelinePointId, point.id))
+      .where(
+        and(
+          eq(schema.contentNodes.workspaceId, workspace.id),
+          eq(schema.contentNodes.anchorTimelinePointId, point.id),
+        ),
+      )
       .all();
     invariant(
       contentAnchors.length === 0,
@@ -236,7 +264,12 @@ export function deleteTimelinePoint(
     const auxLayers = tx
       .select()
       .from(schema.auxNodeLayers)
-      .where(eq(schema.auxNodeLayers.timelinePointId, point.id))
+      .where(
+        and(
+          eq(schema.auxNodeLayers.workspaceId, workspace.id),
+          eq(schema.auxNodeLayers.timelinePointId, point.id),
+        ),
+      )
       .all();
     if (auxLayers.length > 0) {
       invariant(
@@ -248,10 +281,17 @@ export function deleteTimelinePoint(
 
     const successor = getTimelineSuccessor(tx, workspace.id, point.id);
     const timestamp = now();
-    tx.delete(schema.timelinePoints).where(eq(schema.timelinePoints.id, point.id)).run();
+    tx.delete(schema.timelinePoints)
+      .where(
+        and(
+          eq(schema.timelinePoints.workspaceId, workspace.id),
+          eq(schema.timelinePoints.id, point.id),
+        ),
+      )
+      .run();
 
     if (successor) {
-      setTimelinePrevPoint(tx, successor.id, point.prevPointId, timestamp);
+      setTimelinePrevPoint(tx, workspace.id, successor.id, point.prevPointId, timestamp);
     }
 
     touchWorkspace(tx, workspace.id);

@@ -95,6 +95,7 @@ export function ForkBranchDialog({
       isPending={isPending}
       pendingLabel="Fork 中"
       submitLabel="创建 Fork"
+      widthClassName="w-[min(42rem,calc(100vw-2rem))]"
     >
       <ForkBranchDialogFields />
     </ProjectDialog>
@@ -159,7 +160,7 @@ function ForkBranchDialogFields() {
 
   return (
     <>
-      <div className="rounded-md border border-border bg-editor-background px-3 py-2 text-xs text-foreground-muted">
+      <div className="min-w-0 rounded-md border border-border bg-editor-background px-3 py-2 text-xs leading-relaxed break-words text-foreground-muted">
         来源提交：{forkCommit ? `${forkCommit.message} · ${formatCommitId(forkCommit.id)}` : "—"}
       </div>
       <label className="block space-y-1.5">

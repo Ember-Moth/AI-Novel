@@ -8,6 +8,7 @@ export function ProjectDialog({
   dialogRef,
   title,
   icon,
+  widthClassName,
   onClose,
   onSubmit,
   error,
@@ -19,6 +20,7 @@ export function ProjectDialog({
   dialogRef: React.RefObject<HTMLDialogElement | null>;
   title: string;
   icon: string;
+  widthClassName?: string;
   onClose: () => void;
   onSubmit: (_event: FormEvent<HTMLFormElement>) => void;
   error: string | null;
@@ -30,9 +32,12 @@ export function ProjectDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-border bg-sidebar-background p-0 text-foreground shadow-lg backdrop:bg-black/50"
+      className={cn(
+        "overflow-hidden rounded-lg border border-border bg-sidebar-background p-0 text-foreground shadow-lg backdrop:bg-black/50",
+        widthClassName ?? "w-[min(28rem,calc(100vw-2rem))]",
+      )}
     >
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} className="min-w-0">
         <div className="flex items-center gap-2 border-b border-border px-4 py-2">
           <span className={cn(icon, "text-base text-accent-foreground")} />
           <span className="text-sm font-medium">{title}</span>

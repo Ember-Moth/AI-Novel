@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db, schema } from "@/db";
 
@@ -63,12 +63,22 @@ export function createContentNode(input: {
 
       tx.update(schema.contentNodes)
         .set({ nextSiblingId: nodeId, updatedAt: timestamp })
-        .where(eq(schema.contentNodes.id, previousSibling.id))
+        .where(
+          and(
+            eq(schema.contentNodes.workspaceId, workspace.id),
+            eq(schema.contentNodes.id, previousSibling.id),
+          ),
+        )
         .run();
 
       tx.update(schema.contentNodes)
         .set({ nextSiblingId: previousSibling.nextSiblingId, updatedAt: timestamp })
-        .where(eq(schema.contentNodes.id, nodeId))
+        .where(
+          and(
+            eq(schema.contentNodes.workspaceId, workspace.id),
+            eq(schema.contentNodes.id, nodeId),
+          ),
+        )
         .run();
     } else {
       const head = orderContentChildren(listContentChildren(tx, workspace.id, input.parentId))[0];
@@ -117,13 +127,20 @@ export function moveContentNode(input: {
 
     tx.update(schema.contentNodes)
       .set({ nextSiblingId: null, updatedAt: timestamp })
-      .where(eq(schema.contentNodes.id, node.id))
+      .where(
+        and(eq(schema.contentNodes.workspaceId, workspace.id), eq(schema.contentNodes.id, node.id)),
+      )
       .run();
 
     if (oldPrev) {
       tx.update(schema.contentNodes)
         .set({ nextSiblingId: node.nextSiblingId, updatedAt: timestamp })
-        .where(eq(schema.contentNodes.id, oldPrev.id))
+        .where(
+          and(
+            eq(schema.contentNodes.workspaceId, workspace.id),
+            eq(schema.contentNodes.id, oldPrev.id),
+          ),
+        )
         .run();
     }
 
@@ -132,12 +149,22 @@ export function moveContentNode(input: {
       const afterNext = previousSibling.nextSiblingId;
       tx.update(schema.contentNodes)
         .set({ nextSiblingId: node.id, updatedAt: timestamp })
-        .where(eq(schema.contentNodes.id, previousSibling.id))
+        .where(
+          and(
+            eq(schema.contentNodes.workspaceId, workspace.id),
+            eq(schema.contentNodes.id, previousSibling.id),
+          ),
+        )
         .run();
 
       tx.update(schema.contentNodes)
         .set({ parentId: newParent.id, nextSiblingId: afterNext, updatedAt: timestamp })
-        .where(eq(schema.contentNodes.id, node.id))
+        .where(
+          and(
+            eq(schema.contentNodes.workspaceId, workspace.id),
+            eq(schema.contentNodes.id, node.id),
+          ),
+        )
         .run();
     } else {
       const head = orderContentChildren(
@@ -145,7 +172,12 @@ export function moveContentNode(input: {
       )[0];
       tx.update(schema.contentNodes)
         .set({ parentId: newParent.id, nextSiblingId: head?.id ?? null, updatedAt: timestamp })
-        .where(eq(schema.contentNodes.id, node.id))
+        .where(
+          and(
+            eq(schema.contentNodes.workspaceId, workspace.id),
+            eq(schema.contentNodes.id, node.id),
+          ),
+        )
         .run();
     }
 
@@ -167,18 +199,32 @@ export function deleteContentNode(input: { workspaceId: string; nodeId: string }
     if (oldPrev && node.nextSiblingId) {
       tx.update(schema.contentNodes)
         .set({ nextSiblingId: null, updatedAt: timestamp })
-        .where(eq(schema.contentNodes.id, node.id))
+        .where(
+          and(
+            eq(schema.contentNodes.workspaceId, workspace.id),
+            eq(schema.contentNodes.id, node.id),
+          ),
+        )
         .run();
     }
 
     if (oldPrev) {
       tx.update(schema.contentNodes)
         .set({ nextSiblingId: node.nextSiblingId, updatedAt: timestamp })
-        .where(eq(schema.contentNodes.id, oldPrev.id))
+        .where(
+          and(
+            eq(schema.contentNodes.workspaceId, workspace.id),
+            eq(schema.contentNodes.id, oldPrev.id),
+          ),
+        )
         .run();
     }
 
-    tx.delete(schema.contentNodes).where(eq(schema.contentNodes.id, node.id)).run();
+    tx.delete(schema.contentNodes)
+      .where(
+        and(eq(schema.contentNodes.workspaceId, workspace.id), eq(schema.contentNodes.id, node.id)),
+      )
+      .run();
     touchWorkspace(tx, workspace.id);
   });
 }
@@ -205,7 +251,9 @@ export function updateContentNode(input: {
         body: input.body === undefined ? node.body : input.body,
         updatedAt: now(),
       })
-      .where(eq(schema.contentNodes.id, node.id))
+      .where(
+        and(eq(schema.contentNodes.workspaceId, workspace.id), eq(schema.contentNodes.id, node.id)),
+      )
       .run();
 
     touchWorkspace(tx, workspace.id);

@@ -137,6 +137,39 @@ test("branch off a commit shares the same head and forked metadata", () => {
   expect(exported.nodes[0]?.body).toBe("base");
 });
 
+test("branch workspace timeline deletion only checks anchors in that workspace", () => {
+  const workspace = seedProject("proj_branch_timeline_delete");
+  const point = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    label: "Shared timeline point id",
+  });
+  service.createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    title: "Main branch chapter",
+    anchorPointId: point.id,
+  });
+  const commit = service.createCommit({ branchId: workspace.branchId, message: "base" });
+  const featureWorkspace = service.createBranchWorkspace({
+    projectId: "proj_branch_timeline_delete",
+    name: "feature",
+    fromCommitId: commit.id,
+  });
+
+  const featureChapter = service
+    .exportContentSubtree(featureWorkspace.id)
+    .nodes.find((node) => node.title === "Main branch chapter");
+  expect(featureChapter?.anchorTimelinePointId).toBe(point.id);
+
+  service.deleteContentNode({ workspaceId: featureWorkspace.id, nodeId: featureChapter!.id });
+
+  expect(() => service.deleteTimelinePoint(featureWorkspace.id, point.id)).not.toThrow();
+  expect(service.listTimelinePoints(featureWorkspace.id).map((item) => item.id)).toEqual([
+    service.ORIGIN_TIMELINE_POINT_ID,
+  ]);
+  expect(service.listTimelinePoints(workspace.id).map((item) => item.id)).toContain(point.id);
+});
+
 test("deleting a branch also deletes its workspace", () => {
   const workspace = seedProject("proj_delete_branch");
   const featureWorkspace = service.createBranchWorkspace({

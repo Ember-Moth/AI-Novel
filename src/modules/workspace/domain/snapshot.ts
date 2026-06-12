@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 
 import { type DatabaseExecutor, schema } from "@/db";
@@ -287,7 +287,12 @@ function restoreContentNode(
     executor
       .update(schema.contentNodes)
       .set({ nextSiblingId })
-      .where(eq(schema.contentNodes.id, child.nodeId))
+      .where(
+        and(
+          eq(schema.contentNodes.workspaceId, workspaceId),
+          eq(schema.contentNodes.id, child.nodeId),
+        ),
+      )
       .run();
   });
 }

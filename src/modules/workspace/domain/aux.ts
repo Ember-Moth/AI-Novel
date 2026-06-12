@@ -251,7 +251,9 @@ export function writeFileAt(input: {
       });
       tx.update(schema.auxNodes)
         .set({ updatedAt: timestamp })
-        .where(eq(schema.auxNodes.id, existing.id))
+        .where(
+          and(eq(schema.auxNodes.workspaceId, workspace.id), eq(schema.auxNodes.id, existing.id)),
+        )
         .run();
       touchWorkspace(tx, workspace.id);
       return getAuxNodeOrThrow(tx, workspace.id, existing.id);
