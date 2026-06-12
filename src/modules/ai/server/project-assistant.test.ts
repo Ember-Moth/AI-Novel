@@ -12,6 +12,7 @@ setupMockDatabase();
 const { db, schema } = await import("@/db");
 const logs = await import("@/modules/ai/domain/logs");
 const { createDefaultWorkspace } = await import("@/modules/workspace/domain");
+const workspaceDomain = await import("@/modules/workspace/domain");
 const { createProjectAssistantService } = await import("./project-assistant");
 
 function createMockStream({
@@ -391,7 +392,7 @@ test("sendProjectAssistantMessage only materializes per-step response deltas int
           {
             type: "tool-call" as const,
             toolCallId: "tool_call_root",
-            toolName: "list_reference_overlay_dir",
+            toolName: "list_files",
             input: {},
           },
         ],
@@ -402,7 +403,7 @@ test("sendProjectAssistantMessage only materializes per-step response deltas int
           {
             type: "tool-result" as const,
             toolCallId: "tool_call_root",
-            toolName: "list_reference_overlay_dir",
+            toolName: "list_files",
             output: {
               type: "json" as const,
               value: {
@@ -457,7 +458,7 @@ test("sendProjectAssistantMessage only materializes per-step response deltas int
             stepNumber: 1,
             toolCall: {
               toolCallId: "tool_call_root",
-              toolName: "list_reference_overlay_dir",
+              toolName: "list_files",
               input: {},
             },
           };
@@ -466,7 +467,7 @@ test("sendProjectAssistantMessage only materializes per-step response deltas int
             stepNumber: 1,
             toolResult: {
               toolCallId: "tool_call_root",
-              toolName: "list_reference_overlay_dir",
+              toolName: "list_files",
               output: {
                 ok: true,
               },
@@ -537,14 +538,14 @@ test("sendProjectAssistantMessage only materializes per-step response deltas int
             toolCalls: [
               {
                 toolCallId: "tool_call_root",
-                toolName: "list_reference_overlay_dir",
+                toolName: "list_files",
                 input: {},
               },
             ],
             toolResults: [
               {
                 toolCallId: "tool_call_root",
-                toolName: "list_reference_overlay_dir",
+                toolName: "list_files",
                 output: {
                   ok: true,
                 },
@@ -686,12 +687,12 @@ test("sendProjectAssistantMessage uses read-only tools by default and can opt in
       "get_writing_context",
       "get_manuscript_subtree",
       "list_story_timeline_points",
-      "list_reference_overlay_dir",
-      "read_reference_overlay_path",
-      "create_reference_overlay_dir",
-      "write_reference_overlay_file",
-      "move_reference_overlay_node",
-      "create_reference_overlay_link",
+      "list_files",
+      "read_file",
+      "create_dir",
+      "write_file",
+      "move_path",
+      "create_symlink",
     ],
   });
 
@@ -700,19 +701,20 @@ test("sendProjectAssistantMessage uses read-only tools by default and can opt in
       "get_writing_context",
       "get_manuscript_subtree",
       "list_story_timeline_points",
-      "list_reference_overlay_dir",
-      "read_reference_overlay_path",
+      "set_current_timeline",
+      "list_files",
+      "read_file",
     ],
     [
       "get_writing_context",
       "get_manuscript_subtree",
       "list_story_timeline_points",
-      "list_reference_overlay_dir",
-      "read_reference_overlay_path",
-      "create_reference_overlay_dir",
-      "write_reference_overlay_file",
-      "move_reference_overlay_node",
-      "create_reference_overlay_link",
+      "list_files",
+      "read_file",
+      "create_dir",
+      "write_file",
+      "move_path",
+      "create_symlink",
     ],
   ]);
 });
@@ -738,12 +740,12 @@ test("step-limited tool runs are marked continueable without failing", async () 
     projectId: "assistant_step_limit",
     threadId: thread.id,
     text: "连续读取资料",
-    activeTools: ["read_reference_overlay_path"],
+    activeTools: ["read_file"],
   });
   const summary = result.state.runSummaries.find((entry) => entry.runId === result.run.id);
 
   expect(result.run.status).toBe("succeeded");
-  expect(result.run.activeTools).toEqual(["read_reference_overlay_path"]);
+  expect(result.run.activeTools).toEqual(["read_file"]);
   expect(summary).toMatchObject({
     status: "succeeded",
     stepCount: PROJECT_ASSISTANT_MAX_STEPS,
@@ -774,7 +776,7 @@ test("step-limited runs ending with stop are not continueable", async () => {
     projectId: "assistant_step_limit_stop",
     threadId: thread.id,
     text: "刚好二十步后完成",
-    activeTools: ["read_reference_overlay_path"],
+    activeTools: ["read_file"],
   });
   const summary = result.state.runSummaries.find((entry) => entry.runId === result.run.id);
 
@@ -847,7 +849,7 @@ test("continueProjectAssistantRun creates a child run and inherits original acti
     projectId: "assistant_continue",
     threadId: thread.id,
     text: "继续读取",
-    activeTools: ["read_reference_overlay_path", "write_reference_overlay_file"],
+    activeTools: ["read_file", "write_file"],
   });
   const continued = await service.continueProjectAssistantRun({
     projectId: "assistant_continue",
@@ -858,16 +860,78 @@ test("continueProjectAssistantRun creates a child run and inherits original acti
 
   expect(continued.run.runMode).toBe("continue");
   expect(continued.run.parentRunId).toBe(first.run.id);
-  expect(continued.run.activeTools).toEqual([
-    "read_reference_overlay_path",
-    "write_reference_overlay_file",
-  ]);
+  expect(continued.run.activeTools).toEqual(["read_file", "write_file"]);
   expect(capturedActiveTools).toEqual([
-    ["read_reference_overlay_path", "write_reference_overlay_file"],
-    ["read_reference_overlay_path", "write_reference_overlay_file"],
+    ["read_file", "write_file"],
+    ["read_file", "write_file"],
   ]);
   expect(parentSummary?.needsContinuation).toBe(false);
   expect(parentSummary?.continuedByRunId).toBe(continued.run.id);
+});
+
+test("continueProjectAssistantRun inherits the updated timeline context snapshot", async () => {
+  seedProject("assistant_continue_timeline_context");
+  const workspace = createDefaultWorkspace("assistant_continue_timeline_context");
+  const timelinePoint = workspaceDomain.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    key: "now",
+    label: "现在",
+  });
+  const seeded = seedCustomConnection({
+    connectionId: "conn_continue_timeline_context",
+    modelId: "story-model",
+    modelRowId: "cmodel_continue_timeline_context",
+    supportsToolUse: true,
+  });
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+    streamAssistantText: createStepLimitMockStream({
+      modelId: "story-model",
+      finalFinishReason: "tool-calls",
+    }) as any,
+  });
+  const thread = service.createProjectAssistantThread("assistant_continue_timeline_context");
+
+  const first = await service.sendProjectAssistantMessage({
+    projectId: "assistant_continue_timeline_context",
+    threadId: thread.id,
+    text: "切换当前时间线并继续",
+    context: {
+      workspaceId: workspace.id,
+      activeContentNodeId: null,
+      activeContentTitle: null,
+      activeAuxNodeId: null,
+      activeAuxPath: null,
+      activeTimelinePointId: "origin",
+      activeTimelineLabel: "原点",
+    },
+    activeTools: ["read_file"],
+  });
+  logs.updateRunContextSnapshot(first.run.id, {
+    workspaceId: workspace.id,
+    activeContentNodeId: null,
+    activeContentTitle: null,
+    activeAuxNodeId: null,
+    activeAuxPath: null,
+    activeTimelinePointId: timelinePoint.id,
+    activeTimelineLabel: timelinePoint.label,
+  });
+  const continued = await service.continueProjectAssistantRun({
+    projectId: "assistant_continue_timeline_context",
+    threadId: thread.id,
+    runId: first.run.id,
+  });
+
+  const updatedParentRun = service.getRunTrace(first.run.id).run;
+  expect(updatedParentRun.contextSnapshot).toMatchObject({
+    activeTimelinePointId: timelinePoint.id,
+    activeTimelineLabel: "现在",
+  });
+  expect(continued.run.contextSnapshot).toMatchObject({
+    activeTimelinePointId: timelinePoint.id,
+    activeTimelineLabel: "现在",
+  });
 });
 
 test("sendProjectAssistantMessage rejects explicit tools when the model does not support tool use", async () => {
@@ -893,7 +957,7 @@ test("sendProjectAssistantMessage rejects explicit tools when the model does not
       projectId: "assistant_tool_guard",
       threadId: thread.id,
       text: "读一下上下文",
-      activeTools: ["read_reference_overlay_path"],
+      activeTools: ["read_file"],
     }),
   ).rejects.toThrow("当前模型不支持工具调用，无法启用请求级工具。");
   expect(streamCalls).toBe(0);
@@ -918,7 +982,7 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
           stepNumber: 0,
           toolCall: {
             toolCallId: "tool_write_1",
-            toolName: "write_reference_overlay_file",
+            toolName: "write_file",
             input: { path: "/设定/角色.md", content: "主角：林舟" },
           },
         },
@@ -927,7 +991,7 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
           stepNumber: 0,
           toolResult: {
             toolCallId: "tool_write_1",
-            toolName: "write_reference_overlay_file",
+            toolName: "write_file",
             output: {
               ok: true,
               data: {
@@ -975,7 +1039,7 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
                   {
                     type: "tool-call",
                     toolCallId: "tool_write_1",
-                    toolName: "write_reference_overlay_file",
+                    toolName: "write_file",
                     input: { path: "/设定/角色.md", content: "主角：林舟" },
                   },
                 ],
@@ -986,7 +1050,7 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
                   {
                     type: "tool-result",
                     toolCallId: "tool_write_1",
-                    toolName: "write_reference_overlay_file",
+                    toolName: "write_file",
                     output: {
                       type: "json",
                       value: {
@@ -1007,14 +1071,14 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
           toolCalls: [
             {
               toolCallId: "tool_write_1",
-              toolName: "write_reference_overlay_file",
+              toolName: "write_file",
               input: { path: "/设定/角色.md", content: "主角：林舟" },
             },
           ],
           toolResults: [
             {
               toolCallId: "tool_write_1",
-              toolName: "write_reference_overlay_file",
+              toolName: "write_file",
               output: {
                 ok: true,
                 data: {
@@ -1060,12 +1124,12 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
       "get_writing_context",
       "get_manuscript_subtree",
       "list_story_timeline_points",
-      "list_reference_overlay_dir",
-      "read_reference_overlay_path",
-      "create_reference_overlay_dir",
-      "write_reference_overlay_file",
-      "move_reference_overlay_node",
-      "create_reference_overlay_link",
+      "list_files",
+      "read_file",
+      "create_dir",
+      "write_file",
+      "move_path",
+      "create_symlink",
     ],
   });
   const trace = service.getRunTrace(result.run.id);
@@ -1181,7 +1245,7 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for au
           stepNumber: 0,
           toolResult: {
             toolCallId: "tool_aux_stream",
-            toolName: "write_reference_overlay_file",
+            toolName: "write_file",
             output: {
               ok: true,
               data: {
@@ -1213,7 +1277,7 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for au
           toolResults: [
             {
               toolCallId: "tool_aux_stream",
-              toolName: "write_reference_overlay_file",
+              toolName: "write_file",
               output: {
                 ok: true,
                 data: {
@@ -1236,7 +1300,7 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for au
     projectId: "assistant_workspace_refresh_aux",
     threadId: thread.id,
     text: "写入辅助资料",
-    activeTools: ["write_reference_overlay_file"],
+    activeTools: ["write_file"],
   });
   handle.subscribe((event) => {
     emitted.push(event as Record<string, unknown>);
@@ -1250,6 +1314,95 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for au
     areas: ["aux"],
     auxNodeId: "aux_stream",
   });
+});
+
+test("sendProjectAssistantMessageStream emits timeline-selection-updated for set_current_timeline", async () => {
+  seedProject("assistant_timeline_selection_event");
+  const workspace = createDefaultWorkspace("assistant_timeline_selection_event");
+  const seeded = seedCustomConnection({
+    connectionId: "conn_timeline_selection_event",
+    modelId: "story-model",
+    modelRowId: "cmodel_timeline_selection_event",
+    supportsToolUse: true,
+  });
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+    streamAssistantText: createMockStream({
+      chunks: [
+        { type: "start-step", stepNumber: 0 },
+        {
+          type: "tool-result",
+          stepNumber: 0,
+          toolResult: {
+            toolCallId: "tool_select_timeline",
+            toolName: "set_current_timeline",
+            output: {
+              ok: true,
+              data: {
+                action: "selected",
+                timelinePointId: "timeline_selected",
+                timelineLabel: "现在",
+              },
+            },
+          },
+        },
+        { type: "finish-step", stepNumber: 0, finishReason: "stop", usage: { totalTokens: 1 } },
+      ],
+      text: "",
+      usage: { totalTokens: 1 },
+      finishReason: "stop",
+      steps: [
+        {
+          stepNumber: 0,
+          preparedMessages: [],
+          model: { provider: "openai", modelId: "story-model" },
+          finishReason: "stop",
+          rawFinishReason: "stop",
+          usage: { totalTokens: 1 },
+          request: { body: { step: 0 } },
+          response: { body: { id: "resp_timeline_selection_event" }, messages: [] },
+          providerMetadata: {},
+          toolCalls: [],
+          toolResults: [
+            {
+              toolCallId: "tool_select_timeline",
+              toolName: "set_current_timeline",
+              output: {
+                ok: true,
+                data: {
+                  action: "selected",
+                  timelinePointId: "timeline_selected",
+                  timelineLabel: "现在",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    }) as any,
+  });
+  const thread = service.createProjectAssistantThread("assistant_timeline_selection_event");
+  const emitted: Array<Record<string, unknown>> = [];
+
+  const handle = service.sendProjectAssistantMessageStream({
+    projectId: "assistant_timeline_selection_event",
+    threadId: thread.id,
+    text: "切到现在",
+    activeTools: ["set_current_timeline"],
+  });
+  handle.subscribe((event) => {
+    emitted.push(event as Record<string, unknown>);
+  });
+
+  await handle.finalResult;
+
+  expect(emitted.find((event) => event.type === "timeline-selection-updated")).toMatchObject({
+    type: "timeline-selection-updated",
+    workspaceId: workspace.id,
+    timelinePointId: "timeline_selected",
+    timelineLabel: "现在",
+  });
+  expect(emitted.some((event) => event.type === "workspace-refresh-requested")).toBe(false);
 });
 
 test("sendProjectAssistantMessageStream emits workspace-refresh-requested for timeline create move delete", async () => {
@@ -1450,7 +1603,7 @@ test("sendProjectAssistantMessageStream does not emit workspace-refresh-requeste
           stepNumber: 0,
           toolResult: {
             toolCallId: "tool_read_only",
-            toolName: "read_reference_overlay_path",
+            toolName: "read_file",
             output: {
               ok: true,
               data: {
@@ -1464,7 +1617,7 @@ test("sendProjectAssistantMessageStream does not emit workspace-refresh-requeste
           stepNumber: 0,
           toolResult: {
             toolCallId: "tool_failed_write",
-            toolName: "write_reference_overlay_file",
+            toolName: "write_file",
             output: {
               ok: false,
               error: "写入失败",
@@ -1476,7 +1629,7 @@ test("sendProjectAssistantMessageStream does not emit workspace-refresh-requeste
           stepNumber: 0,
           toolResult: {
             toolCallId: "tool_failed_move",
-            toolName: "move_reference_overlay_node",
+            toolName: "move_path",
             output: {
               ok: false,
               error: "移动失败",
@@ -1508,7 +1661,7 @@ test("sendProjectAssistantMessageStream does not emit workspace-refresh-requeste
           toolResults: [
             {
               toolCallId: "tool_read_only",
-              toolName: "read_reference_overlay_path",
+              toolName: "read_file",
               output: {
                 ok: true,
                 data: {
@@ -1518,7 +1671,7 @@ test("sendProjectAssistantMessageStream does not emit workspace-refresh-requeste
             },
             {
               toolCallId: "tool_failed_write",
-              toolName: "write_reference_overlay_file",
+              toolName: "write_file",
               output: {
                 ok: false,
                 error: "写入失败",
@@ -1526,7 +1679,7 @@ test("sendProjectAssistantMessageStream does not emit workspace-refresh-requeste
             },
             {
               toolCallId: "tool_failed_move",
-              toolName: "move_reference_overlay_node",
+              toolName: "move_path",
               output: {
                 ok: false,
                 error: "移动失败",
@@ -1548,12 +1701,12 @@ test("sendProjectAssistantMessageStream does not emit workspace-refresh-requeste
       "get_writing_context",
       "get_manuscript_subtree",
       "list_story_timeline_points",
-      "list_reference_overlay_dir",
-      "read_reference_overlay_path",
-      "create_reference_overlay_dir",
-      "write_reference_overlay_file",
-      "move_reference_overlay_node",
-      "create_reference_overlay_link",
+      "list_files",
+      "read_file",
+      "create_dir",
+      "write_file",
+      "move_path",
+      "create_symlink",
     ],
   });
   handle.subscribe((event) => {
@@ -1790,7 +1943,7 @@ test("cancelProjectAssistantRun aborts the active backend run and marks it cance
     projectId: "assistant_cancel",
     threadId: thread.id,
     text: "开始后我会取消",
-    activeTools: ["read_reference_overlay_path"],
+    activeTools: ["read_file"],
   });
 
   const started = createDeferred<void>();
@@ -1842,7 +1995,7 @@ test("follow-up send after tool results reuses sanitized history messages", asyn
               stepNumber: 0,
               toolCall: {
                 toolCallId: "call_followup",
-                toolName: "read_reference_overlay_path",
+                toolName: "read_file",
                 input: { path: "/设定" },
               },
             };
@@ -1851,7 +2004,7 @@ test("follow-up send after tool results reuses sanitized history messages", asyn
               stepNumber: 0,
               toolResult: {
                 toolCallId: "call_followup",
-                toolName: "read_reference_overlay_path",
+                toolName: "read_file",
                 output: {
                   ok: true,
                   data: {
@@ -1897,7 +2050,7 @@ test("follow-up send after tool results reuses sanitized history messages", asyn
                       {
                         type: "tool-call",
                         toolCallId: "call_followup",
-                        toolName: "read_reference_overlay_path",
+                        toolName: "read_file",
                         input: { path: "/设定" },
                       },
                     ],
@@ -1908,7 +2061,7 @@ test("follow-up send after tool results reuses sanitized history messages", asyn
                       {
                         type: "tool-result",
                         toolCallId: "call_followup",
-                        toolName: "read_reference_overlay_path",
+                        toolName: "read_file",
                         output: {
                           type: "json",
                           value: {
@@ -1927,14 +2080,14 @@ test("follow-up send after tool results reuses sanitized history messages", asyn
               toolCalls: [
                 {
                   toolCallId: "call_followup",
-                  toolName: "read_reference_overlay_path",
+                  toolName: "read_file",
                   input: { path: "/设定" },
                 },
               ],
               toolResults: [
                 {
                   toolCallId: "call_followup",
-                  toolName: "read_reference_overlay_path",
+                  toolName: "read_file",
                   output: {
                     ok: true,
                     data: {
@@ -2039,7 +2192,7 @@ test("follow-up send after tool results reuses sanitized history messages", asyn
         {
           type: "tool-call",
           toolCallId: "call_followup",
-          toolName: "read_reference_overlay_path",
+          toolName: "read_file",
           input: { path: "/设定" },
         },
       ],
@@ -2050,7 +2203,7 @@ test("follow-up send after tool results reuses sanitized history messages", asyn
         {
           type: "tool-result",
           toolCallId: "call_followup",
-          toolName: "read_reference_overlay_path",
+          toolName: "read_file",
           output: {
             type: "json",
             value: {

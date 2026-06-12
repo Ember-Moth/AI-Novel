@@ -1,7 +1,4 @@
-import type {
-  ProjectAssistantContextSnapshot,
-  ProjectAssistantToolName,
-} from "@/modules/ai/domain/types";
+import type { ProjectAssistantToolName } from "@/modules/ai/domain/types";
 
 import { buildAuxReadTools } from "./aux-read";
 import { buildAuxWriteTools } from "./aux-write";
@@ -13,12 +10,12 @@ import { buildWritingContextTools } from "./writing-context";
 
 export function createAssistantTools({
   projectId,
-  context,
+  runtimeContext,
 }: {
   projectId: string;
-  context: ProjectAssistantContextSnapshot | null;
+  runtimeContext: ToolBuildContext["runtimeContext"];
 }) {
-  const ctx: ToolBuildContext = { projectId, context };
+  const ctx: ToolBuildContext = { projectId, runtimeContext };
 
   return {
     ...buildWritingContextTools(ctx),

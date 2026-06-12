@@ -9,47 +9,36 @@ import {
   getWorkspaceForProject,
   jsonSchema,
   limitAuxNodes,
+  resolveCurrentTimelinePointId,
   resolveActiveAuxPath,
-  resolveTimelinePointIdFromInput,
   sanitizeAuxNode,
   withEnvelope,
 } from "./_shared";
 
 const REFERENCE_OVERLAY_READ_SEMANTICS =
-  "参考资料是按时间点叠加的 overlayfs 式视图：origin 放置全局初始设定，第一个自定义时间点开始才是故事时间线。读取某个 overlayTimelinePointId 时，会看到该时间点自己的覆盖层，并自动继承更早时间点仍可见的目录、文件和链接；较新时间点的改动不会改变较早时间点的状态。";
+  "参考资料按当前时间点形成叠加视图：原点放置全局初始设定，自定义时间点会继承更早时间点仍可见的目录、文件和链接。若需要改到别的时间点，请先调用 set_current_timeline。";
 
-const OVERLAY_TIMELINE_POINT_READ_DESCRIPTION =
-  '要读取的参考资料叠加视图时间点 ID。省略时使用当前选中的时间点；传入 "origin" 表示读取全局初始设定原点（故事开始前的初始状态）。';
-
-export function buildAuxReadTools({ projectId, context }: ToolBuildContext) {
+export function buildAuxReadTools({ projectId, runtimeContext }: ToolBuildContext) {
   return {
-    list_reference_overlay_dir: tool({
-      description: `${REFERENCE_OVERLAY_READ_SEMANTICS} 列出某个叠加视图中可见的参考资料目录。用于先查看有哪些设定/素材文件；省略 path 时读取参考资料根目录 /。`,
-      inputSchema: jsonSchema<{ path?: string; overlayTimelinePointId?: string }>({
+    list_files: tool({
+      description: `${REFERENCE_OVERLAY_READ_SEMANTICS} 列出当前时间点可见的参考资料目录。用于先查看有哪些设定/素材文件；省略 path 时读取参考资料根目录 /。`,
+      inputSchema: jsonSchema<{ path?: string }>({
         type: "object",
         properties: {
           path: {
             type: "string",
             description: "参考资料目录绝对路径。省略时读取根目录 /。",
           },
-          overlayTimelinePointId: {
-            type: "string",
-            description: OVERLAY_TIMELINE_POINT_READ_DESCRIPTION,
-          },
         },
       }),
-      execute: async ({ path, overlayTimelinePointId }) => {
+      execute: async ({ path }) => {
         const workspace = getWorkspaceForProject(projectId);
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"));
         }
 
         return withEnvelope(() => {
-          const resolvedTimelinePointId = resolveTimelinePointIdFromInput(
-            workspace.id,
-            context,
-            overlayTimelinePointId,
-          );
+          const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
           const dirNodes = listAuxDirAt(workspace.id, resolvedTimelinePointId, {
             dirId: path ? undefined : (workspace.auxRootId ?? undefined),
             path: path ?? undefined,
@@ -74,9 +63,9 @@ export function buildAuxReadTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    read_reference_overlay_path: tool({
-      description: `${REFERENCE_OVERLAY_READ_SEMANTICS} 读取某个叠加视图中可见的参考资料节点。用于查看具体设定/素材内容；省略 path 时读取当前选中的参考资料路径。`,
-      inputSchema: jsonSchema<{ path?: string; overlayTimelinePointId?: string }>({
+    read_file: tool({
+      description: `${REFERENCE_OVERLAY_READ_SEMANTICS} 读取当前时间点可见的参考资料节点。用于查看具体设定/素材内容；省略 path 时读取当前选中的参考资料路径。若要浏览目录，优先使用 list_files。`,
+      inputSchema: jsonSchema<{ path?: string }>({
         type: "object",
         properties: {
           path: {
@@ -84,25 +73,17 @@ export function buildAuxReadTools({ projectId, context }: ToolBuildContext) {
             description:
               "参考资料绝对路径。省略时使用当前选中的参考资料路径；没有选中路径时会失败。",
           },
-          overlayTimelinePointId: {
-            type: "string",
-            description: OVERLAY_TIMELINE_POINT_READ_DESCRIPTION,
-          },
         },
       }),
-      execute: async ({ path, overlayTimelinePointId }) => {
+      execute: async ({ path }) => {
         const workspace = getWorkspaceForProject(projectId);
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"));
         }
 
         return withEnvelope(() => {
-          const resolvedTimelinePointId = resolveTimelinePointIdFromInput(
-            workspace.id,
-            context,
-            overlayTimelinePointId,
-          );
-          const resolvedPath = path ?? resolveActiveAuxPath(context);
+          const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
+          const resolvedPath = path ?? resolveActiveAuxPath(runtimeContext.snapshot);
           if (!resolvedPath) {
             throw new Error("当前没有可读取的辅助资料路径。");
           }

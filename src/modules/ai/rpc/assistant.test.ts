@@ -225,15 +225,12 @@ test("sendProjectAssistantMessage invalidates overview, thread view, candidates,
       projectId: "rpc_assistant_send",
       threadId: "thread_send",
       text: "Hello",
-      activeTools: ["read_reference_overlay_path", "write_reference_overlay_file"],
+      activeTools: ["read_file", "write_file"],
     },
     requestCtx,
   );
 
-  expect(receivedActiveTools).toEqual([
-    "read_reference_overlay_path",
-    "write_reference_overlay_file",
-  ]);
+  expect(receivedActiveTools).toEqual(["read_file", "write_file"]);
   expect(result.invalidate).toEqual([
     rpcTags.aiProjectAssistantOverview("rpc_assistant_send"),
     rpcTags.aiProjectThreads("rpc_assistant_send"),
@@ -310,7 +307,7 @@ test("sendProjectAssistantMessage additionally invalidates aux workspace when th
           visibility: "internal" as const,
           mimeType: null,
           content: {
-            toolName: "write_reference_overlay_file",
+            toolName: "write_file",
             output: {
               ok: true,
               data: {
@@ -422,7 +419,7 @@ test("sendProjectAssistantMessage additionally invalidates aux workspace when th
   ]);
 });
 
-test("sendProjectAssistantMessage additionally invalidates aux workspace for move_reference_overlay_node", async () => {
+test("sendProjectAssistantMessage additionally invalidates aux workspace for move_path", async () => {
   useService({
     getProjectAssistantState: () => ({
       activeThreadId: null,
@@ -488,7 +485,7 @@ test("sendProjectAssistantMessage additionally invalidates aux workspace for mov
           visibility: "internal" as const,
           mimeType: null,
           content: {
-            toolName: "move_reference_overlay_node",
+            toolName: "move_path",
             output: {
               ok: true,
               data: {
@@ -593,7 +590,7 @@ test("sendProjectAssistantMessage additionally invalidates aux workspace for mov
   expect(result.invalidate).toContainEqual(rpcTags.auxWorkspace("workspace_move"));
 });
 
-test("sendProjectAssistantMessage does not invalidate aux workspace for failed move_reference_overlay_node output", async () => {
+test("sendProjectAssistantMessage does not invalidate aux workspace for failed move_path output", async () => {
   useService({
     getProjectAssistantState: () => ({
       activeThreadId: null,
@@ -659,7 +656,7 @@ test("sendProjectAssistantMessage does not invalidate aux workspace for failed m
           visibility: "internal" as const,
           mimeType: null,
           content: {
-            toolName: "move_reference_overlay_node",
+            toolName: "move_path",
             output: {
               ok: false,
               error: "移动失败",
@@ -925,7 +922,7 @@ test("sendProjectAssistantMessageStream emits events and returns invalidate tags
       projectId: "rpc_assistant_stream",
       threadId: "thread_stream",
       text: "Hello",
-      activeTools: ["read_reference_overlay_path"],
+      activeTools: ["read_file"],
     },
     streamRequestCtx,
     {
@@ -935,7 +932,7 @@ test("sendProjectAssistantMessageStream emits events and returns invalidate tags
     },
   );
 
-  expect(receivedActiveTools).toEqual(["read_reference_overlay_path"]);
+  expect(receivedActiveTools).toEqual(["read_file"]);
   expect(emitted).toEqual([
     {
       type: "run-started",
@@ -974,7 +971,7 @@ test("continueProjectAssistantRunStream emits events and invalidates parent and 
     agentProfile: "project-assistant",
     selectionSnapshot: {},
     contextSnapshot: null,
-    activeTools: ["read_reference_overlay_path"],
+    activeTools: ["read_file"],
     errorArtifactId: null,
     startedAt: 1,
     completedAt: 2,
@@ -993,7 +990,7 @@ test("continueProjectAssistantRunStream emits events and invalidates parent and 
     agentProfile: "project-assistant",
     selectionSnapshot: {},
     contextSnapshot: null,
-    activeTools: ["read_reference_overlay_path"],
+    activeTools: ["read_file"],
     errorArtifactId: null,
     startedAt: 3,
     completedAt: null,

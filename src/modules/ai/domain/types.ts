@@ -82,8 +82,9 @@ export const PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES = [
   "get_writing_context",
   "get_manuscript_subtree",
   "list_story_timeline_points",
-  "list_reference_overlay_dir",
-  "read_reference_overlay_path",
+  "set_current_timeline",
+  "list_files",
+  "read_file",
 ] as const;
 
 export const PROJECT_ASSISTANT_WRITE_TOOL_NAMES = [
@@ -95,12 +96,12 @@ export const PROJECT_ASSISTANT_WRITE_TOOL_NAMES = [
   "update_story_timeline_point",
   "move_story_timeline_point",
   "delete_story_timeline_point",
-  "create_reference_overlay_dir",
-  "write_reference_overlay_file",
-  "move_reference_overlay_node",
-  "delete_reference_overlay_node",
-  "create_reference_overlay_link",
-  "retarget_reference_overlay_link",
+  "create_dir",
+  "write_file",
+  "move_path",
+  "delete_path",
+  "create_symlink",
+  "retarget_symlink",
 ] as const;
 
 export const PROJECT_ASSISTANT_TOOL_NAMES = [
@@ -291,6 +292,13 @@ export interface WorkspaceRefreshRequestedEvent {
   auxNodeId?: string | null;
 }
 
+export interface TimelineSelectionUpdatedEvent {
+  type: "timeline-selection-updated";
+  workspaceId: string;
+  timelinePointId: string;
+  timelineLabel: string | null;
+}
+
 export type ProjectAssistantStreamEvent =
   | {
       type: "run-started";
@@ -344,6 +352,7 @@ export type ProjectAssistantStreamEvent =
       finishReason: string | undefined;
       usage: unknown;
     }
+  | TimelineSelectionUpdatedEvent
   | WorkspaceRefreshRequestedEvent;
 
 export interface AgentRunStepView {

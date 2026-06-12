@@ -27,6 +27,7 @@ import {
   markRunCancelled,
   markRunFailed,
   markRunSucceeded,
+  updateRunContextSnapshot,
   markThreadNodePartsDone,
   PROJECT_ASSISTANT_AGENT_PROFILE,
   renameThread,
@@ -48,6 +49,7 @@ import type {
   ProjectAssistantStreamEvent,
   ProjectAssistantStreamToolStatus,
   ProjectAssistantToolName,
+  TimelineSelectionUpdatedEvent,
 } from "@/modules/ai/domain/types";
 import {
   PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES,
@@ -69,6 +71,7 @@ import { getDefaultWorkspace } from "@/modules/workspace/domain";
 import { invariant } from "@/shared/lib/domain";
 
 import { createAssistantTools } from "./assistant-tools";
+import type { ToolRuntimeContext } from "./assistant-tools/_shared";
 import { createLanguageModelForConnection } from "./provider-factories";
 
 export interface ProjectAssistantStateView extends AgentThreadStateView {}
@@ -138,7 +141,7 @@ interface StreamAssistantTextInput {
   modelId: string;
   system: string | null;
   activeTools: readonly ProjectAssistantToolName[];
-  context: ProjectAssistantContextSnapshot | null;
+  runtimeContext: ToolRuntimeContext;
   messages: ModelMessage[];
   providerOptions?: StreamProviderOptions;
   abortSignal?: AbortSignal;
@@ -242,6 +245,7 @@ interface PreparedProjectAssistantRun<TResult> {
   transportSystem: string | null;
   selection: AssistantModelSelection;
   context: ProjectAssistantContextSnapshot | null;
+  runtimeContext: ToolRuntimeContext;
   activeTools: ProjectAssistantToolName[];
   initialResult: TResult;
   runStartedEvent: ProjectAssistantStreamEvent;
@@ -262,20 +266,34 @@ interface ActiveExecutionHandle {
   abortController: AbortController;
 }
 
+function createToolRuntimeContext(
+  snapshot: ProjectAssistantContextSnapshot | null,
+): ToolRuntimeContext {
+  let currentSnapshot = snapshot;
+  return {
+    get snapshot() {
+      return currentSnapshot;
+    },
+    updateSnapshot(updater) {
+      currentSnapshot = updater(currentSnapshot);
+    },
+  };
+}
+
 function defaultStreamAssistantText({
   projectId,
   connection,
   modelId,
   system,
   activeTools,
-  context,
+  runtimeContext,
   messages,
   providerOptions,
   abortSignal,
 }: StreamAssistantTextInput): StreamAssistantTextResult {
   const model = createLanguageModelForConnection({ connection, modelId });
   const preparedMessagesByStep: ModelMessage[][] = [];
-  const tools = createAssistantTools({ projectId, context });
+  const tools = createAssistantTools({ projectId, runtimeContext });
   const result = streamText({
     model,
     messages,
@@ -829,12 +847,12 @@ const CONTENT_WRITE_TOOL_NAME_SET = new Set<string>([
 ]);
 
 const AUX_WRITE_TOOL_NAME_SET = new Set<string>([
-  "create_reference_overlay_dir",
-  "write_reference_overlay_file",
-  "move_reference_overlay_node",
-  "delete_reference_overlay_node",
-  "create_reference_overlay_link",
-  "retarget_reference_overlay_link",
+  "create_dir",
+  "write_file",
+  "move_path",
+  "delete_path",
+  "create_symlink",
+  "retarget_symlink",
 ]);
 
 const TIMELINE_UPDATE_TOOL_NAME = "update_story_timeline_point";
@@ -899,6 +917,49 @@ function extractWorkspaceRefreshRequestedEventFromToolResult({
     areas,
     ...(contentNodeId === undefined ? {} : { contentNodeId }),
     ...(auxNodeId === undefined ? {} : { auxNodeId }),
+  };
+}
+
+function extractTimelineSelectionUpdatedEventFromToolResult({
+  projectId,
+  toolResult,
+}: {
+  projectId: string;
+  toolResult: Record<string, unknown>;
+}): TimelineSelectionUpdatedEvent | null {
+  if (Reflect.get(toolResult, "toolName") !== "set_current_timeline") {
+    return null;
+  }
+  if (getToolStatus(toolResult) !== "success") {
+    return null;
+  }
+
+  const workspace = getDefaultWorkspace(projectId);
+  if (!workspace) {
+    return null;
+  }
+
+  const output = unwrapToolResultOutput(Reflect.get(toolResult, "output"));
+  if (!output || Reflect.get(output, "ok") !== true) {
+    return null;
+  }
+  const data = Reflect.get(output, "data");
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  const record = data as Record<string, unknown>;
+  const timelinePointId = Reflect.get(record, "timelinePointId");
+  if (typeof timelinePointId !== "string" || timelinePointId.trim().length === 0) {
+    return null;
+  }
+  const timelineLabel = Reflect.get(record, "timelineLabel");
+
+  return {
+    type: "timeline-selection-updated",
+    workspaceId: workspace.id,
+    timelinePointId,
+    timelineLabel:
+      typeof timelineLabel === "string" && timelineLabel.trim().length > 0 ? timelineLabel : null,
   };
 }
 
@@ -1147,7 +1208,7 @@ async function executeProjectAssistantRun<TResult>({
     modelId: prepared.selection.resolvedModel.modelId,
     system: prepared.transportSystem,
     activeTools: prepared.activeTools,
-    context: prepared.context,
+    runtimeContext: prepared.runtimeContext,
     messages: prepared.messages,
     providerOptions: prepared.providerOptions,
     abortSignal,
@@ -1361,6 +1422,14 @@ async function executeProjectAssistantRun<TResult>({
         if (workspaceRefreshRequestedEvent) {
           relay.emit(workspaceRefreshRequestedEvent);
         }
+        const timelineSelectionUpdatedEvent = extractTimelineSelectionUpdatedEventFromToolResult({
+          projectId: prepared.projectId,
+          toolResult: chunk.toolResult,
+        });
+        if (timelineSelectionUpdatedEvent) {
+          relay.emit(timelineSelectionUpdatedEvent);
+          updateRunContextSnapshot(prepared.run.id, prepared.runtimeContext.snapshot);
+        }
         continue;
       }
 
@@ -1511,6 +1580,7 @@ function buildSendRun({
     transportSystem: request.transportSystem,
     selection,
     context: normalizedContext,
+    runtimeContext: createToolRuntimeContext(normalizedContext),
     activeTools: resolvedActiveTools,
     initialResult: {
       thread: getThreadView(thread.id).thread!,
@@ -1606,6 +1676,7 @@ function buildRetryRun({
     transportSystem: request.transportSystem,
     selection,
     context: normalizedContext,
+    runtimeContext: createToolRuntimeContext(normalizedContext),
     activeTools: resolvedActiveTools,
     initialResult: {
       thread: getThreadView(thread.id).thread!,
@@ -1701,6 +1772,7 @@ function buildEditRun({
     transportSystem: request.transportSystem,
     selection,
     context: normalizedContext,
+    runtimeContext: createToolRuntimeContext(normalizedContext),
     activeTools: resolvedActiveTools,
     initialResult: {
       thread: getThreadView(thread.id).thread!,
@@ -1821,6 +1893,7 @@ function buildContinueRun({
     transportSystem: request.transportSystem,
     selection,
     context,
+    runtimeContext: createToolRuntimeContext(context),
     activeTools,
     initialResult: {
       thread: getThreadView(thread.id).thread!,

@@ -14,10 +14,12 @@ import {
   getWorkspaceForProject,
   jsonSchema,
   limitTimelinePoints,
+  resolveSelectableTimelinePoint,
+  updateRuntimeTimelineSelection,
   withEnvelope,
 } from "./_shared";
 
-export function buildTimelineTools({ projectId }: ToolBuildContext) {
+export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildContext) {
   return {
     list_story_timeline_points: tool({
       description:
@@ -39,6 +41,48 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
             truncated: limited.truncated,
             data: {
               points: limited.points,
+            },
+          };
+        });
+      },
+    }),
+    set_current_timeline: tool({
+      description:
+        '重新设置当前时间点。之后同一轮以及后续继续/重试中的 `list_files` `read_file` `create_dir` `write_file` `move_path` `delete_path` `create_symlink` `retarget_symlink` 都会基于这个当前时间点操作。传入 "origin" 可切回全局初始设定原点。',
+      inputSchema: jsonSchema<{ timelinePointId: string }>({
+        type: "object",
+        required: ["timelinePointId"],
+        properties: {
+          timelinePointId: {
+            type: "string",
+            description: '要切换到的时间点 ID。传入 "origin" 表示切换到全局初始设定原点。',
+          },
+        },
+      }),
+      execute: async ({ timelinePointId }) => {
+        const workspace = getWorkspaceForProject(projectId);
+        if (!workspace) {
+          return failure(new Error("当前项目没有默认工作区。"));
+        }
+
+        return withEnvelope(() => {
+          const selected = resolveSelectableTimelinePoint({
+            workspaceId: workspace.id,
+            timelinePointId,
+          });
+          updateRuntimeTimelineSelection({
+            runtimeContext,
+            timelinePointId: selected.timelinePointId,
+            timelineLabel: selected.timelineLabel,
+          });
+
+          return {
+            ok: true,
+            truncated: false,
+            data: {
+              action: "selected" as const,
+              timelinePointId: selected.timelinePointId,
+              timelineLabel: selected.timelineLabel,
             },
           };
         });
@@ -148,6 +192,7 @@ export function buildTimelineTools({ projectId }: ToolBuildContext) {
             data: {
               action: "updated" as const,
               pointId: point.id,
+              label: point.label,
             },
           };
         });

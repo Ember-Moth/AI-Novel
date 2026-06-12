@@ -6,6 +6,7 @@ import type {
   ProjectAssistantContextSnapshot,
   ProjectAssistantStreamEvent,
   ProjectAssistantToolName,
+  TimelineSelectionUpdatedEvent,
   WorkspaceRefreshRequestedEvent,
 } from "@/modules/ai/domain/types";
 import {
@@ -419,7 +420,9 @@ function patchAssistantOverviewState({
 export function useAiAssistantController(
   projectId: string,
   contextSnapshot: ProjectAssistantContextSnapshot,
-  onWorkspaceRefreshRequested?: (_event: WorkspaceRefreshRequestedEvent) => void,
+  onWorkspaceRefreshRequested?: (
+    _event: WorkspaceRefreshRequestedEvent | TimelineSelectionUpdatedEvent,
+  ) => void,
 ) {
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
@@ -632,7 +635,10 @@ export function useAiAssistantController(
           },
           {
             onEvent: (event) => {
-              if (event.type === "workspace-refresh-requested") {
+              if (
+                event.type === "workspace-refresh-requested" ||
+                event.type === "timeline-selection-updated"
+              ) {
                 onWorkspaceRefreshRequested?.(event);
               }
               setActiveStream((current) =>
@@ -719,7 +725,10 @@ export function useAiAssistantController(
           },
           {
             onEvent: (event) => {
-              if (event.type === "workspace-refresh-requested") {
+              if (
+                event.type === "workspace-refresh-requested" ||
+                event.type === "timeline-selection-updated"
+              ) {
                 onWorkspaceRefreshRequested?.(event);
               }
               setActiveStream((current) =>
@@ -794,7 +803,10 @@ export function useAiAssistantController(
           },
           {
             onEvent: (event) => {
-              if (event.type === "workspace-refresh-requested") {
+              if (
+                event.type === "workspace-refresh-requested" ||
+                event.type === "timeline-selection-updated"
+              ) {
                 onWorkspaceRefreshRequested?.(event);
               }
               setActiveStream((current) =>

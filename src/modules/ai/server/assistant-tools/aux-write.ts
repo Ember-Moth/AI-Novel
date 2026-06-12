@@ -3,6 +3,7 @@ import { tool } from "ai";
 import {
   deleteAuxNodeAt,
   linkAt,
+  listAuxDirAt,
   mkdirAt,
   moveAuxNodeAt,
   readAuxByPathAt,
@@ -15,25 +16,22 @@ import {
   failure,
   getWorkspaceForProject,
   jsonSchema,
+  resolveCurrentTimelinePointId,
   resolveAuxNodeByPathOrThrow,
   resolveParentDirId,
-  resolveTimelinePointIdFromInput,
   splitAuxPath,
   withEnvelope,
 } from "./_shared";
 import { invariant } from "@/shared/lib/domain";
 
 const REFERENCE_OVERLAY_WRITE_SEMANTICS =
-  "参考资料是按时间点叠加的 overlayfs 式视图：origin 放置全局初始设定，第一个自定义时间点开始才是故事时间线。目标 overlayTimelinePointId 会继承更早时间点可见的目录、文件和链接；本工具只在目标时间点写入/覆盖一层新状态，不会回写或改变任何更早时间点。";
+  "参考资料写入始终作用于当前时间点，并只在该时间点写入新的覆盖层状态，不会回写更早时间点。若需要切换到其他时间点，请先调用 set_current_timeline。";
 
-const OVERLAY_TIMELINE_POINT_WRITE_DESCRIPTION =
-  '要写入覆盖层的时间点 ID。省略时使用当前选中的时间点；传入 "origin" 表示写入全局初始设定原点（故事开始前的初始状态，不属于故事推进顺序）。写入后，较晚时间点读取时可继承该状态，较早时间点不受影响。';
-
-export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
+export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildContext) {
   return {
-    create_reference_overlay_dir: tool({
-      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在目标叠加视图创建参考资料目录；只创建目标路径的最后一级目录，父目录必须在该叠加视图中已存在。`,
-      inputSchema: jsonSchema<{ path: string; overlayTimelinePointId?: string }>({
+    create_dir: tool({
+      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在当前时间点创建参考资料目录；只创建目标路径的最后一级目录，父目录必须已存在。`,
+      inputSchema: jsonSchema<{ path: string }>({
         type: "object",
         required: ["path"],
         properties: {
@@ -41,24 +39,16 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
             type: "string",
             description: "要创建的参考资料目录绝对路径，例如 /设定/角色。",
           },
-          overlayTimelinePointId: {
-            type: "string",
-            description: OVERLAY_TIMELINE_POINT_WRITE_DESCRIPTION,
-          },
         },
       }),
-      execute: async ({ path, overlayTimelinePointId }) => {
+      execute: async ({ path }) => {
         const workspace = getWorkspaceForProject(projectId);
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"));
         }
 
         return withEnvelope(() => {
-          const resolvedTimelinePointId = resolveTimelinePointIdFromInput(
-            workspace.id,
-            context,
-            overlayTimelinePointId,
-          );
+          const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
           const { normalizedPath, parentPath, name } = splitAuxPath(path, "创建辅助资料目录");
           const existing = readAuxByPathAt(workspace.id, resolvedTimelinePointId, normalizedPath);
           invariant(existing == null, "创建辅助资料目录失败：目标路径已存在。");
@@ -90,9 +80,9 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    write_reference_overlay_file: tool({
-      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在目标叠加视图创建或覆盖参考资料文件；如果路径继承自更早时间点，本次写入会在目标时间点产生新文件层，而不是修改早期文件层。若文件已存在会整文件覆盖；仅在用户明确要求写入素材/设定时使用。`,
-      inputSchema: jsonSchema<{ path: string; content: string; overlayTimelinePointId?: string }>({
+    write_file: tool({
+      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在当前时间点创建或覆盖参考资料文件；如果路径继承自更早时间点，本次写入会在当前时间点产生新文件层，而不是修改早期文件层。若文件已存在会整文件覆盖；仅在用户明确要求写入素材/设定时使用。`,
+      inputSchema: jsonSchema<{ path: string; content: string }>({
         type: "object",
         required: ["path", "content"],
         properties: {
@@ -104,24 +94,16 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
             type: "string",
             description: "要写入文件的完整内容；会替换目标文件原有内容。",
           },
-          overlayTimelinePointId: {
-            type: "string",
-            description: OVERLAY_TIMELINE_POINT_WRITE_DESCRIPTION,
-          },
         },
       }),
-      execute: async ({ path, content, overlayTimelinePointId }) => {
+      execute: async ({ path, content }) => {
         const workspace = getWorkspaceForProject(projectId);
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"));
         }
 
         return withEnvelope(() => {
-          const resolvedTimelinePointId = resolveTimelinePointIdFromInput(
-            workspace.id,
-            context,
-            overlayTimelinePointId,
-          );
+          const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
           const { normalizedPath, parentPath, name } = splitAuxPath(path, "写入辅助资料文件");
           const existing = readAuxByPathAt(workspace.id, resolvedTimelinePointId, normalizedPath);
 
@@ -173,12 +155,11 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    move_reference_overlay_node: tool({
-      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在目标叠加视图移动或重命名参考资料节点；如果节点继承自更早时间点，本次移动只在目标时间点产生路径覆盖，早期时间点仍保留原路径。支持文件、目录和链接；不能移动根目录。`,
+    move_path: tool({
+      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在当前时间点移动或重命名参考资料节点；如果节点继承自更早时间点，本次移动只在当前时间点产生路径覆盖，早期时间点仍保留原路径。支持文件、目录和链接；不能移动根目录。`,
       inputSchema: jsonSchema<{
         path: string;
         newPath: string;
-        overlayTimelinePointId?: string;
       }>({
         type: "object",
         required: ["path", "newPath"],
@@ -191,24 +172,16 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
             type: "string",
             description: "移动后的目标绝对路径，例如 /资料库/人物/主角.md；目标路径不能已存在。",
           },
-          overlayTimelinePointId: {
-            type: "string",
-            description: OVERLAY_TIMELINE_POINT_WRITE_DESCRIPTION,
-          },
         },
       }),
-      execute: async ({ path, newPath, overlayTimelinePointId }) => {
+      execute: async ({ path, newPath }) => {
         const workspace = getWorkspaceForProject(projectId);
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"));
         }
 
         return withEnvelope(() => {
-          const resolvedTimelinePointId = resolveTimelinePointIdFromInput(
-            workspace.id,
-            context,
-            overlayTimelinePointId,
-          );
+          const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
           const { normalizedPath } = splitAuxPath(path, "移动辅助资料");
           const {
             normalizedPath: normalizedNewPath,
@@ -262,9 +235,9 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    delete_reference_overlay_node: tool({
-      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在目标叠加视图删除参考资料节点；如果节点继承自更早时间点，本次删除只在目标时间点写入删除遮罩，早期时间点仍可读取原节点。若是目录会连同该叠加视图中的所有子项一起隐藏；仅在用户明确要求删除时使用。`,
-      inputSchema: jsonSchema<{ path: string; overlayTimelinePointId?: string }>({
+    delete_path: tool({
+      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在当前时间点删除参考资料节点；如果节点继承自更早时间点，本次删除只在当前时间点写入删除遮罩，早期时间点仍可读取原节点。若是目录会连同当前时间点中可见的所有子项一起隐藏；仅在用户明确要求删除时使用。`,
+      inputSchema: jsonSchema<{ path: string }>({
         type: "object",
         required: ["path"],
         properties: {
@@ -272,24 +245,16 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
             type: "string",
             description: "要删除的参考资料绝对路径，例如 /设定/旧角色.md。",
           },
-          overlayTimelinePointId: {
-            type: "string",
-            description: OVERLAY_TIMELINE_POINT_WRITE_DESCRIPTION,
-          },
         },
       }),
-      execute: async ({ path, overlayTimelinePointId }) => {
+      execute: async ({ path }) => {
         const workspace = getWorkspaceForProject(projectId);
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"));
         }
 
         return withEnvelope(() => {
-          const resolvedTimelinePointId = resolveTimelinePointIdFromInput(
-            workspace.id,
-            context,
-            overlayTimelinePointId,
-          );
+          const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
           const { normalizedPath } = splitAuxPath(path, "删除辅助资料");
           const node = resolveAuxNodeByPathOrThrow({
             workspaceId: workspace.id,
@@ -317,12 +282,11 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    create_reference_overlay_link: tool({
-      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在目标叠加视图创建参考资料符号链接。符号链接的核心用途是跨时间点的「指针」：同一链接路径（如 /当前主要场景）在不同时间点可以指向不同目标（第3章指向 /场景/城堡，第5章重定向到 /场景/森林），实现随故事推进而变化的上下文引用。链接本身写入到目标时间点，目标路径必须在该叠加视图中可见，可以是从更早时间点继承来的节点。`,
+    create_symlink: tool({
+      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在当前时间点创建参考资料符号链接。符号链接适合做会随故事推进变化的指针；目标路径必须在当前时间点可见，可以是从更早时间点继承来的节点。`,
       inputSchema: jsonSchema<{
         path: string;
         targetPath: string;
-        overlayTimelinePointId?: string;
       }>({
         type: "object",
         required: ["path", "targetPath"],
@@ -336,31 +300,30 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
             description:
               "链接目标绝对路径，例如 /场景/城堡；目标必须已存在且在目标叠加视图中可见。",
           },
-          overlayTimelinePointId: {
-            type: "string",
-            description: OVERLAY_TIMELINE_POINT_WRITE_DESCRIPTION,
-          },
         },
       }),
-      execute: async ({ path, targetPath, overlayTimelinePointId }) => {
+      execute: async ({ path, targetPath }) => {
         const workspace = getWorkspaceForProject(projectId);
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"));
         }
 
         return withEnvelope(() => {
-          const resolvedTimelinePointId = resolveTimelinePointIdFromInput(
-            workspace.id,
-            context,
-            overlayTimelinePointId,
-          );
+          const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
           const { normalizedPath, parentPath, name } = splitAuxPath(path, "创建辅助资料符号链接");
           const { normalizedPath: normalizedTargetPath } = splitAuxPath(
             targetPath,
             "创建辅助资料符号链接",
           );
-          const existing = readAuxByPathAt(workspace.id, resolvedTimelinePointId, normalizedPath);
-          invariant(existing == null, "创建辅助资料符号链接失败：目标路径已存在。");
+          const existing = listAuxDirAt(workspace.id, resolvedTimelinePointId, {
+            path: parentPath,
+          }).find((node) => node.name === name);
+          invariant(
+            existing == null,
+            existing?.nodeType === "symlink"
+              ? "创建辅助资料符号链接失败：同路径已存在符号链接。通常你想要的是调用 retarget_symlink 来修改它的目标。"
+              : "创建辅助资料符号链接失败：目标路径已存在。",
+          );
 
           const targetNode = resolveAuxNodeByPathOrThrow({
             workspaceId: workspace.id,
@@ -397,12 +360,11 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         });
       },
     }),
-    retarget_reference_overlay_link: tool({
-      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在目标叠加视图修改参考资料符号链接的目标路径。这是实现「随时间变化的指针」的关键操作：链接自身路径不变（如 /当前主要场景），只在目标时间点改变指向（如从 /场景/城堡 改为 /场景/森林），早期时间点读取时仍看到旧指向。新目标必须在该叠加视图中可见。`,
+    retarget_symlink: tool({
+      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在当前时间点修改参考资料符号链接的目标路径。链接自身路径不变，只在当前时间点改变指向；早期时间点仍看到旧指向。新目标必须在当前时间点可见。`,
       inputSchema: jsonSchema<{
         path: string;
         newTargetPath: string;
-        overlayTimelinePointId?: string;
       }>({
         type: "object",
         required: ["path", "newTargetPath"],
@@ -416,24 +378,16 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
             description:
               "新的目标绝对路径，例如 /场景/森林；目标必须已存在且在目标叠加视图中可见。",
           },
-          overlayTimelinePointId: {
-            type: "string",
-            description: OVERLAY_TIMELINE_POINT_WRITE_DESCRIPTION,
-          },
         },
       }),
-      execute: async ({ path, newTargetPath, overlayTimelinePointId }) => {
+      execute: async ({ path, newTargetPath }) => {
         const workspace = getWorkspaceForProject(projectId);
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"));
         }
 
         return withEnvelope(() => {
-          const resolvedTimelinePointId = resolveTimelinePointIdFromInput(
-            workspace.id,
-            context,
-            overlayTimelinePointId,
-          );
+          const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
           const { normalizedPath } = splitAuxPath(path, "重定向辅助资料符号链接");
           const { normalizedPath: normalizedNewTargetPath } = splitAuxPath(
             newTargetPath,

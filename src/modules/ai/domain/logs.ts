@@ -2332,6 +2332,23 @@ export function markRunCancelled(runId: string) {
   });
 }
 
+export function updateRunContextSnapshot(
+  runId: string,
+  contextSnapshot: ProjectAssistantContextSnapshot | null,
+) {
+  return db.transaction((tx) => {
+    const run = getRunOrThrow(tx, runId);
+    tx.update(schema.agentRuns)
+      .set({
+        contextSnapshotJson: serializeOptionalJson(contextSnapshot),
+        updatedAt: now(),
+      })
+      .where(eq(schema.agentRuns.id, run.id))
+      .run();
+    return mapRunRow(getRunOrThrow(tx, run.id));
+  });
+}
+
 export function getRunTrace(runId: string): AgentRunTraceView {
   const run = getRunOrThrow(db, runId);
   const steps = db

@@ -6,6 +6,7 @@ import { AiMarkdown } from "./AiMarkdown";
 import type {
   AgentRunSummaryView,
   ProjectAssistantContextSnapshot,
+  TimelineSelectionUpdatedEvent,
   WorkspaceRefreshRequestedEvent,
 } from "@/modules/ai/domain/types";
 import {
@@ -33,7 +34,9 @@ export function AiSidebar({
 }: {
   projectId: string;
   contextSnapshot: ProjectAssistantContextSnapshot;
-  onWorkspaceRefreshRequested?: (_event: WorkspaceRefreshRequestedEvent) => void;
+  onWorkspaceRefreshRequested?: (
+    _event: WorkspaceRefreshRequestedEvent | TimelineSelectionUpdatedEvent,
+  ) => void;
 }) {
   const messagesViewportRef = useRef<HTMLElement | null>(null);
   const controller = useAiAssistantController(

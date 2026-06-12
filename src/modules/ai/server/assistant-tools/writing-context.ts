@@ -17,7 +17,7 @@ import {
 } from "./_shared";
 import type { AssistantToolSuccess } from "./_shared";
 
-export function buildWritingContextTools({ projectId, context }: ToolBuildContext) {
+export function buildWritingContextTools({ projectId, runtimeContext }: ToolBuildContext) {
   return {
     get_writing_context: tool({
       description:
@@ -39,7 +39,8 @@ export function buildWritingContextTools({ projectId, context }: ToolBuildContex
 
         return withEnvelope(() => {
           const targetContentNodeId =
-            contentNodeId ?? resolveActiveContentNodeId(context, workspace.contentRootId);
+            contentNodeId ??
+            resolveActiveContentNodeId(runtimeContext.snapshot, workspace.contentRootId);
           if (!targetContentNodeId) {
             throw new Error("当前没有可读取的正文节点。");
           }

@@ -9,6 +9,25 @@ const workspaceDomain = await import("@/modules/workspace/domain");
 const { createAssistantTools } = await import("./assistant-tools");
 const { PROJECT_ASSISTANT_TOOL_NAMES } = await import("@/modules/ai/domain/types");
 
+function createRuntimeContext(
+  snapshot: {
+    workspaceId: string | null;
+    activeContentNodeId: string | null;
+    activeContentTitle: string | null;
+    activeAuxNodeId: string | null;
+    activeAuxPath: string | null;
+    activeTimelinePointId: string | null;
+    activeTimelineLabel: string | null;
+  } | null = null,
+) {
+  return {
+    snapshot,
+    updateSnapshot(updater: (current: typeof snapshot) => typeof snapshot) {
+      this.snapshot = updater(this.snapshot);
+    },
+  };
+}
+
 function seedProject(projectId: string) {
   db.insert(schema.projects)
     .values({
@@ -32,23 +51,23 @@ test("createAssistantTools always exposes the full tool set", () => {
 
   const tools = createAssistantTools({
     projectId: "assistant_tools_filter",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
   expect(Object.keys(tools).sort()).toEqual([...PROJECT_ASSISTANT_TOOL_NAMES].sort());
   expect(tools.get_writing_context).toBeDefined();
-  expect(tools.create_reference_overlay_dir).toBeDefined();
-  expect(tools.write_reference_overlay_file).toBeDefined();
+  expect(tools.create_dir).toBeDefined();
+  expect(tools.write_file).toBeDefined();
 });
 
-test("create_reference_overlay_dir creates a directory at the current timeline point", async () => {
+test("create_dir creates a directory at the current timeline point", async () => {
   const workspace = seedProject("assistant_tools_mkdir");
   const tools = createAssistantTools({
     projectId: "assistant_tools_mkdir",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.create_reference_overlay_dir!, { path: "/设定" });
+  const result = await executeTool(tools.create_dir!, { path: "/设定" });
 
   expect(result).toMatchObject({
     ok: true,
@@ -64,7 +83,7 @@ test("create_reference_overlay_dir creates a directory at the current timeline p
   ).toBe("dir");
 });
 
-test("write_reference_overlay_file creates a new file when the target path does not exist", async () => {
+test("write_file creates a new file when the target path does not exist", async () => {
   const workspace = seedProject("assistant_tools_write_create");
   workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -74,10 +93,10 @@ test("write_reference_overlay_file creates a new file when the target path does 
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_write_create",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.write_reference_overlay_file!, {
+  const result = await executeTool(tools.write_file!, {
     path: "/设定/角色.md",
     content: "主角设定",
   });
@@ -99,7 +118,7 @@ test("write_reference_overlay_file creates a new file when the target path does 
   ).toBe("主角设定");
 });
 
-test("write_reference_overlay_file overwrites an existing file", async () => {
+test("write_file overwrites an existing file", async () => {
   const workspace = seedProject("assistant_tools_write_update");
   const notesDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -116,10 +135,10 @@ test("write_reference_overlay_file overwrites an existing file", async () => {
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_write_update",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.write_reference_overlay_file!, {
+  const result = await executeTool(tools.write_file!, {
     path: "/设定/角色.md",
     content: "新内容",
   });
@@ -141,7 +160,7 @@ test("write_reference_overlay_file overwrites an existing file", async () => {
   ).toBe("新内容");
 });
 
-test("write_reference_overlay_file overlays inherited files without changing earlier timeline points", async () => {
+test("write_file overlays inherited files without changing earlier timeline points", async () => {
   const workspace = seedProject("assistant_tools_write_overlay_inherit");
   const notesDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -164,13 +183,20 @@ test("write_reference_overlay_file overlays inherited files without changing ear
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_write_overlay_inherit",
-    context: null,
+    runtimeContext: createRuntimeContext({
+      workspaceId: workspace.id,
+      activeContentNodeId: null,
+      activeContentTitle: null,
+      activeAuxNodeId: null,
+      activeAuxPath: null,
+      activeTimelinePointId: timelinePoint.id,
+      activeTimelineLabel: timelinePoint.label,
+    }),
   });
 
-  const result = await executeTool(tools.write_reference_overlay_file!, {
+  const result = await executeTool(tools.write_file!, {
     path: "/设定/角色.md",
     content: "draft 内容",
-    overlayTimelinePointId: timelinePoint.id,
   });
 
   expect(result).toMatchObject({
@@ -192,14 +218,14 @@ test("write_reference_overlay_file overlays inherited files without changing ear
   ).toBe("draft 内容");
 });
 
-test("write_reference_overlay_file returns an error when the parent directory does not exist", async () => {
+test("write_file returns an error when the parent directory does not exist", async () => {
   seedProject("assistant_tools_write_missing_parent");
   const tools = createAssistantTools({
     projectId: "assistant_tools_write_missing_parent",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.write_reference_overlay_file!, {
+  const result = await executeTool(tools.write_file!, {
     path: "/设定/角色.md",
     content: "主角设定",
   });
@@ -210,7 +236,7 @@ test("write_reference_overlay_file returns an error when the parent directory do
   });
 });
 
-test("write_reference_overlay_file returns an error when the target path is a directory", async () => {
+test("write_file returns an error when the target path is a directory", async () => {
   const workspace = seedProject("assistant_tools_write_dir_guard");
   workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -220,10 +246,10 @@ test("write_reference_overlay_file returns an error when the target path is a di
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_write_dir_guard",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.write_reference_overlay_file!, {
+  const result = await executeTool(tools.write_file!, {
     path: "/设定",
     content: "should fail",
   });
@@ -234,7 +260,7 @@ test("write_reference_overlay_file returns an error when the target path is a di
   });
 });
 
-test("move_reference_overlay_node renames a file in the same directory", async () => {
+test("move_path renames a file in the same directory", async () => {
   const workspace = seedProject("assistant_tools_move_rename");
   const notesDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -251,10 +277,10 @@ test("move_reference_overlay_node renames a file in the same directory", async (
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_move_rename",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.move_reference_overlay_node!, {
+  const result = await executeTool(tools.move_path!, {
     path: "/设定/角色.md",
     newPath: "/设定/主角.md",
   });
@@ -285,7 +311,7 @@ test("move_reference_overlay_node renames a file in the same directory", async (
   ).toBe(file.id);
 });
 
-test("move_reference_overlay_node moves a file across directories", async () => {
+test("move_path moves a file across directories", async () => {
   const workspace = seedProject("assistant_tools_move_cross_dir");
   const sourceDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -308,10 +334,10 @@ test("move_reference_overlay_node moves a file across directories", async () => 
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_move_cross_dir",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.move_reference_overlay_node!, {
+  const result = await executeTool(tools.move_path!, {
     path: "/设定/角色.md",
     newPath: "/资料库/角色.md",
   });
@@ -334,7 +360,7 @@ test("move_reference_overlay_node moves a file across directories", async () => 
   ).toBe(file.id);
 });
 
-test("move_reference_overlay_node moves a directory", async () => {
+test("move_path moves a directory", async () => {
   const workspace = seedProject("assistant_tools_move_dir");
   const sourceDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -356,10 +382,10 @@ test("move_reference_overlay_node moves a directory", async () => {
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_move_dir",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.move_reference_overlay_node!, {
+  const result = await executeTool(tools.move_path!, {
     path: "/设定/角色",
     newPath: "/资料库/角色档案",
   });
@@ -382,7 +408,7 @@ test("move_reference_overlay_node moves a directory", async () => {
   ).toBe(nestedDir.id);
 });
 
-test("move_reference_overlay_node returns an error when the target path already exists", async () => {
+test("move_path returns an error when the target path already exists", async () => {
   const workspace = seedProject("assistant_tools_move_conflict");
   const sourceDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -406,10 +432,10 @@ test("move_reference_overlay_node returns an error when the target path already 
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_move_conflict",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.move_reference_overlay_node!, {
+  const result = await executeTool(tools.move_path!, {
     path: "/设定/角色.md",
     newPath: "/设定/主角.md",
   });
@@ -420,7 +446,7 @@ test("move_reference_overlay_node returns an error when the target path already 
   });
 });
 
-test("move_reference_overlay_node returns an error when the target parent directory does not exist", async () => {
+test("move_path returns an error when the target parent directory does not exist", async () => {
   const workspace = seedProject("assistant_tools_move_missing_parent");
   const sourceDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -437,10 +463,10 @@ test("move_reference_overlay_node returns an error when the target parent direct
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_move_missing_parent",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.move_reference_overlay_node!, {
+  const result = await executeTool(tools.move_path!, {
     path: "/设定/角色.md",
     newPath: "/资料库/角色.md",
   });
@@ -451,7 +477,7 @@ test("move_reference_overlay_node returns an error when the target parent direct
   });
 });
 
-test("move_reference_overlay_node rejects moving a directory into its own subtree", async () => {
+test("move_path rejects moving a directory into its own subtree", async () => {
   const workspace = seedProject("assistant_tools_move_into_child");
   const parentDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -467,10 +493,10 @@ test("move_reference_overlay_node rejects moving a directory into its own subtre
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_move_into_child",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.move_reference_overlay_node!, {
+  const result = await executeTool(tools.move_path!, {
     path: "/设定",
     newPath: "/设定/角色/设定",
   });
@@ -481,7 +507,7 @@ test("move_reference_overlay_node rejects moving a directory into its own subtre
   });
 });
 
-test("move_reference_overlay_node respects the active timeline point from context", async () => {
+test("move_path respects the active timeline point from context", async () => {
   const workspace = seedProject("assistant_tools_move_timeline");
   const sourceDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -510,7 +536,7 @@ test("move_reference_overlay_node respects the active timeline point from contex
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_move_timeline",
-    context: {
+    runtimeContext: createRuntimeContext({
       workspaceId: workspace.id,
       activeContentNodeId: null,
       activeContentTitle: null,
@@ -518,10 +544,10 @@ test("move_reference_overlay_node respects the active timeline point from contex
       activeAuxPath: null,
       activeTimelinePointId: timelinePoint.id,
       activeTimelineLabel: timelinePoint.label,
-    },
+    }),
   });
 
-  await executeTool(tools.move_reference_overlay_node!, {
+  await executeTool(tools.move_path!, {
     path: "/设定/角色.md",
     newPath: "/资料库/角色.md",
   });
@@ -538,7 +564,7 @@ test("move_reference_overlay_node respects the active timeline point from contex
   ).toBe(file.id);
 });
 
-test("create_reference_overlay_link creates a symlink to a file", async () => {
+test("create_symlink creates a symlink to a file", async () => {
   const workspace = seedProject("assistant_tools_symlink_file");
   const notesDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -561,10 +587,10 @@ test("create_reference_overlay_link creates a symlink to a file", async () => {
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_symlink_file",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.create_reference_overlay_link!, {
+  const result = await executeTool(tools.create_symlink!, {
     path: "/索引/角色.md",
     targetPath: "/设定/角色.md",
   });
@@ -591,7 +617,7 @@ test("create_reference_overlay_link creates a symlink to a file", async () => {
   ).toBe("/设定/角色.md");
 });
 
-test("create_reference_overlay_link creates a symlink to a directory", async () => {
+test("create_symlink creates a symlink to a directory", async () => {
   const workspace = seedProject("assistant_tools_symlink_dir");
   const targetDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -607,10 +633,10 @@ test("create_reference_overlay_link creates a symlink to a directory", async () 
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_symlink_dir",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.create_reference_overlay_link!, {
+  const result = await executeTool(tools.create_symlink!, {
     path: "/索引/设定入口",
     targetPath: "/设定",
   });
@@ -639,7 +665,7 @@ test("create_reference_overlay_link creates a symlink to a directory", async () 
   ).toBe(targetDir.id);
 });
 
-test("create_reference_overlay_link returns an error when the target does not exist", async () => {
+test("create_symlink returns an error when the target does not exist", async () => {
   const workspace = seedProject("assistant_tools_symlink_missing_target");
   workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -649,10 +675,10 @@ test("create_reference_overlay_link returns an error when the target does not ex
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_symlink_missing_target",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.create_reference_overlay_link!, {
+  const result = await executeTool(tools.create_symlink!, {
     path: "/索引/角色.md",
     targetPath: "/设定/角色.md",
   });
@@ -663,7 +689,7 @@ test("create_reference_overlay_link returns an error when the target does not ex
   });
 });
 
-test("create_reference_overlay_link returns an error when the destination path already exists", async () => {
+test("create_symlink returns an error when the destination path already exists", async () => {
   const workspace = seedProject("assistant_tools_symlink_conflict");
   const notesDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -693,10 +719,10 @@ test("create_reference_overlay_link returns an error when the destination path a
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_symlink_conflict",
-    context: null,
+    runtimeContext: createRuntimeContext(),
   });
 
-  const result = await executeTool(tools.create_reference_overlay_link!, {
+  const result = await executeTool(tools.create_symlink!, {
     path: "/索引/角色.md",
     targetPath: "/设定/角色.md",
   });
@@ -705,6 +731,51 @@ test("create_reference_overlay_link returns an error when the destination path a
     ok: false,
     error: "创建辅助资料符号链接失败：目标路径已存在。",
   });
+});
+
+test("create_symlink suggests retarget_symlink when the destination is an existing symlink", async () => {
+  const workspace = seedProject("assistant_tools_symlink_retarget_hint");
+  const settingDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "设定",
+  });
+  const sceneDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "场景",
+  });
+  const indexDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: workspace.auxRootId!,
+    name: "索引",
+  });
+  workspaceDomain.linkAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: indexDir.id,
+    name: "入口",
+    targetNodeId: settingDir.id,
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_symlink_retarget_hint",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  const result = await executeTool(tools.create_symlink!, {
+    path: "/索引/入口",
+    targetPath: "/场景",
+  });
+
+  expect(result).toEqual({
+    ok: false,
+    error:
+      "创建辅助资料符号链接失败：同路径已存在符号链接。通常你想要的是调用 retarget_symlink 来修改它的目标。",
+  });
+  expect(sceneDir.id).toBeTruthy();
 });
 
 test("aux write tools respect the active timeline point from context", async () => {
@@ -717,7 +788,7 @@ test("aux write tools respect the active timeline point from context", async () 
   });
   const tools = createAssistantTools({
     projectId: "assistant_tools_timeline",
-    context: {
+    runtimeContext: createRuntimeContext({
       workspaceId: workspace.id,
       activeContentNodeId: null,
       activeContentTitle: null,
@@ -725,10 +796,10 @@ test("aux write tools respect the active timeline point from context", async () 
       activeAuxPath: null,
       activeTimelinePointId: timelinePoint.id,
       activeTimelineLabel: timelinePoint.label,
-    },
+    }),
   });
 
-  await executeTool(tools.create_reference_overlay_dir!, { path: "/草稿" });
+  await executeTool(tools.create_dir!, { path: "/草稿" });
 
   expect(
     workspaceDomain.readAuxByPathAt(
@@ -739,5 +810,92 @@ test("aux write tools respect the active timeline point from context", async () 
   ).toBeNull();
   expect(workspaceDomain.readAuxByPathAt(workspace.id, timelinePoint.id, "/草稿")?.nodeType).toBe(
     "dir",
+  );
+});
+
+test("set_current_timeline updates runtime context for later file tools", async () => {
+  const workspace = seedProject("assistant_tools_set_timeline");
+  const timelinePoint = workspaceDomain.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    key: "draft",
+    label: "Draft",
+  });
+  const runtimeContext = createRuntimeContext({
+    workspaceId: workspace.id,
+    activeContentNodeId: null,
+    activeContentTitle: null,
+    activeAuxNodeId: null,
+    activeAuxPath: null,
+    activeTimelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    activeTimelineLabel: "原点",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_set_timeline",
+    runtimeContext,
+  });
+
+  const selected = await executeTool(tools.set_current_timeline!, {
+    timelinePointId: timelinePoint.id,
+  });
+  await executeTool(tools.create_dir!, { path: "/草稿" });
+
+  expect(selected).toMatchObject({
+    ok: true,
+    data: {
+      action: "selected",
+      timelinePointId: timelinePoint.id,
+      timelineLabel: timelinePoint.label,
+    },
+  });
+  expect(runtimeContext.snapshot?.activeTimelinePointId).toBe(timelinePoint.id);
+  expect(workspaceDomain.readAuxByPathAt(workspace.id, timelinePoint.id, "/草稿")?.nodeType).toBe(
+    "dir",
+  );
+  expect(
+    workspaceDomain.readAuxByPathAt(
+      workspace.id,
+      workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+      "/草稿",
+    ),
+  ).toBeNull();
+});
+
+test("set_current_timeline accepts origin", async () => {
+  const workspace = seedProject("assistant_tools_set_origin");
+  const timelinePoint = workspaceDomain.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    key: "draft",
+    label: "Draft",
+  });
+  const runtimeContext = createRuntimeContext({
+    workspaceId: workspace.id,
+    activeContentNodeId: null,
+    activeContentTitle: null,
+    activeAuxNodeId: null,
+    activeAuxPath: null,
+    activeTimelinePointId: timelinePoint.id,
+    activeTimelineLabel: timelinePoint.label,
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_set_origin",
+    runtimeContext,
+  });
+
+  const selected = await executeTool(tools.set_current_timeline!, {
+    timelinePointId: "origin",
+  });
+
+  expect(selected).toMatchObject({
+    ok: true,
+    data: {
+      action: "selected",
+      timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+      timelineLabel: "原点",
+    },
+  });
+  expect(runtimeContext.snapshot?.activeTimelinePointId).toBe(
+    workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
   );
 });

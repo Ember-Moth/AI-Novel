@@ -5,9 +5,18 @@ import { jsonSchema } from "ai";
 import type { ProjectAssistantContextSnapshot } from "@/modules/ai/domain/types";
 import type { ProjectAssistantToolName } from "@/modules/ai/domain/types";
 
+export interface ToolRuntimeContext {
+  snapshot: ProjectAssistantContextSnapshot | null;
+  updateSnapshot: (
+    _updater: (
+      _current: ProjectAssistantContextSnapshot | null,
+    ) => ProjectAssistantContextSnapshot | null,
+  ) => void;
+}
+
 export type ToolBuildContext = {
   projectId: string;
-  context: ProjectAssistantContextSnapshot | null;
+  runtimeContext: ToolRuntimeContext;
 };
 
 // --- Domain tool name partitions ---
@@ -25,22 +34,20 @@ export const CONTENT_WRITE_TOOL_NAMES = [
 ] as const;
 export const TIMELINE_TOOL_NAMES = [
   "list_story_timeline_points",
+  "set_current_timeline",
   "create_story_timeline_point",
   "update_story_timeline_point",
   "move_story_timeline_point",
   "delete_story_timeline_point",
 ] as const;
-export const AUX_READ_TOOL_NAMES = [
-  "list_reference_overlay_dir",
-  "read_reference_overlay_path",
-] as const;
+export const AUX_READ_TOOL_NAMES = ["list_files", "read_file"] as const;
 export const AUX_WRITE_TOOL_NAMES = [
-  "create_reference_overlay_dir",
-  "write_reference_overlay_file",
-  "move_reference_overlay_node",
-  "delete_reference_overlay_node",
-  "create_reference_overlay_link",
-  "retarget_reference_overlay_link",
+  "create_dir",
+  "write_file",
+  "move_path",
+  "delete_path",
+  "create_symlink",
+  "retarget_symlink",
 ] as const;
 
 export type WritingContextToolName = (typeof WRITING_CONTEXT_TOOL_NAMES)[number];
@@ -236,30 +243,51 @@ export function resolveTimelinePointId(
   return context?.activeTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID;
 }
 
-/**
- * Resolve a timeline point ID from tool input.
- *
- * - If `inputTimelinePointId` is provided and equals `"origin"`, returns the origin ID.
- * - If `inputTimelinePointId` is provided as a real ID, validates it exists on the workspace
- *   and returns it.
- * - If `inputTimelinePointId` is omitted/undefined, falls back to the context's active
- *   timeline point (or origin if none is set).
- */
-export function resolveTimelinePointIdFromInput(
-  workspaceId: string,
-  context: ProjectAssistantContextSnapshot | null | undefined,
-  inputTimelinePointId: string | undefined,
-): string {
-  if (inputTimelinePointId === undefined) {
-    return resolveTimelinePointId(context);
+export function resolveCurrentTimelinePointId(runtimeContext: ToolRuntimeContext) {
+  return resolveTimelinePointId(runtimeContext.snapshot);
+}
+
+export function resolveSelectableTimelinePoint(input: {
+  workspaceId: string;
+  timelinePointId: string;
+}) {
+  if (input.timelinePointId === "origin") {
+    return {
+      timelinePointId: ORIGIN_TIMELINE_POINT_ID,
+      timelineLabel: "原点",
+    };
   }
-  if (inputTimelinePointId === "origin") {
-    return ORIGIN_TIMELINE_POINT_ID;
-  }
-  const points = listTimelinePoints(workspaceId);
-  const found = points.find((p) => p.id === inputTimelinePointId);
+  const points = listTimelinePoints(input.workspaceId);
+  const found = points.find((point) => point.id === input.timelinePointId);
   invariant(found, "指定的时间点不存在。");
-  return inputTimelinePointId;
+  return {
+    timelinePointId: found.id,
+    timelineLabel: found.label,
+  };
+}
+
+export function updateRuntimeTimelineSelection(input: {
+  runtimeContext: ToolRuntimeContext;
+  timelinePointId: string;
+  timelineLabel: string | null;
+}) {
+  input.runtimeContext.updateSnapshot((current) => ({
+    workspaceId: current?.workspaceId ?? null,
+    activeContentNodeId: current?.activeContentNodeId ?? null,
+    activeContentTitle: current?.activeContentTitle ?? null,
+    activeAuxNodeId: current?.activeAuxNodeId ?? null,
+    activeAuxPath: current?.activeAuxPath ?? null,
+    activeTimelinePointId: input.timelinePointId,
+    activeTimelineLabel: input.timelineLabel,
+  }));
+}
+
+export function getTimelineLabelById(workspaceId: string, timelinePointId: string): string | null {
+  if (timelinePointId === ORIGIN_TIMELINE_POINT_ID) {
+    return "原点";
+  }
+  const found = listTimelinePoints(workspaceId).find((point) => point.id === timelinePointId);
+  return found?.label ?? null;
 }
 
 export function resolveActiveContentNodeId(

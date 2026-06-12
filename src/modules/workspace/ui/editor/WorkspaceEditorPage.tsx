@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 import { AppShell, AppSidebar } from "@/app/shell/AppShell";
 import type {
   ProjectAssistantContextSnapshot,
+  TimelineSelectionUpdatedEvent,
   WorkspaceRefreshRequestedEvent,
 } from "@/modules/ai/domain/types";
 import { ActionErrorBubble } from "@/modules/workspace/ui/editor/components/ActionErrorBubble";
@@ -87,7 +88,7 @@ export function shouldHandleWorkspaceRefreshRequested({
   event,
   workspaceId,
 }: {
-  event: WorkspaceRefreshRequestedEvent;
+  event: WorkspaceRefreshRequestedEvent | TimelineSelectionUpdatedEvent;
   workspaceId: string | null | undefined;
 }) {
   return workspaceId != null && event.workspaceId === workspaceId;
@@ -245,8 +246,13 @@ function ProjectWorkspace({
     ],
   );
   const handleAssistantWorkspaceRefreshRequested = useCallback(
-    (event: WorkspaceRefreshRequestedEvent) => {
+    (event: WorkspaceRefreshRequestedEvent | TimelineSelectionUpdatedEvent) => {
       if (!shouldHandleWorkspaceRefreshRequested({ event, workspaceId })) {
+        return;
+      }
+
+      if (event.type === "timeline-selection-updated") {
+        workspaceStore.getState().setActiveTimelinePointId(event.timelinePointId);
         return;
       }
 
