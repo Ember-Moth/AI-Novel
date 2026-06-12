@@ -267,7 +267,7 @@ function defaultStreamAssistantText({
     ...(activeTools.length > 0
       ? { tools, activeTools: [...activeTools] as ProjectAssistantToolName[] }
       : {}),
-    stopWhen: stepCountIs(5),
+    stopWhen: stepCountIs(20),
     prepareStep: ({ messages: stepMessages, stepNumber }) => {
       preparedMessagesByStep[stepNumber] = stepMessages;
       return undefined;
