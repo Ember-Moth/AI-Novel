@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "49b355cb-c5c9-4c56-8e2d-be42835ca72b",
+  "id": "75c5bf86-4642-4b84-aa2c-906463deed02",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "agent_artifacts": {
@@ -2506,13 +2506,6 @@
         },
         "anchor_timeline_point_id": {
           "name": "anchor_timeline_point_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

@@ -387,7 +387,6 @@ CREATE TABLE `content_nodes` (
 	`parent_id` text,
 	`next_sibling_id` text,
 	`anchor_timeline_point_id` text,
-	`kind` text,
 	`title` text,
 	`body` text,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
