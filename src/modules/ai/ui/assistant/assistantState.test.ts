@@ -7,6 +7,7 @@ import {
   getAssistantToolTrace,
   getUsageTotalTokens,
   listAssistantContextDetails,
+  canSendAssistantMessage,
 } from "./assistantState";
 
 test("getAssistantToolTrace merges tool call and tool result into one trace entry", () => {
@@ -460,4 +461,17 @@ test("getRunSummaryByDisplayNode returns summaries for the matched node", () => 
       errorMessage: "boom",
     },
   ]);
+});
+
+test("canSendAssistantMessage allows sending before a thread exists", () => {
+  expect(
+    canSendAssistantMessage({
+      draft: "开始新对话",
+      selectedConnectionId: "connection_1",
+      selectedModelId: "model_1",
+      selectionHydrated: true,
+      isBusy: false,
+      hasPendingRun: false,
+    }),
+  ).toBe(true);
 });

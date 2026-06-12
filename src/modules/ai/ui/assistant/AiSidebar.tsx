@@ -258,7 +258,6 @@ export function AiSidebar({
                     controller.isLoadingSelection ||
                     !controller.selectedModelId ||
                     !controller.selectedConnectionId ||
-                    controller.activeThreadId == null ||
                     controller.isThreadBusy
                   }
                   rows={3}
@@ -266,11 +265,9 @@ export function AiSidebar({
                   placeholder={
                     controller.isLoadingSelection
                       ? "加载模型选择中..."
-                      : controller.activeThreadId == null
-                        ? "先新建或切换到一个会话..."
-                        : controller.selectedConnectionId && controller.selectedModelId
-                          ? "输入消息..."
-                          : "选择可用模型后输入..."
+                      : controller.selectedConnectionId && controller.selectedModelId
+                        ? "输入消息..."
+                        : "选择可用模型后输入..."
                   }
                 />
                 <div className="flex min-w-0 items-center gap-2 px-1.5 pb-1.5">

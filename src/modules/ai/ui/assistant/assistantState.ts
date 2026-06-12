@@ -355,7 +355,6 @@ export function selectPendingRun(state: AssistantState | null | undefined): Agen
 
 export function canSendAssistantMessage({
   draft,
-  threadId,
   selectedConnectionId,
   selectedModelId,
   selectionHydrated,
@@ -363,7 +362,6 @@ export function canSendAssistantMessage({
   hasPendingRun,
 }: {
   draft: string;
-  threadId: string | null;
   selectedConnectionId: string;
   selectedModelId: string;
   selectionHydrated: boolean;
@@ -372,7 +370,6 @@ export function canSendAssistantMessage({
 }) {
   return (
     selectionHydrated &&
-    threadId != null &&
     selectedConnectionId.length > 0 &&
     selectedModelId.length > 0 &&
     draft.trim().length > 0 &&

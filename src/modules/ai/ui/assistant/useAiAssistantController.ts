@@ -511,7 +511,6 @@ export function useAiAssistantController(
   const isBusy = isGenerating || isThreadBusy;
   const canSubmit = canSendAssistantMessage({
     draft,
-    threadId: activeThreadId,
     selectedConnectionId,
     selectedModelId,
     selectionHydrated,
@@ -601,7 +600,7 @@ export function useAiAssistantController(
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!canSubmit || !activeThreadId) {
+      if (!canSubmit) {
         return;
       }
 
@@ -613,21 +612,30 @@ export function useAiAssistantController(
         : null;
       setComposerError(null);
       setPendingAction({ kind: "send", text });
-      setActiveStream(
-        createStreamOverlay({
-          kind: "send",
-          threadId: activeThreadId,
-          triggerNodeId: null,
-        }),
-      );
       setDraft("");
       let clearPendingAction = true;
+      let streamStarted = false;
 
       try {
+        let threadId = activeThreadId;
+        if (!threadId) {
+          const thread = await createThread.mutate({ projectId });
+          threadId = thread.id;
+          setExpectedActiveThreadId(thread.id);
+        }
+
+        streamStarted = true;
+        setActiveStream(
+          createStreamOverlay({
+            kind: "send",
+            threadId,
+            triggerNodeId: null,
+          }),
+        );
         const result = await sendMessageStream.startAsync(
           {
             projectId,
-            threadId: activeThreadId,
+            threadId,
             text,
             context,
             activeTools,
@@ -659,7 +667,7 @@ export function useAiAssistantController(
           setActiveStream(null);
           return;
         }
-        clearPendingAction = false;
+        clearPendingAction = !streamStarted;
         const message = error instanceof Error ? error.message : "发送消息失败。";
         setComposerError(message);
         setActiveStream((current) =>
@@ -686,6 +694,7 @@ export function useAiAssistantController(
       assistantOverviewQuery,
       canSubmit,
       context,
+      createThread,
       draft,
       onWorkspaceRefreshRequested,
       projectId,
