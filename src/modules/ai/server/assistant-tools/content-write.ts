@@ -17,7 +17,7 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
   return {
     create_manuscript_node: tool({
       description:
-        "在正文树中创建新的章节节点，并自动锚定到当前故事时间轴的时间点。仅在用户明确要求新增正文/章节时使用；省略 afterSiblingId 时插入为父节点的第一个子节点。",
+        "在正文树中创建新的章节节点，并自动锚定到当前故事时间轴的时间点。仅在用户明确要求新增正文/章节时使用；parentId 决定新节点归属在哪个父节点下，afterSiblingId 只决定同一父节点下的排序位置。",
       inputSchema: jsonSchema<{
         parentId: string;
         afterSiblingId?: string;
@@ -133,7 +133,7 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
     }),
     move_manuscript_node: tool({
       description:
-        "移动或重排正文节点。会改变正文结构和章节顺序；省略 afterSiblingId 时插入为新父节点的第一个子节点。",
+        "移动或重排正文节点。会改变正文结构和章节顺序；newParentId 决定移动后归属在哪个父节点下，afterSiblingId 只决定同一父节点下的排序位置。",
       inputSchema: jsonSchema<{
         nodeId: string;
         newParentId: string;
@@ -148,11 +148,13 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
           },
           newParentId: {
             type: "string",
-            description: "新父正文节点 ID。目标节点会被移动到该节点下。",
+            description:
+              "新父正文节点 ID。目标节点会被移动为该节点的直接子节点；不要填“要移动到其后”的节点 ID。",
           },
           afterSiblingId: {
             type: "string",
-            description: "移动后插入到该兄弟节点之后。省略时插入为新父节点的第一个子节点。",
+            description:
+              "移动后的前一个同级正文节点 ID。该节点必须已经在 newParentId 下；目标节点会插入到它后面。省略时插入为 newParentId 的第一个子节点；不要用父节点 ID 填这里。",
           },
         },
       }),
