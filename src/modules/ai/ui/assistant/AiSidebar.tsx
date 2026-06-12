@@ -446,7 +446,7 @@ function AiSidebarMessagesContent({
   );
 
   return (
-    <div className="flex min-h-full flex-col gap-2 px-3.5 py-2">
+    <div className="flex min-h-full flex-col gap-2 px-3.5 py-2 select-text">
       <AnimatePresence initial={false}>
         {controller.assistantStateIsInitialLoading && controller.showEmptyState ? (
           <motion.div
