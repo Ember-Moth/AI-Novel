@@ -124,8 +124,228 @@ test("createAssistantTools always exposes the full tool set", () => {
 
   expect(Object.keys(tools).sort()).toEqual([...PROJECT_ASSISTANT_TOOL_NAMES].sort());
   expect(tools.get_writing_context).toBeDefined();
+  expect(tools.list_manuscript_nodes).toBeDefined();
+  expect(tools.read_manuscript_node).toBeDefined();
+  expect("get_manuscript_subtree" in tools).toBe(false);
   expect(tools.create_dir).toBeDefined();
   expect(tools.write_file).toBeDefined();
+});
+
+test("list_manuscript_nodes returns structure without bodies by default", async () => {
+  const workspace = seedProject("assistant_tools_list_manuscript_default");
+  const chapter = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    title: "第一章",
+    body: "第一章正文",
+  });
+  const scene = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: chapter.id,
+    title: "第一场",
+    body: "第一场正文",
+  });
+  workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: scene.id,
+    title: "镜头一",
+    body: "镜头正文",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_list_manuscript_default",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  const result = await executeTool(tools.list_manuscript_nodes!, {});
+
+  expect(result).toEqual({
+    ok: true,
+    truncated: true,
+    data: {
+      rootNodeId: workspace.contentRootId,
+      isWorkspaceRoot: true,
+      depth: 2,
+      entries: [
+        {
+          id: chapter.id,
+          anchorTimelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+          title: "第一章",
+          children: [
+            {
+              id: scene.id,
+              anchorTimelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+              title: "第一场",
+              hiddenChildrenCount: 1,
+              children: [],
+            },
+          ],
+        },
+      ],
+    },
+  });
+  expect(JSON.stringify(result)).not.toContain("第一章正文");
+  expect(JSON.stringify(result)).not.toContain("第一场正文");
+});
+
+test("list_manuscript_nodes accepts a root node and deeper depth", async () => {
+  const workspace = seedProject("assistant_tools_list_manuscript_deep");
+  const chapter = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    title: "第一章",
+  });
+  const scene = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: chapter.id,
+    title: "第一场",
+  });
+  const beat = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: scene.id,
+    title: "镜头一",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_list_manuscript_deep",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  const result = await executeTool(tools.list_manuscript_nodes!, {
+    rootNodeId: chapter.id,
+    depth: 3,
+  });
+
+  expect(result).toEqual({
+    ok: true,
+    truncated: false,
+    data: {
+      rootNodeId: chapter.id,
+      isWorkspaceRoot: false,
+      depth: 3,
+      entries: [
+        {
+          id: chapter.id,
+          anchorTimelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+          title: "第一章",
+          children: [
+            {
+              id: scene.id,
+              anchorTimelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+              title: "第一场",
+              children: [
+                {
+                  id: beat.id,
+                  anchorTimelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+                  title: "镜头一",
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  });
+});
+
+test("read_manuscript_node returns one full node with child structure summaries", async () => {
+  const workspace = seedProject("assistant_tools_read_manuscript_node");
+  const chapter = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    title: "第一章",
+    body: "第一章完整正文",
+  });
+  const scene = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: chapter.id,
+    title: "第一场",
+    body: "子节点正文不应返回",
+  });
+  workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: scene.id,
+    title: "镜头一",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_read_manuscript_node",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  const result = await executeTool(tools.read_manuscript_node!, { nodeId: chapter.id });
+
+  expect(result).toEqual({
+    ok: true,
+    truncated: false,
+    data: {
+      node: {
+        id: chapter.id,
+        anchorTimelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+        title: "第一章",
+        body: "第一章完整正文",
+        children: [
+          {
+            id: scene.id,
+            anchorTimelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+            title: "第一场",
+            hiddenChildrenCount: 1,
+            children: [],
+          },
+        ],
+      },
+    },
+  });
+  expect(JSON.stringify(result)).not.toContain("子节点正文不应返回");
+});
+
+test("read_manuscript_node defaults to the active content node", async () => {
+  const workspace = seedProject("assistant_tools_read_active_manuscript_node");
+  const chapter = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    title: "当前章",
+    body: "当前正文",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_read_active_manuscript_node",
+    runtimeContext: createRuntimeContext({
+      workspaceId: workspace.id,
+      activeContentNodeId: chapter.id,
+      activeContentTitle: "当前章",
+      activeAuxNodeId: null,
+      activeAuxPath: null,
+      activeTimelinePointId: null,
+      activeTimelineLabel: null,
+    }),
+  });
+
+  const result = await executeTool(tools.read_manuscript_node!, {});
+
+  expect(result).toMatchObject({
+    ok: true,
+    truncated: false,
+    data: {
+      node: {
+        id: chapter.id,
+        title: "当前章",
+        body: "当前正文",
+      },
+    },
+  });
+});
+
+test("read_manuscript_node fails without a node id or active content node", async () => {
+  seedProject("assistant_tools_read_manuscript_node_missing");
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_read_manuscript_node_missing",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  const result = await executeTool(tools.read_manuscript_node!, {});
+
+  expect(result).toEqual({
+    ok: false,
+    error: "当前没有可读取的正文节点。",
+  });
 });
 
 test("list_files returns a recursive tree by default and does not recurse into symlinks", async () => {

@@ -80,7 +80,8 @@ export type ProjectAssistantStreamToolStatus = AgentToolTraceStatus;
 
 export const PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES = [
   "get_writing_context",
-  "get_manuscript_subtree",
+  "list_manuscript_nodes",
+  "read_manuscript_node",
   "list_story_timeline_points",
   "list_current_timeline_aux_changes",
   "set_current_timeline",

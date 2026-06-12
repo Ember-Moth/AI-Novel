@@ -214,7 +214,8 @@ test("sendProjectAssistantMessage uses read-only tools by default and can opt in
     text: "允许你写辅助资料",
     activeTools: [
       "get_writing_context",
-      "get_manuscript_subtree",
+      "list_manuscript_nodes",
+      "read_manuscript_node",
       "list_story_timeline_points",
       "list_files",
       "read_file",
@@ -228,7 +229,8 @@ test("sendProjectAssistantMessage uses read-only tools by default and can opt in
   expect(capturedActiveTools).toEqual([
     [
       "get_writing_context",
-      "get_manuscript_subtree",
+      "list_manuscript_nodes",
+      "read_manuscript_node",
       "list_story_timeline_points",
       "list_current_timeline_aux_changes",
       "set_current_timeline",
@@ -237,7 +239,8 @@ test("sendProjectAssistantMessage uses read-only tools by default and can opt in
     ],
     [
       "get_writing_context",
-      "get_manuscript_subtree",
+      "list_manuscript_nodes",
+      "read_manuscript_node",
       "list_story_timeline_points",
       "list_files",
       "read_file",

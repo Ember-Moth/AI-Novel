@@ -1,11 +1,8 @@
 import type {
   ExportedContentNode,
-  ExportedContentSubtree,
   ResolvedAuxNode,
   TimelinePointView,
 } from "@/modules/workspace/domain/types";
-
-import type { AssistantToolSuccess } from "./envelope";
 
 export const CONTENT_TITLE_CHAR_LIMIT = 240;
 export const CONTENT_BODY_CHAR_LIMIT = 2_000;
@@ -74,37 +71,6 @@ export function limitContentNode(
     title: title.value,
     body: body.value,
     children,
-  };
-}
-
-export function limitContentSubtree(
-  subtree: ExportedContentSubtree,
-): AssistantToolSuccess<ExportedContentSubtree> {
-  const state = {
-    remaining: CONTENT_SUBTREE_NODE_LIMIT,
-    truncated: false,
-  };
-  const nodes: ExportedContentNode[] = [];
-
-  for (const node of subtree.nodes) {
-    const limitedNode = limitContentNode(node, state);
-    if (!limitedNode) {
-      break;
-    }
-    nodes.push(limitedNode);
-  }
-
-  if (nodes.length < subtree.nodes.length) {
-    state.truncated = true;
-  }
-
-  return {
-    ok: true,
-    truncated: state.truncated,
-    data: {
-      ...subtree,
-      nodes,
-    },
   };
 }
 

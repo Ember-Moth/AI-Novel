@@ -30,6 +30,29 @@ export interface ExportedContentSubtree {
   nodes: ExportedContentNode[];
 }
 
+export interface ManuscriptListNode {
+  id: string;
+  anchorTimelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID;
+  title: string | null;
+  children: ManuscriptListNode[];
+  hiddenChildrenCount?: number;
+}
+
+export interface ManuscriptNodeRead {
+  id: string;
+  anchorTimelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID;
+  title: string | null;
+  body: string | null;
+  children: ManuscriptListNode[];
+}
+
+export interface ManuscriptNodeList {
+  rootNodeId: string;
+  isWorkspaceRoot: boolean;
+  nodes: ManuscriptListNode[];
+  truncated: boolean;
+}
+
 export interface ExportedAuxNode {
   id: string;
   nodeType: AuxNodeType;

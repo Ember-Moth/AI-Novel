@@ -1,7 +1,7 @@
 import type { ProjectAssistantToolName } from "@/modules/ai/domain/types";
 
 export const WRITING_CONTEXT_TOOL_NAMES = ["get_writing_context"] as const;
-export const CONTENT_READ_TOOL_NAMES = ["get_manuscript_subtree"] as const;
+export const CONTENT_READ_TOOL_NAMES = ["list_manuscript_nodes", "read_manuscript_node"] as const;
 export const CONTENT_WRITE_TOOL_NAMES = [
   "create_manuscript_node",
   "update_manuscript_node",

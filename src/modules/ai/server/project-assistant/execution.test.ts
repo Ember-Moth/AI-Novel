@@ -444,7 +444,8 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
     text: "保存人物资料",
     activeTools: [
       "get_writing_context",
-      "get_manuscript_subtree",
+      "list_manuscript_nodes",
+      "read_manuscript_node",
       "list_story_timeline_points",
       "list_files",
       "read_file",
@@ -1027,7 +1028,8 @@ test("sendProjectAssistantMessageStream does not emit workspace-refresh-requeste
     text: "测试刷新事件",
     activeTools: [
       "get_writing_context",
-      "get_manuscript_subtree",
+      "list_manuscript_nodes",
+      "read_manuscript_node",
       "list_story_timeline_points",
       "list_files",
       "read_file",

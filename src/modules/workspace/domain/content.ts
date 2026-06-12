@@ -16,8 +16,14 @@ import {
   orderContentChildren,
 } from "./internal/content-chain";
 import { createId, invariant, now } from "@/shared/lib/domain";
-import { validateTimelinePointRef } from "./internal/timeline-point";
-import type { ExportedContentSubtree, TimelinePointRef } from "./types";
+import { pointIdOrOrigin, validateTimelinePointRef } from "./internal/timeline-point";
+import type {
+  ExportedContentSubtree,
+  ManuscriptListNode,
+  ManuscriptNodeList,
+  ManuscriptNodeRead,
+  TimelinePointRef,
+} from "./types";
 
 export function createContentNode(input: {
   workspaceId: string;
@@ -227,4 +233,90 @@ export function exportContentSubtree(workspaceId: string, rootNodeId?: string) {
     isWorkspaceRoot: false,
     nodes: [exportContentNode(db, workspace.id, targetNode)],
   } satisfies ExportedContentSubtree;
+}
+
+function buildManuscriptListNode(
+  workspaceId: string,
+  node: ReturnType<typeof getContentNodeOrThrow>,
+  remainingDepth: number,
+): { node: ManuscriptListNode; truncated: boolean } {
+  const children = orderContentChildren(listContentChildren(db, workspaceId, node.id));
+  if (remainingDepth <= 1) {
+    return {
+      node: {
+        id: node.id,
+        anchorTimelinePointId: pointIdOrOrigin(node.anchorTimelinePointId),
+        title: node.title,
+        children: [],
+        ...(children.length > 0 ? { hiddenChildrenCount: children.length } : {}),
+      },
+      truncated: children.length > 0,
+    };
+  }
+
+  let truncated = false;
+  const listedChildren = children.map((child) => {
+    const listed = buildManuscriptListNode(workspaceId, child, remainingDepth - 1);
+    if (listed.truncated) {
+      truncated = true;
+    }
+    return listed.node;
+  });
+
+  return {
+    node: {
+      id: node.id,
+      anchorTimelinePointId: pointIdOrOrigin(node.anchorTimelinePointId),
+      title: node.title,
+      children: listedChildren,
+    },
+    truncated,
+  };
+}
+
+export function listManuscriptNodes(
+  workspaceId: string,
+  rootNodeId?: string,
+  options: { depth?: number } = {},
+): ManuscriptNodeList {
+  const workspace = getWorkspaceOrThrow(db, workspaceId);
+  const contentRootId = assertContentRoot(workspace);
+  const targetRootId = rootNodeId ?? contentRootId;
+  const targetNode = getContentNodeOrThrow(db, workspace.id, targetRootId);
+  const depth = Math.max(1, Math.trunc(options.depth ?? 2));
+  const roots =
+    targetRootId === contentRootId
+      ? orderContentChildren(listContentChildren(db, workspace.id, targetRootId))
+      : [targetNode];
+  let truncated = false;
+  const nodes = roots.map((node) => {
+    const listed = buildManuscriptListNode(workspace.id, node, depth);
+    if (listed.truncated) {
+      truncated = true;
+    }
+    return listed.node;
+  });
+
+  return {
+    rootNodeId: targetRootId,
+    isWorkspaceRoot: targetRootId === contentRootId,
+    nodes,
+    truncated,
+  };
+}
+
+export function readManuscriptNode(workspaceId: string, nodeId: string): ManuscriptNodeRead {
+  const workspace = getWorkspaceOrThrow(db, workspaceId);
+  const node = getContentNodeOrThrow(db, workspace.id, nodeId);
+  const children = orderContentChildren(listContentChildren(db, workspace.id, node.id)).map(
+    (child) => buildManuscriptListNode(workspace.id, child, 1).node,
+  );
+
+  return {
+    id: node.id,
+    anchorTimelinePointId: pointIdOrOrigin(node.anchorTimelinePointId),
+    title: node.title,
+    body: node.body,
+    children,
+  };
 }
