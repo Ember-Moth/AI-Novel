@@ -338,7 +338,7 @@ test("sendProjectAssistantMessage appends minimal editor context without changin
       content: [
         {
           type: "text",
-          text: "当前编辑器：正文节点 id=content_123；时间轴节点 id=point_now，label=现在",
+          text: "当前编辑器：正文节点 id=content_123；时间锚点 id=point_now，label=现在",
         },
       ],
     },

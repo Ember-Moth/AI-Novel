@@ -29,7 +29,7 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
   return {
     list_story_timeline_points: tool({
       description:
-        "获取全部时间点。origin 是内置原点，用于放置全局初始设定，不属于故事推进顺序；第一个自定义时间点才是故事时间线的真正起点。列表按时间推进顺序排列。",
+        "列出全部时间锚点。origin 是内置原点，存放故事开始前的全局初始设定。自定义时间锚点代表故事中「世界状态发生重大变化」的关键时刻——一个锚点可以跨越多个章节/场景，无需每章都建。切换到某个锚点后，辅助资料读写将基于该时间断面的资料快照。列表按时序排列。",
       inputSchema: jsonSchema<Record<string, never>>({
         type: "object",
         additionalProperties: false,
@@ -57,7 +57,7 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
     }),
     list_current_timeline_aux_changes: tool({
       description:
-        "枚举某个故事时间点相对前一个时间点的辅助信息变更详情。默认读取当前时间点；会列出新增、修改、删除以及符号链接目标变化，但不会返回文件内容。",
+        "查看某个时间锚点相对前一个锚点的辅助资料变更详情。用于了解「从这个锚点开始世界设定发生了什么变化」。默认读取当前锚点；会列出新增、修改、删除及符号链接目标变化，但不返回文件内容。",
       inputSchema: jsonSchema<{ timelinePointId?: string }>({
         type: "object",
         additionalProperties: false,
@@ -65,7 +65,7 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
           timelinePointId: {
             type: "string",
             description:
-              '要检查的时间点 ID 或名称。省略时使用当前时间点；若当前是 "origin" 则无法比较。',
+              '要检查的锚点 ID 或名称。省略时使用当前锚点；若当前是 "origin" 则无法比较（原点之前没有锚点）。',
           },
         },
       }),
@@ -114,14 +114,14 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
     }),
     set_current_timeline: tool({
       description:
-        '重新设置当前时间点。之后同一轮以及后续继续/重试中的 `list_files` `read_file` `create_dir` `write_file` `move_path` `delete_path` `create_symlink` `retarget_symlink` 都会基于这个当前时间点操作。传入 "origin" 可切回全局初始设定原点。',
+        '切换当前上下文到指定时间锚点。切换后，辅助资料读写（list_files、read_file、write_file 等）都将基于该时间断面的资料快照——只有在该锚点及之前更新过的设定才对模型可见。传入 "origin" 回到初始设定。',
       inputSchema: jsonSchema<{ timelinePointId: string }>({
         type: "object",
         required: ["timelinePointId"],
         properties: {
           timelinePointId: {
             type: "string",
-            description: '要切换到的时间点 ID。传入 "origin" 表示切换到全局初始设定原点。',
+            description: '要切换到的锚点 ID。传入 "origin" 表示切换回全局初始设定原点。',
           },
         },
       }),
@@ -156,7 +156,7 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
     }),
     create_story_timeline_points: tool({
       description:
-        "在故事时间线上按顺序一次创建多个新时间点。用于批量新增剧情节拍；origin 是内置的全局初始设定原点，story 时间线从第一个自定义时间点开始。省略 afterPointId 时整体追加到故事时间线末尾。",
+        "批量创建时间锚点——在故事发展到需要「切换上下文」的关键节点时使用。何时创建新锚点：(1) 大量背景设定发生了不可逆变化；(2) 需要让后续写作基于新的世界状态。无需为每个章节创建锚点，多个章节可共享同一锚点。省略 afterPointId 时追加到末尾。",
       inputSchema: jsonSchema<{
         points: Array<{
           label: string;
@@ -170,7 +170,7 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
           points: {
             type: "array",
             minItems: 1,
-            description: "要按顺序创建的时间点列表。数组顺序就是插入后的故事时间推进顺序。",
+            description: "要按顺序创建的锚点列表。数组顺序即插入后的时序。",
             items: {
               type: "object",
               additionalProperties: false,
@@ -178,11 +178,13 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
               properties: {
                 label: {
                   type: "string",
-                  description: "时间点的显示名称，如「序幕」「第一章」「转折」等。",
+                  description:
+                    "锚点的显示名称，建议用关键事件命名，如「大战前」「战后重建」「新世界」等。",
                 },
                 description: {
                   type: "string",
-                  description: "时间点说明，描述该剧情节拍在故事中的作用。",
+                  description:
+                    "锚点说明，描述该时刻世界状态发生了什么关键变化，以及为什么需要在此切分上下文。",
                 },
               },
             },
@@ -190,7 +192,7 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
           afterPointId: {
             type: "string",
             description:
-              '新时间点列表将整体插入到此时间点之后。省略则在故事时间线末尾追加。传入 "origin" 表示插入到全局初始设定原点之后，即故事时间线的最前端。',
+              '新锚点列表将整体插入到此锚点之后。省略则追加到末尾。传入 "origin" 表示插入到初始设定原点之后（即最前端）。',
           },
         },
       }),
@@ -233,7 +235,7 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
     }),
     update_story_timeline_point: tool({
       description:
-        "更新时间点的标签或说明。用于调整已有剧情节拍的信息；origin 是内置的全局初始设定锚点，不可修改。",
+        "更新时间锚点的标签或说明。用于调整已有锚点的描述——注意这不会影响已锚定在该点上的辅助资料内容。origin 不可修改。",
       inputSchema: jsonSchema<{
         pointId: string;
         label?: string;
@@ -284,7 +286,7 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
     }),
     move_story_timeline_point: tool({
       description:
-        "重排故事时间线上的时间点。会改变故事时间推进顺序和章节锚定语境；省略 afterPointId 时移动到末尾。",
+        "重排时间锚点的顺序。会改变辅助资料的可见性范围——移动锚点位置会影响该断面快照相对「前一个状态」的基准。省略 afterPointId 时移动到末尾。",
       inputSchema: jsonSchema<{
         pointId: string;
         afterPointId?: string;
@@ -294,12 +296,12 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
         properties: {
           pointId: {
             type: "string",
-            description: "要移动的时间点 ID 或名称。",
+            description: "要移动的锚点 ID 或名称。",
           },
           afterPointId: {
             type: "string",
             description:
-              '移动后该时间点将排在此时间点之后。可传时间点 ID 或名称。省略则移动到故事时间线末尾。传入 "origin" 表示移动到全局初始设定原点之后，即故事时间线的最前端。',
+              '移动后该锚点将排在此锚点之后。可传 ID 或名称。省略则移动到末尾。传入 "origin" 表示移动到初始设定原点之后（即最前端）。',
           },
         },
       }),
@@ -341,7 +343,7 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
     }),
     delete_story_timeline_point: tool({
       description:
-        "删除故事时间线上的时间点。若有章节锚定或参考资料关联会被阻止，除非允许清理关联参考资料层；此操作不可逆。",
+        "删除时间锚点。若该锚点上关联了辅助资料层，需设置 purgeAuxLayers=true 确认一并清除——这会删除该断面上所有参考资料变更。此操作不可逆。",
       inputSchema: jsonSchema<{
         pointId: string;
         purgeAuxLayers?: boolean;
@@ -351,12 +353,12 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
         properties: {
           pointId: {
             type: "string",
-            description: "要删除的时间点 ID 或名称。不能删除 origin 原点（全局初始设定锚点）。",
+            description: "要删除的锚点 ID 或名称。不能删除 origin（全局初始设定原点）。",
           },
           purgeAuxLayers: {
             type: "boolean",
             description:
-              "是否一并删除该时间点关联的参考资料层。若不设为 true，存在参考资料关联时删除会失败。",
+              "是否一并删除该锚点关联的辅助资料层。不设为 true 时，若有关联资料则删除失败。",
           },
         },
       }),

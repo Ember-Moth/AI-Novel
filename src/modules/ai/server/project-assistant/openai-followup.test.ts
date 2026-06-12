@@ -457,7 +457,7 @@ test("openai follow-up send uses previous response id and only sends incremental
       content: [
         {
           type: "text",
-          text: "当前编辑器：辅助路径=/设定/角色.md；时间轴节点 id=point_now，label=现在",
+          text: "当前编辑器：辅助路径=/设定/角色.md；时间锚点 id=point_now，label=现在",
         },
       ],
     },
