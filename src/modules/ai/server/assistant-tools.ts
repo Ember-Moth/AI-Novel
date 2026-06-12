@@ -43,7 +43,6 @@ type AssistantToolEnvelope<T> = AssistantToolSuccess<T> | AssistantToolError;
 
 const CONTENT_TITLE_CHAR_LIMIT = 240;
 const CONTENT_BODY_CHAR_LIMIT = 2_000;
-const AUX_FILE_CHAR_LIMIT = 3_000;
 const WRITING_CONTEXT_AUX_LIMIT = 24;
 const CONTENT_SUBTREE_NODE_LIMIT = 40;
 const TIMELINE_POINT_LIMIT = 120;
@@ -147,30 +146,15 @@ function limitContentSubtree(
 }
 
 function sanitizeAuxNode(node: ResolvedAuxNode) {
-  const content = trimText(node.content, AUX_FILE_CHAR_LIMIT);
-
   return {
-    node: {
-      ...node,
-      content: content.value,
-    },
-    truncated: content.truncated,
+    node,
+    truncated: false,
   };
 }
 
 function limitAuxNodes(nodes: ResolvedAuxNode[], maxEntries: number) {
-  let truncated = false;
-  const limited = nodes.slice(0, maxEntries).map((node) => {
-    const sanitized = sanitizeAuxNode(node);
-    if (sanitized.truncated) {
-      truncated = true;
-    }
-    return sanitized.node;
-  });
-
-  if (limited.length < nodes.length) {
-    truncated = true;
-  }
+  const limited = nodes.slice(0, maxEntries).map((node) => sanitizeAuxNode(node).node);
+  const truncated = limited.length < nodes.length;
 
   return {
     nodes: limited,
@@ -412,7 +396,7 @@ function buildAssistantToolRegistry({
       },
     }),
     read_aux_path: tool({
-      description: "读取当前时间点下某个辅助资料路径对应的节点。读取文件时会返回截断后的文件内容。",
+      description: "读取当前时间点下某个辅助资料路径对应的节点。",
       inputSchema: jsonSchema<{ path?: string }>({
         type: "object",
         properties: {
