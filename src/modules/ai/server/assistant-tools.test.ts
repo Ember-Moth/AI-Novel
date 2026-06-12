@@ -347,6 +347,50 @@ test("read_manuscript_node fails without a node id or active content node", asyn
   });
 });
 
+test("create_manuscript_node anchors new content to the current timeline point", async () => {
+  const workspace = seedProject("assistant_tools_create_manuscript_anchor");
+  const timelinePoint = workspaceDomain.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    label: "第二幕",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_create_manuscript_anchor",
+    runtimeContext: createRuntimeContext({
+      workspaceId: workspace.id,
+      activeContentNodeId: null,
+      activeContentTitle: null,
+      activeAuxNodeId: null,
+      activeAuxPath: null,
+      activeTimelinePointId: timelinePoint.id,
+      activeTimelineLabel: timelinePoint.label,
+    }),
+  });
+
+  const result = await executeTool(tools.create_manuscript_node!, {
+    parentId: workspace.contentRootId!,
+    title: "新场景",
+    body: "正文",
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    truncated: false,
+    data: {
+      action: "created",
+      parentId: workspace.contentRootId,
+      timelinePointId: timelinePoint.id,
+    },
+  });
+  const nodeId = (result as { data: { nodeId: string } }).data.nodeId;
+  expect(workspaceDomain.readManuscriptNode(workspace.id, nodeId)).toMatchObject({
+    id: nodeId,
+    anchorTimelinePointId: timelinePoint.id,
+    title: "新场景",
+    body: "正文",
+  });
+});
+
 test("list_files returns a recursive tree by default and does not recurse into symlinks", async () => {
   const workspace = seedProject("assistant_tools_list_tree_default");
   const settingsDir = workspaceDomain.mkdirAt({

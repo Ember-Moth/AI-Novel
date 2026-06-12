@@ -9,14 +9,15 @@ import {
 
 import type { ToolBuildContext } from "./context";
 import { failure, withEnvelope } from "./envelope";
+import { resolveCurrentTimelinePointId } from "./timeline-helpers";
 import type { ContentWriteToolName } from "./tool-names";
 import { getWorkspaceForProject } from "./workspace";
 
-export function buildContentWriteTools({ projectId }: ToolBuildContext) {
+export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildContext) {
   return {
     create_manuscript_node: tool({
       description:
-        "在正文树中创建新的章节节点。仅在用户明确要求新增正文/章节时使用；省略 afterSiblingId 时插入为父节点的第一个子节点。",
+        "在正文树中创建新的章节节点，并自动锚定到当前故事时间轴的时间点。仅在用户明确要求新增正文/章节时使用；省略 afterSiblingId 时插入为父节点的第一个子节点。",
       inputSchema: jsonSchema<{
         parentId: string;
         afterSiblingId?: string;
@@ -51,10 +52,12 @@ export function buildContentWriteTools({ projectId }: ToolBuildContext) {
         }
 
         return withEnvelope(() => {
+          const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
           const node = createContentNode({
             workspaceId: workspace.id,
             parentId,
             afterSiblingId: afterSiblingId ?? undefined,
+            anchorPointId: resolvedTimelinePointId,
             title: title ?? undefined,
             body: body ?? undefined,
           });
@@ -66,6 +69,7 @@ export function buildContentWriteTools({ projectId }: ToolBuildContext) {
               action: "created" as const,
               nodeId: node.id,
               parentId: node.parentId,
+              timelinePointId: resolvedTimelinePointId,
             },
           };
         });
