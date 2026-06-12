@@ -34,6 +34,7 @@ export const CONTENT_WRITE_TOOL_NAMES = [
 ] as const;
 export const TIMELINE_TOOL_NAMES = [
   "list_story_timeline_points",
+  "list_current_timeline_aux_changes",
   "set_current_timeline",
   "create_story_timeline_points",
   "update_story_timeline_point",
@@ -108,6 +109,7 @@ export const CONTENT_BODY_CHAR_LIMIT = 2_000;
 export const WRITING_CONTEXT_AUX_LIMIT = 24;
 export const CONTENT_SUBTREE_NODE_LIMIT = 40;
 export const TIMELINE_POINT_LIMIT = 120;
+export const TIMELINE_AUX_CHANGE_LIMIT = 200;
 export const AUX_DIR_ENTRY_LIMIT = 80;
 
 // --- Helpers ---
@@ -230,6 +232,13 @@ export function limitTimelinePoints(points: TimelinePointView[]) {
   return {
     points: points.slice(0, TIMELINE_POINT_LIMIT),
     truncated: points.length > TIMELINE_POINT_LIMIT,
+  };
+}
+
+export function limitItems<T>(items: T[], maxItems: number) {
+  return {
+    items: items.slice(0, maxItems),
+    truncated: items.length > maxItems,
   };
 }
 

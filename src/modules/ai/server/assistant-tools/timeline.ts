@@ -4,7 +4,9 @@ import {
   createTimelinePoints,
   deleteTimelinePoint,
   listTimelinePoints,
+  listAuxTimelineChangesAt,
   moveTimelinePoint,
+  summarizeAuxTimelineChangesAt,
   updateTimelinePoint,
 } from "@/modules/workspace/domain";
 
@@ -12,8 +14,12 @@ import type { ToolBuildContext, TimelineToolName } from "./_shared";
 import {
   failure,
   getWorkspaceForProject,
+  getTimelineLabelById,
+  limitItems,
+  TIMELINE_AUX_CHANGE_LIMIT,
   jsonSchema,
   limitTimelinePoints,
+  resolveCurrentTimelinePointId,
   resolveSelectableTimelinePoint,
   resolveTimelinePointIdOrLabel,
   updateRuntimeTimelineSelection,
@@ -43,7 +49,67 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
             ok: true,
             truncated: limited.truncated,
             data: {
-              points: limited.points,
+              points: limited.points.map((point) => ({
+                ...point,
+                auxChangeSummary: summarizeAuxTimelineChangesAt(workspace.id, point.id),
+              })),
+            },
+          };
+        });
+      },
+    }),
+    list_current_timeline_aux_changes: tool({
+      description:
+        "枚举某个故事时间点相对前一个时间点的辅助信息变更详情。默认读取当前时间点；会列出新增、修改、删除以及符号链接目标变化，但不会返回文件内容。",
+      inputSchema: jsonSchema<{ timelinePointId?: string }>({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          timelinePointId: {
+            type: "string",
+            description:
+              '要检查的时间点 ID 或名称。省略时使用当前时间点；若当前是 "origin" 则无法比较。',
+          },
+        },
+      }),
+      execute: async ({ timelinePointId }) => {
+        const workspace = getWorkspaceForProject(projectId);
+        if (!workspace) {
+          return failure(new Error("当前项目没有默认工作区。"));
+        }
+
+        return withEnvelope(() => {
+          const resolvedPointId =
+            timelinePointId === undefined
+              ? resolveCurrentTimelinePointId(runtimeContext)
+              : resolveTimelinePointIdOrLabel({
+                  workspaceId: workspace.id,
+                  timelinePointIdOrLabel: timelinePointId,
+                });
+          invariant(
+            resolvedPointId !== ORIGIN_TIMELINE_POINT_ID,
+            "原点没有前一个时间线，无法枚举辅助信息变更。",
+          );
+
+          const point = listTimelinePoints(workspace.id).find(
+            (item) => item.id === resolvedPointId,
+          );
+          invariant(point, "指定的时间点不存在。");
+          invariant(point.prevPointId, "原点没有前一个时间线，无法枚举辅助信息变更。");
+
+          const changes = listAuxTimelineChangesAt(workspace.id, resolvedPointId);
+          const limited = limitItems(changes, TIMELINE_AUX_CHANGE_LIMIT);
+
+          return {
+            ok: true,
+            truncated: limited.truncated,
+            data: {
+              timelinePointId: resolvedPointId,
+              timelineLabel: getTimelineLabelById(workspace.id, resolvedPointId),
+              previousTimelinePointId: point.prevPointId,
+              previousTimelineLabel: getTimelineLabelById(workspace.id, point.prevPointId),
+              summary: summarizeAuxTimelineChangesAt(workspace.id, resolvedPointId),
+              changes: limited.items,
             },
           };
         });

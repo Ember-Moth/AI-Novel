@@ -27,7 +27,152 @@ import {
 } from "./internal/aux-snapshot";
 import { createId, invariant, now } from "@/shared/lib/domain";
 import { pointIdOrOrigin, validateTimelinePointRef } from "./internal/timeline-point";
-import type { AuxDirListTreeNode, ExportedAuxSnapshotTree, TimelinePointRef } from "./types";
+import type {
+  AuxDirListTreeNode,
+  AuxTimelineChangeSummary,
+  AuxTimelineChangeView,
+  AuxTimelineModifiedAspect,
+  ExportedAuxSnapshotTree,
+  ResolvedAuxSnapshotNode,
+  TimelinePointRef,
+} from "./types";
+
+function emptyAuxTimelineChangeSummary(): AuxTimelineChangeSummary {
+  return {
+    hasChanges: false,
+    added: 0,
+    modified: 0,
+    deleted: 0,
+    total: 0,
+  };
+}
+
+function summarizeAuxTimelineChanges(changes: AuxTimelineChangeView[]): AuxTimelineChangeSummary {
+  const summary = emptyAuxTimelineChangeSummary();
+
+  for (const change of changes) {
+    summary[change.kind] += 1;
+    summary.total += 1;
+  }
+
+  summary.hasChanges = summary.total > 0;
+  return summary;
+}
+
+function resolveSymlinkTargetPath(
+  snapshot: Map<string, ResolvedAuxSnapshotNode>,
+  node: ResolvedAuxSnapshotNode,
+) {
+  return node.symlinkTargetAuxNodeId
+    ? (snapshot.get(node.symlinkTargetAuxNodeId)?.path ?? null)
+    : null;
+}
+
+function compareAuxTimelineNode(
+  previousNode: ResolvedAuxSnapshotNode,
+  currentNode: ResolvedAuxSnapshotNode,
+  previousSnapshot: Map<string, ResolvedAuxSnapshotNode>,
+  currentSnapshot: Map<string, ResolvedAuxSnapshotNode>,
+): AuxTimelineChangeView | null {
+  const changedAspects: AuxTimelineModifiedAspect[] = [];
+
+  if (previousNode.nodeType !== currentNode.nodeType) {
+    changedAspects.push("node_type");
+  }
+  if (previousNode.path !== currentNode.path) {
+    changedAspects.push("path");
+  }
+  if (previousNode.content !== currentNode.content) {
+    changedAspects.push("content");
+  }
+  if (previousNode.symlinkTargetAuxNodeId !== currentNode.symlinkTargetAuxNodeId) {
+    changedAspects.push("symlink_target");
+  }
+
+  if (changedAspects.length === 0) {
+    return null;
+  }
+
+  return {
+    kind: "modified",
+    nodeId: currentNode.id,
+    nodeType: currentNode.nodeType,
+    path: currentNode.path,
+    previousPath: previousNode.path === currentNode.path ? null : previousNode.path,
+    symlinkTargetPath: resolveSymlinkTargetPath(currentSnapshot, currentNode),
+    previousSymlinkTargetPath: resolveSymlinkTargetPath(previousSnapshot, previousNode),
+    changedAspects,
+  };
+}
+
+function listAuxTimelineChangesFromSnapshots(input: {
+  auxRootId: string;
+  previousSnapshot: Map<string, ResolvedAuxSnapshotNode>;
+  currentSnapshot: Map<string, ResolvedAuxSnapshotNode>;
+}) {
+  const changes: AuxTimelineChangeView[] = [];
+  const allNodeIds = new Set([...input.previousSnapshot.keys(), ...input.currentSnapshot.keys()]);
+
+  allNodeIds.delete(input.auxRootId);
+
+  for (const nodeId of allNodeIds) {
+    const previousNode = input.previousSnapshot.get(nodeId);
+    const currentNode = input.currentSnapshot.get(nodeId);
+
+    if (previousNode && !currentNode) {
+      changes.push({
+        kind: "deleted",
+        nodeId: previousNode.id,
+        nodeType: previousNode.nodeType,
+        path: previousNode.path,
+        previousPath: null,
+        symlinkTargetPath: null,
+        previousSymlinkTargetPath: resolveSymlinkTargetPath(input.previousSnapshot, previousNode),
+        changedAspects: [],
+      });
+      continue;
+    }
+
+    if (!previousNode && currentNode) {
+      changes.push({
+        kind: "added",
+        nodeId: currentNode.id,
+        nodeType: currentNode.nodeType,
+        path: currentNode.path,
+        previousPath: null,
+        symlinkTargetPath: resolveSymlinkTargetPath(input.currentSnapshot, currentNode),
+        previousSymlinkTargetPath: null,
+        changedAspects: [],
+      });
+      continue;
+    }
+
+    if (!previousNode || !currentNode) {
+      continue;
+    }
+
+    const modified = compareAuxTimelineNode(
+      previousNode,
+      currentNode,
+      input.previousSnapshot,
+      input.currentSnapshot,
+    );
+    if (modified) {
+      changes.push(modified);
+    }
+  }
+
+  const kindRank: Record<AuxTimelineChangeView["kind"], number> = {
+    added: 0,
+    modified: 1,
+    deleted: 2,
+  };
+
+  return changes.sort(
+    (left, right) =>
+      left.path.localeCompare(right.path) || kindRank[left.kind] - kindRank[right.kind],
+  );
+}
 
 export function mkdirAt(input: {
   workspaceId: string;
@@ -500,6 +645,35 @@ export function listAuxChangesAt(workspaceId: string, pointId: TimelinePointRef)
   const timelinePointId = validateTimelinePointRef(db, workspace.id, pointId);
   invariant(timelinePointId, "原点没有辅助信息改动列表。");
   return listAuxLayerChangesAtTimelinePoint(db, workspace, timelinePointId);
+}
+
+export function listAuxTimelineChangesAt(workspaceId: string, pointId: TimelinePointRef) {
+  const workspace = getWorkspaceOrThrow(db, workspaceId);
+  const auxRootId = assertAuxRoot(workspace);
+  const timelinePointId = validateTimelinePointRef(db, workspace.id, pointId);
+  invariant(timelinePointId, "原点没有相对前一个时间线的辅助信息变更。");
+  const point = getTimelinePointOrThrow(db, workspace.id, timelinePointId);
+  const currentSnapshot = buildReachableAuxSnapshot(db, workspace, timelinePointId);
+  const previousSnapshot = buildReachableAuxSnapshot(db, workspace, point.prevPointId);
+
+  return listAuxTimelineChangesFromSnapshots({
+    auxRootId,
+    previousSnapshot,
+    currentSnapshot,
+  });
+}
+
+export function summarizeAuxTimelineChangesAt(
+  workspaceId: string,
+  pointId: TimelinePointRef,
+): AuxTimelineChangeSummary {
+  const workspace = getWorkspaceOrThrow(db, workspaceId);
+  const timelinePointId = validateTimelinePointRef(db, workspace.id, pointId);
+  if (!timelinePointId) {
+    return emptyAuxTimelineChangeSummary();
+  }
+
+  return summarizeAuxTimelineChanges(listAuxTimelineChangesAt(workspace.id, timelinePointId));
 }
 
 export function exportAuxSnapshotTree(workspaceId: string, pointId?: TimelinePointRef) {

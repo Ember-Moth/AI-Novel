@@ -39,6 +39,74 @@ function seedProject(projectId: string) {
   return workspaceDomain.createDefaultWorkspace(projectId);
 }
 
+function seedTimelineAuxDiffScenario(projectId: string) {
+  const workspace = seedProject(projectId);
+  const auxRootId = workspace.auxRootId!;
+  const stateDir = workspaceDomain.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: auxRootId,
+    name: "state",
+  });
+  const locationFile = workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: stateDir.id,
+    name: "location.md",
+    content: "home",
+  });
+  const backupFile = workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: stateDir.id,
+    name: "backup.md",
+    content: "backup",
+  });
+  const currentLocation = workspaceDomain.linkAt({
+    workspaceId: workspace.id,
+    timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: auxRootId,
+    name: "current_location",
+    targetNodeId: locationFile.id,
+  });
+  const pointA = workspaceDomain.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    label: "离家后",
+  });
+  const deltaFile = workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: pointA.id,
+    parentDirId: auxRootId,
+    name: "delta-only.md",
+    content: "delta",
+  });
+  workspaceDomain.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: pointA.id,
+    nodeId: locationFile.id,
+    content: "park",
+  });
+  const pointB = workspaceDomain.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: pointA.id,
+    label: "折返前",
+  });
+  workspaceDomain.deleteAuxNodeAt({
+    workspaceId: workspace.id,
+    timelinePointId: pointB.id,
+    nodeId: deltaFile.id,
+  });
+  workspaceDomain.retargetAuxSymlinkAt({
+    workspaceId: workspace.id,
+    timelinePointId: pointB.id,
+    symlinkNodeId: currentLocation.id,
+    targetNodeId: backupFile.id,
+  });
+
+  return { workspace, pointA, pointB };
+}
+
 async function executeTool<TArgs, TResult>(toolDefinition: unknown, args: TArgs) {
   const execute = (toolDefinition as { execute?: (_args: TArgs, ..._rest: unknown[]) => TResult })
     .execute;
@@ -1050,6 +1118,129 @@ test("set_current_timeline accepts origin", async () => {
   expect(runtimeContext.snapshot?.activeTimelinePointId).toBe(
     workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
   );
+});
+
+test("list_story_timeline_points includes aux change summary counts", async () => {
+  const { workspace, pointA, pointB } = seedTimelineAuxDiffScenario(
+    "assistant_tools_timeline_aux_summary",
+  );
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_timeline_aux_summary",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  const result = await executeTool(tools.list_story_timeline_points!, {});
+
+  expect(result).toEqual({
+    ok: true,
+    truncated: false,
+    data: {
+      points: [
+        {
+          id: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+          label: "Origin",
+          description: "Implicit initial story state",
+          prevPointId: null,
+          isImplicitOrigin: true,
+          auxChangeSummary: {
+            hasChanges: false,
+            added: 0,
+            modified: 0,
+            deleted: 0,
+            total: 0,
+          },
+        },
+        {
+          id: pointA.id,
+          label: pointA.label,
+          description: null,
+          prevPointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+          isImplicitOrigin: false,
+          auxChangeSummary: {
+            hasChanges: true,
+            added: 1,
+            modified: 1,
+            deleted: 0,
+            total: 2,
+          },
+        },
+        {
+          id: pointB.id,
+          label: pointB.label,
+          description: null,
+          prevPointId: pointA.id,
+          isImplicitOrigin: false,
+          auxChangeSummary: {
+            hasChanges: true,
+            added: 0,
+            modified: 1,
+            deleted: 1,
+            total: 2,
+          },
+        },
+      ],
+    },
+  });
+  expect(workspace.id).toBeTruthy();
+});
+
+test("list_current_timeline_aux_changes enumerates current timeline changes without file content", async () => {
+  const { pointA, pointB } = seedTimelineAuxDiffScenario("assistant_tools_timeline_aux_changes");
+  const runtimeContext = createRuntimeContext({
+    workspaceId: null,
+    activeContentNodeId: null,
+    activeContentTitle: null,
+    activeAuxNodeId: null,
+    activeAuxPath: null,
+    activeTimelinePointId: pointB.id,
+    activeTimelineLabel: pointB.label,
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_timeline_aux_changes",
+    runtimeContext,
+  });
+
+  const result = await executeTool(tools.list_current_timeline_aux_changes!, {});
+
+  expect(result).toEqual({
+    ok: true,
+    truncated: false,
+    data: {
+      timelinePointId: pointB.id,
+      timelineLabel: pointB.label,
+      previousTimelinePointId: pointA.id,
+      previousTimelineLabel: pointA.label,
+      summary: {
+        hasChanges: true,
+        added: 0,
+        modified: 1,
+        deleted: 1,
+        total: 2,
+      },
+      changes: [
+        {
+          kind: "modified",
+          nodeId: expect.any(String),
+          nodeType: "symlink",
+          path: "/current_location",
+          previousPath: null,
+          symlinkTargetPath: "/state/backup.md",
+          previousSymlinkTargetPath: "/state/location.md",
+          changedAspects: ["symlink_target"],
+        },
+        {
+          kind: "deleted",
+          nodeId: expect.any(String),
+          nodeType: "file",
+          path: "/delta-only.md",
+          previousPath: null,
+          symlinkTargetPath: null,
+          previousSymlinkTargetPath: null,
+          changedAspects: [],
+        },
+      ],
+    },
+  });
 });
 
 test("create_story_timeline_points accepts afterPointId as timeline label", async () => {

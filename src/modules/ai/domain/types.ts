@@ -82,6 +82,7 @@ export const PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES = [
   "get_writing_context",
   "get_manuscript_subtree",
   "list_story_timeline_points",
+  "list_current_timeline_aux_changes",
   "set_current_timeline",
   "list_files",
   "read_file",

@@ -56,6 +56,28 @@ export interface AuxLayerChangeView {
   isDeleted: boolean;
 }
 
+export type AuxTimelineChangeKind = "added" | "modified" | "deleted";
+export type AuxTimelineModifiedAspect = "content" | "path" | "symlink_target" | "node_type";
+
+export interface AuxTimelineChangeSummary {
+  hasChanges: boolean;
+  added: number;
+  modified: number;
+  deleted: number;
+  total: number;
+}
+
+export interface AuxTimelineChangeView {
+  kind: AuxTimelineChangeKind;
+  nodeId: string;
+  nodeType: AuxNodeType;
+  path: string;
+  previousPath: string | null;
+  symlinkTargetPath: string | null;
+  previousSymlinkTargetPath: string | null;
+  changedAspects: AuxTimelineModifiedAspect[];
+}
+
 export interface ResolvedAuxNode {
   id: string;
   nodeType: AuxNodeType;

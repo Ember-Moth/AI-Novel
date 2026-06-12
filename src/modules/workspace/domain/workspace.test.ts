@@ -934,6 +934,103 @@ test("listAuxChangesAt only returns layer changes at the requested timeline poin
   ]);
 });
 
+test("listAuxTimelineChangesAt compares a timeline point against its predecessor", () => {
+  const workspace = seedProject("project_aux_timeline_diff");
+  const auxRootId = workspace.auxRootId!;
+
+  const stateDir = service.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: auxRootId,
+    name: "state",
+  });
+  const locationFile = service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: stateDir.id,
+    name: "location.md",
+    content: "home",
+  });
+  const backupFile = service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: stateDir.id,
+    name: "backup.md",
+    content: "backup",
+  });
+  const currentLocation = service.linkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: auxRootId,
+    name: "current_location",
+    targetNodeId: locationFile.id,
+  });
+  const pointA = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    label: "离家后",
+  });
+  const deltaFile = service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: pointA.id,
+    parentDirId: auxRootId,
+    name: "delta-only.md",
+    content: "delta",
+  });
+  service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: pointA.id,
+    nodeId: locationFile.id,
+    content: "park",
+  });
+  const pointB = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: pointA.id,
+    label: "折返前",
+  });
+  service.deleteAuxNodeAt({
+    workspaceId: workspace.id,
+    timelinePointId: pointB.id,
+    nodeId: deltaFile.id,
+  });
+  service.retargetAuxSymlinkAt({
+    workspaceId: workspace.id,
+    timelinePointId: pointB.id,
+    symlinkNodeId: currentLocation.id,
+    targetNodeId: backupFile.id,
+  });
+
+  expect(service.summarizeAuxTimelineChangesAt(workspace.id, pointA.id)).toEqual({
+    hasChanges: true,
+    added: 1,
+    modified: 1,
+    deleted: 0,
+    total: 2,
+  });
+  expect(service.listAuxTimelineChangesAt(workspace.id, pointB.id)).toEqual([
+    {
+      kind: "modified",
+      nodeId: currentLocation.id,
+      nodeType: "symlink",
+      path: "/current_location",
+      previousPath: null,
+      symlinkTargetPath: "/state/backup.md",
+      previousSymlinkTargetPath: "/state/location.md",
+      changedAspects: ["symlink_target"],
+    },
+    {
+      kind: "deleted",
+      nodeId: deltaFile.id,
+      nodeType: "file",
+      path: "/delta-only.md",
+      previousPath: null,
+      symlinkTargetPath: null,
+      previousSymlinkTargetPath: null,
+      changedAspects: [],
+    },
+  ]);
+});
+
 test("timeline point deletion is blocked when auxiliary layers exist without purge", () => {
   const workspace = seedProject("project_aux_guard");
   const auxRootId = workspace.auxRootId!;
