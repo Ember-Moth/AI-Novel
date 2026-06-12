@@ -318,7 +318,7 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
       },
     }),
     create_reference_overlay_link: tool({
-      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在目标叠加视图创建参考资料链接；链接本身写入到目标时间点，目标路径必须在该叠加视图中可见，可以是从更早时间点继承来的节点。`,
+      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在目标叠加视图创建参考资料符号链接。符号链接的核心用途是跨时间点的「指针」：同一链接路径（如 /当前主要场景）在不同时间点可以指向不同目标（第3章指向 /场景/城堡，第5章重定向到 /场景/森林），实现随故事推进而变化的上下文引用。链接本身写入到目标时间点，目标路径必须在该叠加视图中可见，可以是从更早时间点继承来的节点。`,
       inputSchema: jsonSchema<{
         path: string;
         targetPath: string;
@@ -329,12 +329,12 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         properties: {
           path: {
             type: "string",
-            description: "要创建的链接绝对路径，例如 /索引/角色.md。",
+            description: "要创建的链接绝对路径，例如 /当前主要场景（在不同时间点可指向不同目标）。",
           },
           targetPath: {
             type: "string",
             description:
-              "链接目标绝对路径，例如 /设定/角色/主角.md；目标必须已存在且在目标叠加视图中可见。",
+              "链接目标绝对路径，例如 /场景/城堡；目标必须已存在且在目标叠加视图中可见。",
           },
           overlayTimelinePointId: {
             type: "string",
@@ -398,7 +398,7 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
       },
     }),
     retarget_reference_overlay_link: tool({
-      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在目标叠加视图修改参考资料链接的目标路径；链接自身路径不变，只在目标时间点产生新的指向覆盖，早期时间点的链接指向不变。新目标必须在该叠加视图中可见。`,
+      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在目标叠加视图修改参考资料符号链接的目标路径。这是实现「随时间变化的指针」的关键操作：链接自身路径不变（如 /当前主要场景），只在目标时间点改变指向（如从 /场景/城堡 改为 /场景/森林），早期时间点读取时仍看到旧指向。新目标必须在该叠加视图中可见。`,
       inputSchema: jsonSchema<{
         path: string;
         newTargetPath: string;
@@ -409,12 +409,12 @@ export function buildAuxWriteTools({ projectId, context }: ToolBuildContext) {
         properties: {
           path: {
             type: "string",
-            description: "要重定向的链接绝对路径，例如 /索引/角色.md。",
+            description: "要重定向的链接绝对路径，例如 /当前主要场景（同一路径指向新目标）。",
           },
           newTargetPath: {
             type: "string",
             description:
-              "新的目标绝对路径，例如 /设定/角色/主角.md；目标必须已存在且在目标叠加视图中可见。",
+              "新的目标绝对路径，例如 /场景/森林；目标必须已存在且在目标叠加视图中可见。",
           },
           overlayTimelinePointId: {
             type: "string",
