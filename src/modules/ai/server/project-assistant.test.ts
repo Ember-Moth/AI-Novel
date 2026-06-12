@@ -559,7 +559,7 @@ test("sendProjectAssistantMessage only materializes per-step response deltas int
   expect(trace.events.filter((event) => event.eventKind === "node-materialized")).toHaveLength(5);
 });
 
-test("sendProjectAssistantMessage uses read-only tools by default and can opt into aux write tools", async () => {
+test("sendProjectAssistantMessage uses read-only tools by default and can opt into write tools", async () => {
   seedProject("assistant_active_tools");
   const seeded = seedCustomConnection({
     connectionId: "conn_active_tools",
@@ -687,7 +687,7 @@ test("sendProjectAssistantMessage rejects explicit tools when the model does not
   expect(streamCalls).toBe(0);
 });
 
-test("sendProjectAssistantMessage records tool input and output artifacts for explicit aux write tools", async () => {
+test("sendProjectAssistantMessage records tool input and output artifacts for explicit write tools", async () => {
   seedProject("assistant_write_tool_trace");
   const seeded = seedCustomConnection({
     connectionId: "conn_write_tool_trace",
@@ -864,7 +864,7 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
   expect(trace.events.some((event) => event.eventKind === "tool-call-finished")).toBe(true);
 });
 
-test("sendProjectAssistantMessageStream emits workspace-mutated after a successful aux write tool", async () => {
+test("sendProjectAssistantMessageStream emits workspace-mutated after a successful write tool", async () => {
   seedProject("assistant_workspace_mutation_stream");
   const workspace = createDefaultWorkspace("assistant_workspace_mutation_stream");
   const seeded = seedCustomConnection({

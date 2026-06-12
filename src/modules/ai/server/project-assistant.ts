@@ -50,11 +50,11 @@ import type {
 } from "@/modules/ai/domain/types";
 import {
   PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES,
-  PROJECT_ASSISTANT_AUX_WRITE_TOOL_NAMES,
+  PROJECT_ASSISTANT_WRITE_TOOL_NAMES,
   PROJECT_ASSISTANT_TOOL_NAMES,
 } from "@/modules/ai/domain/types";
 import type {
-  ProjectAssistantAuxWriteToolName,
+  ProjectAssistantWriteToolName,
   WorkspaceMutationAction,
   WorkspaceMutationEvent,
 } from "@/modules/ai/domain/types";
@@ -738,10 +738,10 @@ function unwrapToolResultOutput(output: unknown) {
   return output as Record<string, unknown>;
 }
 
-function isAuxWriteToolName(value: unknown): value is ProjectAssistantAuxWriteToolName {
+function isWriteToolName(value: unknown): value is ProjectAssistantWriteToolName {
   return (
     typeof value === "string" &&
-    (PROJECT_ASSISTANT_AUX_WRITE_TOOL_NAMES as readonly string[]).includes(value)
+    (PROJECT_ASSISTANT_WRITE_TOOL_NAMES as readonly string[]).includes(value)
   );
 }
 
@@ -755,7 +755,7 @@ function extractWorkspaceMutationEventFromToolResult({
   toolResult: Record<string, unknown>;
 }): WorkspaceMutationEvent | null {
   const toolName = Reflect.get(toolResult, "toolName");
-  if (!isAuxWriteToolName(toolName)) {
+  if (!isWriteToolName(toolName)) {
     return null;
   }
 

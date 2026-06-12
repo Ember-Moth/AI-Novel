@@ -45,7 +45,7 @@ import type {
   ProjectAssistantContextSnapshot,
   ProjectAssistantToolName,
 } from "@/modules/ai/domain/types";
-import { PROJECT_ASSISTANT_AUX_WRITE_TOOL_NAMES } from "@/modules/ai/domain/types";
+import { PROJECT_ASSISTANT_WRITE_TOOL_NAMES } from "@/modules/ai/domain/types";
 import { assertRpcFound } from "@/rpc/errors";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
 import { getDefaultWorkspace } from "@/modules/workspace/domain";
@@ -178,7 +178,7 @@ function unwrapToolOutputValue(output: unknown) {
   return output as Record<string, unknown>;
 }
 
-function isSuccessfulAuxWriteToolOutput(content: unknown) {
+function isSuccessfulWriteToolOutput(content: unknown) {
   if (!content || typeof content !== "object") {
     return false;
   }
@@ -186,7 +186,7 @@ function isSuccessfulAuxWriteToolOutput(content: unknown) {
   const toolName = Reflect.get(content as Record<string, unknown>, "toolName");
   if (
     typeof toolName !== "string" ||
-    !(PROJECT_ASSISTANT_AUX_WRITE_TOOL_NAMES as readonly string[]).includes(toolName)
+    !(PROJECT_ASSISTANT_WRITE_TOOL_NAMES as readonly string[]).includes(toolName)
   ) {
     return false;
   }
@@ -197,11 +197,11 @@ function isSuccessfulAuxWriteToolOutput(content: unknown) {
 
 function invalidateAuxWorkspaceForRun(ctx: RpcMutationCtx, projectId: string, runId: string) {
   const trace = getProjectAssistantService().getRunTrace(runId);
-  const hasSuccessfulAuxWrite = trace.artifacts.some(
+  const hasSuccessfulWrite = trace.artifacts.some(
     (artifact) =>
-      artifact.artifactKind === "tool-output" && isSuccessfulAuxWriteToolOutput(artifact.content),
+      artifact.artifactKind === "tool-output" && isSuccessfulWriteToolOutput(artifact.content),
   );
-  if (!hasSuccessfulAuxWrite) {
+  if (!hasSuccessfulWrite) {
     return;
   }
 

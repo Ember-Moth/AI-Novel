@@ -7,6 +7,7 @@ import {
   buildProjectAssistantSendActiveTools,
   buildSessionRows,
   createStreamOverlay,
+  DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND,
   resolveExpectedActiveThreadAfterArchiveToggle,
 } from "./useAiAssistantController";
 
@@ -205,15 +206,15 @@ test("getMessagesViewportSessionKey falls back for empty thread selection", () =
   expect(getMessagesViewportSessionKey(null)).toBe("__empty-thread__");
 });
 
-test("buildProjectAssistantSendActiveTools adds aux write tools only when explicitly enabled", () => {
-  expect(buildProjectAssistantSendActiveTools({ allowAuxWrites: false })).toEqual([
+test("buildProjectAssistantSendActiveTools adds write tools only when writes are enabled", () => {
+  expect(buildProjectAssistantSendActiveTools({ allowWrites: false })).toEqual([
     "read_current_writing_context",
     "read_content_subtree",
     "list_timeline_points",
     "list_aux_dir",
     "read_aux_path",
   ]);
-  expect(buildProjectAssistantSendActiveTools({ allowAuxWrites: true })).toEqual([
+  expect(buildProjectAssistantSendActiveTools({ allowWrites: true })).toEqual([
     "read_current_writing_context",
     "read_content_subtree",
     "list_timeline_points",
@@ -224,6 +225,14 @@ test("buildProjectAssistantSendActiveTools adds aux write tools only when explic
     "move_aux_node",
     "create_aux_symlink",
   ]);
+});
+
+test("project assistant send tools include writes by default", () => {
+  expect(
+    buildProjectAssistantSendActiveTools({
+      allowWrites: DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND,
+    }),
+  ).toContain("write_aux_file");
 });
 
 test("buildProjectAssistantRetryActiveTools stays read-only", () => {

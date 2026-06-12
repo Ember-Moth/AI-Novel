@@ -9,7 +9,7 @@ import type {
   WorkspaceMutationEvent,
 } from "@/modules/ai/domain/types";
 import {
-  PROJECT_ASSISTANT_AUX_WRITE_TOOL_NAMES,
+  PROJECT_ASSISTANT_WRITE_TOOL_NAMES,
   PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES,
 } from "@/modules/ai/domain/types";
 import { rpc } from "@/rpc/client";
@@ -73,6 +73,8 @@ export interface AssistantStreamOverlay {
     toolTrace: AssistantToolTraceEntry[];
   }>;
 }
+
+export const DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND = true;
 
 export function buildSessionRows({
   unarchivedThreads,
@@ -175,12 +177,12 @@ export function createStreamOverlay({
 }
 
 export function buildProjectAssistantSendActiveTools({
-  allowAuxWrites,
+  allowWrites,
 }: {
-  allowAuxWrites: boolean;
+  allowWrites: boolean;
 }): ProjectAssistantToolName[] {
-  return allowAuxWrites
-    ? [...PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES, ...PROJECT_ASSISTANT_AUX_WRITE_TOOL_NAMES]
+  return allowWrites
+    ? [...PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES, ...PROJECT_ASSISTANT_WRITE_TOOL_NAMES]
     : [...PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES];
 }
 
@@ -430,7 +432,9 @@ export function useAiAssistantController(
   const [composerError, setComposerError] = useState<string | null>(null);
   const [activeStream, setActiveStream] = useState<AssistantStreamOverlay | null>(null);
   const [includeContext, setIncludeContext] = useState(true);
-  const [allowAuxWritesForNextSend, setAllowAuxWritesForNextSend] = useState(false);
+  const [allowWritesForNextSend, setAllowWritesForNextSend] = useState(
+    DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND,
+  );
 
   const storedSelectionQuery = rpc.useQuery("config.getAiAssistantModelSelection");
   const assistantOverviewQuery = rpc.useQuery("ai.getProjectAssistantState", { projectId });
@@ -597,7 +601,7 @@ export function useAiAssistantController(
       const text = draft.trim();
       const activeTools = selectedModelSupportsToolUse
         ? buildProjectAssistantSendActiveTools({
-            allowAuxWrites: allowAuxWritesForNextSend,
+            allowWrites: allowWritesForNextSend,
           })
         : null;
       setComposerError(null);
@@ -659,7 +663,7 @@ export function useAiAssistantController(
         );
         void assistantOverviewQuery.refetch();
       } finally {
-        setAllowAuxWritesForNextSend(false);
+        setAllowWritesForNextSend(DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND);
         if (clearPendingAction) {
           setPendingAction(null);
         }
@@ -667,7 +671,7 @@ export function useAiAssistantController(
     },
     [
       activeThreadId,
-      allowAuxWritesForNextSend,
+      allowWritesForNextSend,
       assistantOverviewQuery,
       canSubmit,
       contextSnapshot,
@@ -893,7 +897,7 @@ export function useAiAssistantController(
     handleSelectionChange,
     handleSelectionCommit,
     handleSubmit,
-    allowAuxWritesForNextSend,
+    allowWritesForNextSend,
     includeContext,
     isBusy,
     isGenerating,
@@ -912,7 +916,7 @@ export function useAiAssistantController(
     selectionHydrated,
     sessionOverlayState,
     sessionRows,
-    setAllowAuxWritesForNextSend,
+    setAllowWritesForNextSend,
     setDraft,
     setIncludeContext,
     showArchivedThreads,

@@ -241,7 +241,7 @@ test("sendProjectAssistantMessage invalidates overview, thread view, candidates,
   ]);
 });
 
-test("sendProjectAssistantMessage additionally invalidates aux workspace when the run includes a successful aux write tool", async () => {
+test("sendProjectAssistantMessage additionally invalidates aux workspace when the run includes a successful write tool", async () => {
   useService({
     getProjectAssistantState: () => ({
       activeThreadId: null,
