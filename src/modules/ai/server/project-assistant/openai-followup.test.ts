@@ -430,6 +430,15 @@ test("openai follow-up send uses previous response id and only sends incremental
     projectId: "assistant_openai_followup",
     threadId: thread.id,
     text: "继续展开",
+    context: {
+      workspaceId: "workspace_openai_followup",
+      activeContentNodeId: null,
+      activeContentTitle: null,
+      activeAuxNodeId: null,
+      activeAuxPath: "/设定/角色.md",
+      activeTimelinePointId: "point_now",
+      activeTimelineLabel: "现在",
+    },
   });
 
   expect(secondCallInput.current).not.toBeNull();
@@ -442,6 +451,15 @@ test("openai follow-up send uses previous response id and only sends incremental
     {
       role: "user",
       content: [{ type: "text", text: "继续展开" }],
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "当前编辑器：辅助路径=/设定/角色.md；时间轴节点 id=point_now，label=现在",
+        },
+      ],
     },
   ]);
   expect(capturedInput.providerOptions).toMatchObject({
@@ -461,6 +479,17 @@ test("openai follow-up send uses previous response id and only sends incremental
       ),
     ),
   ).not.toContain("当前编辑上下文：");
+  expect(
+    String(
+      Reflect.get(
+        (capturedInput.providerOptions as Record<string, unknown>).openai as Record<
+          string,
+          unknown
+        >,
+        "instructions",
+      ),
+    ),
+  ).not.toContain("当前编辑器：");
   expect(
     typeof Reflect.get(
       (capturedInput.providerOptions as Record<string, unknown>).openai as Record<string, unknown>,

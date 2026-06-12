@@ -112,6 +112,36 @@ export function buildProjectAssistantSystemPrompt() {
   return PROJECT_ASSISTANT_SYSTEM_PROMPT;
 }
 
+export function buildProjectAssistantContextMessage(
+  context: ProjectAssistantContextSnapshot | null,
+): ModelMessage | null {
+  if (!context) {
+    return null;
+  }
+
+  const fileReference =
+    context.activeContentNodeId != null
+      ? `正文节点 id=${context.activeContentNodeId}`
+      : context.activeAuxPath != null
+        ? `辅助路径=${context.activeAuxPath}`
+        : null;
+  const timelineReference =
+    context.activeTimelinePointId != null
+      ? `时间轴节点 id=${context.activeTimelinePointId}${
+          context.activeTimelineLabel != null ? `，label=${context.activeTimelineLabel}` : ""
+        }`
+      : null;
+  const details = [fileReference, timelineReference].filter(
+    (value): value is string => value != null,
+  );
+
+  if (details.length === 0) {
+    return null;
+  }
+
+  return buildUserTextMessage(`当前编辑器：${details.join("；")}`);
+}
+
 export function resolveProjectAssistantActiveTools({
   selection,
   activeTools,
@@ -197,21 +227,26 @@ export function resolveAssistantRequest({
   triggerNodeId,
   system,
   selection,
+  context,
 }: {
   threadId: string;
   triggerNodeId: string;
   system: string;
   selection: AssistantModelSelection;
+  context?: ProjectAssistantContextSnapshot | null;
 }): {
   messages: ModelMessage[];
   transportSystem: string | null;
   providerOptions?: StreamProviderOptions;
 } {
   const path = resolveThreadPath(threadId, triggerNodeId);
+  const contextMessage = buildProjectAssistantContextMessage(context ?? null);
+  const appendContextMessage = (messages: ModelMessage[]) =>
+    contextMessage == null ? messages : [...messages, contextMessage];
 
   if (!isOpenAIResponsesConnection(selection.connection)) {
     return {
-      messages: path.map((node) => node.message),
+      messages: appendContextMessage(path.map((node) => node.message)),
       transportSystem: system,
       providerOptions: undefined,
     };
@@ -230,7 +265,7 @@ export function resolveAssistantRequest({
   };
 
   return {
-    messages,
+    messages: appendContextMessage(messages),
     transportSystem: previousResponseId ? null : system,
     providerOptions:
       Object.keys(openaiOptions).length > 0

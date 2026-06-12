@@ -15,6 +15,7 @@ import { PanelPlaceholder } from "@/shared/ui/PanelPlaceholder";
 import { SidebarLayoutScope, SidebarPanels } from "@/shared/ui/sidebar";
 import { actionAnchorId, clearActionError } from "@/modules/workspace/ui/editor/model/action-error";
 import { collectInvalidAuxSymlinkTargetIds } from "@/modules/workspace/ui/editor/model/tree";
+import { buildProjectAssistantEditorContext } from "@/modules/workspace/ui/editor/state/helpers/projectView";
 import { AuxTreePanel } from "@/modules/workspace/ui/editor/panels/AuxTreePanel";
 import { ContentTreePanel } from "@/modules/workspace/ui/editor/panels/ContentTreePanel";
 import { EditorArea } from "@/modules/workspace/ui/editor/panels/EditorArea";
@@ -208,6 +209,15 @@ function ProjectWorkspace({
     activeTimelineLabel,
   } = selection;
   const { editorBody, editorContent, activeSaveState, auxSaveState, editorTarget } = editorView;
+  const assistantContext = buildProjectAssistantEditorContext({
+    workspaceId: workspaceId ?? null,
+    editorTarget,
+    activeContentNode,
+    activeAuxNode,
+    activeTimelinePointId,
+    activeTimelineLabel:
+      (activeTimelinePointId ? timelineLabelMap.get(activeTimelinePointId) : undefined) ?? "原点",
+  });
   const { pageErrorDismissed, setPageErrorDismissed } = pageErrorState;
   const contentError = useWorkspaceState((state) => state.contentError);
   const timelineError = useWorkspaceState((state) => state.timelineError);
@@ -511,6 +521,7 @@ function ProjectWorkspace({
           </div>
           <AiSidebar
             projectId={projectId}
+            context={assistantContext}
             onWorkspaceRefreshRequested={handleAssistantWorkspaceRefreshRequested}
           />
         </div>

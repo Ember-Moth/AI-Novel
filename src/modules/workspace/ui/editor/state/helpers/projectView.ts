@@ -1,3 +1,4 @@
+import type { ProjectAssistantContextSnapshot } from "@/modules/ai/domain/types";
 import type {
   AuxTreeNodeVM,
   ContentTreeNodeVM,
@@ -89,5 +90,32 @@ export function deriveProjectEditorState(input: {
     activeSaveState,
     auxSaveState,
     editorTarget,
+  };
+}
+
+export function buildProjectAssistantEditorContext(input: {
+  workspaceId: string | null;
+  editorTarget: "content" | "aux" | null;
+  activeContentNode: ContentTreeNodeVM | null;
+  activeAuxNode: AuxTreeNodeVM | null;
+  activeTimelinePointId: string | null;
+  activeTimelineLabel: string | null;
+}): ProjectAssistantContextSnapshot | null {
+  if (!input.workspaceId) {
+    return null;
+  }
+
+  const activeContentNodeId =
+    input.editorTarget === "content" ? (input.activeContentNode?.id ?? null) : null;
+  const activeAuxPath = input.editorTarget === "aux" ? (input.activeAuxNode?.path ?? null) : null;
+
+  return {
+    workspaceId: input.workspaceId,
+    activeContentNodeId,
+    activeContentTitle: null,
+    activeAuxNodeId: null,
+    activeAuxPath,
+    activeTimelinePointId: input.activeTimelinePointId,
+    activeTimelineLabel: input.activeTimelineLabel,
   };
 }

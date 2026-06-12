@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   AgentThreadView,
+  ProjectAssistantContextSnapshot,
   ProjectAssistantStreamEvent,
   ProjectAssistantToolName,
   TimelineSelectionUpdatedEvent,
@@ -421,6 +422,7 @@ export function useAiAssistantController(
   onWorkspaceRefreshRequested?: (
     _event: WorkspaceRefreshRequestedEvent | TimelineSelectionUpdatedEvent,
   ) => void,
+  context?: ProjectAssistantContextSnapshot | null,
 ) {
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
@@ -627,6 +629,7 @@ export function useAiAssistantController(
             projectId,
             threadId: activeThreadId,
             text,
+            context,
             activeTools,
           },
           {
@@ -682,6 +685,7 @@ export function useAiAssistantController(
       allowWritesForNextSend,
       assistantOverviewQuery,
       canSubmit,
+      context,
       draft,
       onWorkspaceRefreshRequested,
       projectId,

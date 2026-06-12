@@ -2,7 +2,11 @@ import { expect, test } from "bun:test";
 
 import type { AuxTreeNodeVM, ContentTreeNodeVM } from "@/modules/workspace/ui/editor/model/types";
 
-import { deriveProjectEditorState, deriveProjectSelectionState } from "./projectView";
+import {
+  buildProjectAssistantEditorContext,
+  deriveProjectEditorState,
+  deriveProjectSelectionState,
+} from "./projectView";
 
 test("deriveProjectSelectionState resolves active nodes and timeline labels", () => {
   const contentNode: ContentTreeNodeVM = {
@@ -119,4 +123,64 @@ test("deriveProjectEditorState can keep the editor empty after aux selection is 
 
   expect(editor.editorTarget).toBe(null);
   expect(editor.editorBody).toBe("Committed body");
+});
+
+test("buildProjectAssistantEditorContext keeps content and aux references mutually exclusive", () => {
+  const activeContentNode: ContentTreeNodeVM = {
+    id: "content_1",
+    title: "Chapter 1",
+    body: "Hidden body",
+    anchorTimelinePointId: "point_a",
+    children: [],
+  };
+  const activeAuxNode: AuxTreeNodeVM = {
+    id: "aux_1",
+    nodeType: "file",
+    name: "notes.md",
+    content: "Hidden notes",
+    path: "/notes.md",
+    symlinkTargetAuxNodeId: null,
+    symlinkTargetPath: null,
+    hasTimelineChange: false,
+    isDeleted: false,
+    children: [],
+  };
+
+  expect(
+    buildProjectAssistantEditorContext({
+      workspaceId: "workspace_1",
+      editorTarget: "content",
+      activeContentNode,
+      activeAuxNode,
+      activeTimelinePointId: "point_b",
+      activeTimelineLabel: "Point B",
+    }),
+  ).toEqual({
+    workspaceId: "workspace_1",
+    activeContentNodeId: "content_1",
+    activeContentTitle: null,
+    activeAuxNodeId: null,
+    activeAuxPath: null,
+    activeTimelinePointId: "point_b",
+    activeTimelineLabel: "Point B",
+  });
+
+  expect(
+    buildProjectAssistantEditorContext({
+      workspaceId: "workspace_1",
+      editorTarget: "aux",
+      activeContentNode,
+      activeAuxNode,
+      activeTimelinePointId: "point_b",
+      activeTimelineLabel: "Point B",
+    }),
+  ).toEqual({
+    workspaceId: "workspace_1",
+    activeContentNodeId: null,
+    activeContentTitle: null,
+    activeAuxNodeId: null,
+    activeAuxPath: "/notes.md",
+    activeTimelinePointId: "point_b",
+    activeTimelineLabel: "Point B",
+  });
 });

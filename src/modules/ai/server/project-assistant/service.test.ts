@@ -249,6 +249,102 @@ test("sendProjectAssistantMessage uses read-only tools by default and can opt in
   ]);
 });
 
+test("sendProjectAssistantMessage appends minimal editor context without changing user message", async () => {
+  seedProject("assistant_editor_context");
+  const seeded = seedCustomConnection({
+    connectionId: "conn_editor_context",
+    modelId: "story-model",
+    modelRowId: "cmodel_editor_context",
+  });
+  let capturedMessages: unknown[] = [];
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+    streamAssistantText: ((input: { messages: unknown[] }) => {
+      capturedMessages = input.messages;
+      return createMockStream({
+        chunks: [
+          { type: "start-step", stepNumber: 0 },
+          { type: "text-delta", stepNumber: 0, delta: "收到。" },
+          {
+            type: "finish-step",
+            stepNumber: 0,
+            finishReason: "stop",
+            usage: { totalTokens: 5 },
+          },
+        ],
+        text: "收到。",
+        usage: { totalTokens: 5 },
+        finishReason: "stop",
+        steps: [
+          {
+            stepNumber: 0,
+            preparedMessages: input.messages as never,
+            model: { provider: "openai", modelId: "story-model" },
+            finishReason: "stop",
+            rawFinishReason: "stop",
+            usage: { totalTokens: 5 },
+            request: { body: { prompt: "ok" } },
+            response: {
+              body: { id: "resp_editor_context" },
+              messages: [
+                {
+                  role: "assistant",
+                  content: [{ type: "text", text: "收到。" }],
+                },
+              ],
+            },
+            providerMetadata: {},
+            toolCalls: [],
+            toolResults: [],
+          },
+        ],
+      })();
+    }) as any,
+  });
+  const thread = service.createProjectAssistantThread("assistant_editor_context");
+
+  const result = await service.sendProjectAssistantMessage({
+    projectId: "assistant_editor_context",
+    threadId: thread.id,
+    text: "看一下当前文件",
+    context: {
+      workspaceId: "workspace_editor_context",
+      activeContentNodeId: "content_123",
+      activeContentTitle: null,
+      activeAuxNodeId: null,
+      activeAuxPath: null,
+      activeTimelinePointId: "point_now",
+      activeTimelineLabel: "现在",
+    },
+  });
+
+  expect(result.userNode.message).toEqual({
+    role: "user",
+    content: [{ type: "text", text: "看一下当前文件" }],
+  });
+  expect(result.run.contextSnapshot).toMatchObject({
+    activeContentNodeId: "content_123",
+    activeAuxPath: null,
+    activeTimelinePointId: "point_now",
+    activeTimelineLabel: "现在",
+  });
+  expect(capturedMessages).toEqual([
+    {
+      role: "user",
+      content: [{ type: "text", text: "看一下当前文件" }],
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "当前编辑器：正文节点 id=content_123；时间轴节点 id=point_now，label=现在",
+        },
+      ],
+    },
+  ]);
+});
+
 test("step-limited tool runs are marked continueable without failing", async () => {
   seedProject("assistant_step_limit");
   const seeded = seedCustomConnection({

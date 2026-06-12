@@ -5,6 +5,7 @@ import { AnimatePresence } from "./AiSidebarView";
 import { AiMarkdown } from "./AiMarkdown";
 import type {
   AgentRunSummaryView,
+  ProjectAssistantContextSnapshot,
   TimelineSelectionUpdatedEvent,
   WorkspaceRefreshRequestedEvent,
 } from "@/modules/ai/domain/types";
@@ -28,15 +29,17 @@ import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
 
 export function AiSidebar({
   projectId,
+  context,
   onWorkspaceRefreshRequested,
 }: {
   projectId: string;
+  context?: ProjectAssistantContextSnapshot | null;
   onWorkspaceRefreshRequested?: (
     _event: WorkspaceRefreshRequestedEvent | TimelineSelectionUpdatedEvent,
   ) => void;
 }) {
   const messagesViewportRef = useRef<HTMLElement | null>(null);
-  const controller = useAiAssistantController(projectId, onWorkspaceRefreshRequested);
+  const controller = useAiAssistantController(projectId, onWorkspaceRefreshRequested, context);
   const layout = useAssistantSheetLayout({
     defaultState: "peek",
   });

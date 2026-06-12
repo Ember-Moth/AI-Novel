@@ -97,6 +97,7 @@ export function buildSendRun({
     triggerNodeId: userNode.id,
     system,
     selection,
+    context: normalizedContext,
   });
 
   return {
@@ -191,6 +192,7 @@ export function buildRetryRun({
     triggerNodeId,
     system,
     selection,
+    context: normalizedContext,
   });
 
   return {
@@ -285,6 +287,7 @@ export function buildEditRun({
     triggerNodeId: replacementNode.id,
     system,
     selection,
+    context: normalizedContext,
   });
 
   return {
@@ -369,6 +372,7 @@ export function buildContinueRun({
     triggerNodeId: activeTipNodeId,
     system,
     selection,
+    context,
   });
   const run = createRun({
     threadId: thread.id,
