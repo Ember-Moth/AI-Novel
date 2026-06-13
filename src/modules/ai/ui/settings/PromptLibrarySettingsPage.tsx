@@ -10,7 +10,6 @@ import { cn } from "@/shared/lib/cn";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { LoadingBlock } from "@/shared/ui/Loading";
 import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
-import { Toggle } from "@/shared/ui/Toggle";
 
 import { SettingsSidebar } from "./SettingsSidebar";
 
@@ -18,7 +17,6 @@ interface PromptFormData {
   name: string;
   description: string | null;
   content: string;
-  isEnabled: boolean;
 }
 
 const EMPTY_PROMPTS: GlobalPromptRow[] = [];
@@ -363,7 +361,6 @@ function PromptEditor({
   const [name, setName] = useState(prompt?.name ?? "");
   const [description, setDescription] = useState(prompt?.description ?? "");
   const [content, setContent] = useState(prompt?.content ?? "");
-  const [isEnabled, setIsEnabled] = useState(prompt?.isEnabled ?? true);
   const [formError, setFormError] = useState<string | null>(null);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -386,7 +383,6 @@ function PromptEditor({
       name: trimmedName,
       description: description.trim() || null,
       content: trimmedContent,
-      isEnabled,
     });
   };
 
@@ -449,7 +445,7 @@ function PromptEditor({
           </div>
         ) : null}
 
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)]">
           <label className="block space-y-1">
             <span className="text-[11px] font-medium text-foreground-muted">名称</span>
             <input
@@ -460,15 +456,6 @@ function PromptEditor({
               className="w-full rounded-md border border-border bg-editor-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-foreground-muted/50 focus:border-accent-foreground"
             />
           </label>
-
-          <div className="flex items-center pt-5">
-            <Toggle
-              checked={isEnabled}
-              onChange={setIsEnabled}
-              label="启用"
-              description="可用于后续候选"
-            />
-          </div>
         </div>
 
         <label className="block space-y-1">
