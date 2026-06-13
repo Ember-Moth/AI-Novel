@@ -8,6 +8,7 @@ import type {
   AgentToolTraceStatus,
   ProjectAssistantContextSnapshot,
 } from "@/modules/ai/domain/types";
+import type { AssistantMentionInput } from "./AssistantComposer";
 
 export type AssistantState = AgentThreadStateView;
 
@@ -20,6 +21,7 @@ export type PendingAssistantAction =
   | {
       kind: "send";
       text: string;
+      mentions: AssistantMentionInput[];
     }
   | {
       kind: "retry";
@@ -543,6 +545,7 @@ export function selectPendingRun(state: AssistantState | null | undefined): Agen
 
 export function canSendAssistantMessage({
   draft,
+  mentionCount = 0,
   selectedConnectionId,
   selectedModelId,
   selectionHydrated,
@@ -550,6 +553,7 @@ export function canSendAssistantMessage({
   hasPendingRun,
 }: {
   draft: string;
+  mentionCount?: number;
   selectedConnectionId: string;
   selectedModelId: string;
   selectionHydrated: boolean;
@@ -560,7 +564,7 @@ export function canSendAssistantMessage({
     selectionHydrated &&
     selectedConnectionId.length > 0 &&
     selectedModelId.length > 0 &&
-    draft.trim().length > 0 &&
+    (draft.trim().length > 0 || mentionCount > 0) &&
     !isBusy &&
     !hasPendingRun
   );

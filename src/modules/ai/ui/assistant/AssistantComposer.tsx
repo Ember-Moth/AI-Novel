@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
@@ -11,183 +11,32 @@ import {
   useBasicTypeaheadTriggerMatch,
   type MenuRenderFn,
 } from "@lexical/react/LexicalTypeaheadMenuPlugin";
-import {
-  $createParagraphNode,
-  $createTextNode,
-  $getRoot,
-  DecoratorNode,
-  type EditorState,
-  type LexicalEditor,
-  type LexicalNode,
-  type LexicalUpdateJSON,
-  type NodeKey,
-  type SerializedLexicalNode,
-  type Spread,
-} from "lexical";
+import { $createParagraphNode, $createTextNode, $getRoot, type LexicalEditor } from "lexical";
 import { createPortal } from "react-dom";
 
 import type { GlobalPromptRow } from "@/modules/ai/domain/types";
 import { rpc } from "@/rpc/client";
 import { cn } from "@/shared/lib/cn";
-
-export type AssistantMentionKind = "global-prompt" | "content-node" | "aux-path" | "timeline-point";
-
-export type AssistantMentionMode = "snapshot-ref" | "inline-link";
-
-export type AssistantMentionInput = {
-  kind: AssistantMentionKind;
-  mode: AssistantMentionMode;
-  targetId: string;
-  label: string;
-};
-
-export type AssistantComposerSubmitPayload = {
-  text: string;
-  mentions: AssistantMentionInput[];
-};
-
-export type SerializedAssistantMentionNode = Spread<AssistantMentionInput, SerializedLexicalNode>;
-
-export class AssistantMentionNode extends DecoratorNode<ReactNode> {
-  __kind: AssistantMentionKind;
-  __mode: AssistantMentionMode;
-  __targetId: string;
-  __label: string;
-
-  static override getType(): string {
-    return "assistant-mention";
-  }
-
-  static override clone(node: AssistantMentionNode): AssistantMentionNode {
-    return new AssistantMentionNode(
-      node.__kind,
-      node.__mode,
-      node.__targetId,
-      node.__label,
-      node.__key,
-    );
-  }
-
-  static override importJSON(serializedNode: SerializedAssistantMentionNode): AssistantMentionNode {
-    return $createAssistantMentionNode({
-      kind: serializedNode.kind,
-      mode: serializedNode.mode,
-      targetId: serializedNode.targetId,
-      label: serializedNode.label,
-    }).updateFromJSON(serializedNode);
-  }
-
-  constructor(
-    kind: AssistantMentionKind,
-    mode: AssistantMentionMode,
-    targetId: string,
-    label: string,
-    key?: NodeKey,
-  ) {
-    super(key);
-    this.__kind = kind;
-    this.__mode = mode;
-    this.__targetId = targetId;
-    this.__label = label;
-  }
-
-  override afterCloneFrom(prevNode: this): void {
-    super.afterCloneFrom(prevNode);
-    this.__kind = prevNode.__kind;
-    this.__mode = prevNode.__mode;
-    this.__targetId = prevNode.__targetId;
-    this.__label = prevNode.__label;
-  }
-
-  override exportJSON(): SerializedAssistantMentionNode {
-    return {
-      ...super.exportJSON(),
-      kind: this.__kind,
-      mode: this.__mode,
-      targetId: this.__targetId,
-      label: this.__label,
-    };
-  }
-
-  override updateFromJSON(serializedNode: LexicalUpdateJSON<SerializedAssistantMentionNode>): this {
-    return super.updateFromJSON(serializedNode).setMention({
-      kind: serializedNode.kind,
-      mode: serializedNode.mode,
-      targetId: serializedNode.targetId,
-      label: serializedNode.label,
-    });
-  }
-
-  override createDOM(): HTMLElement {
-    const element = document.createElement("span");
-    element.className = "inline-block align-baseline";
-    return element;
-  }
-
-  override updateDOM(): false {
-    return false;
-  }
-
-  override decorate(): ReactNode {
-    return (
-      <span
-        className="inline-flex max-w-44 items-center gap-1 rounded-sm border border-accent-foreground/45 bg-accent-background/35 px-1.5 py-0.5 text-[12px] leading-4 text-accent-foreground"
-        data-assistant-mention-kind={this.__kind}
-        data-assistant-mention-target-id={this.__targetId}
-      >
-        <span className="icon-[material-symbols--prompt-suggestion] shrink-0 text-sm" />
-        <span className="truncate">@{this.__label}</span>
-      </span>
-    );
-  }
-
-  override getTextContent(): string {
-    return "";
-  }
-
-  override isInline(): true {
-    return true;
-  }
-
-  override isKeyboardSelectable(): true {
-    return true;
-  }
-
-  setMention(mention: AssistantMentionInput): this {
-    const self = this.getWritable();
-    self.__kind = mention.kind;
-    self.__mode = mention.mode;
-    self.__targetId = mention.targetId;
-    self.__label = mention.label;
-    return self;
-  }
-
-  getMention(): AssistantMentionInput {
-    const latest = this.getLatest();
-    return {
-      kind: latest.__kind,
-      mode: latest.__mode,
-      targetId: latest.__targetId,
-      label: latest.__label,
-    };
-  }
-}
-
-export function $createAssistantMentionNode(mention: AssistantMentionInput): AssistantMentionNode {
-  return new AssistantMentionNode(mention.kind, mention.mode, mention.targetId, mention.label);
-}
-
-export function $isAssistantMentionNode(
-  node: LexicalNode | null | undefined,
-): node is AssistantMentionNode {
-  return node instanceof AssistantMentionNode;
-}
+import {
+  $createAssistantMentionNode,
+  AssistantMentionNode,
+  compileAssistantComposerState,
+  type AssistantComposerSubmitPayload,
+} from "./assistantComposerModel";
+export type {
+  AssistantComposerSubmitPayload,
+  AssistantMentionInput,
+  AssistantMentionKind,
+  AssistantMentionMode,
+} from "./assistantComposerModel";
+export { compileAssistantComposerState } from "./assistantComposerModel";
 
 export function AssistantComposer({
   disabled,
   placeholder,
   onSubmit,
   onTextChange,
+  onPayloadChange,
   isBusy,
   initialValue,
 }: {
@@ -195,6 +44,7 @@ export function AssistantComposer({
   placeholder: string;
   onSubmit: (_payload: AssistantComposerSubmitPayload) => boolean;
   onTextChange?: (_text: string) => void;
+  onPayloadChange?: (_payload: AssistantComposerSubmitPayload) => void;
   isBusy: boolean;
   initialValue?: string;
 }) {
@@ -225,6 +75,7 @@ export function AssistantComposer({
         placeholder={placeholder}
         onSubmit={onSubmit}
         onTextChange={onTextChange}
+        onPayloadChange={onPayloadChange}
       />
     </LexicalComposer>
   );
@@ -236,12 +87,14 @@ function AssistantComposerInner({
   placeholder,
   onSubmit,
   onTextChange,
+  onPayloadChange,
 }: {
   disabled: boolean;
   isBusy: boolean;
   placeholder: string;
   onSubmit: (_payload: AssistantComposerSubmitPayload) => boolean;
   onTextChange?: (_text: string) => void;
+  onPayloadChange?: (_payload: AssistantComposerSubmitPayload) => void;
 }) {
   const [editor] = useLexicalComposerContext();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -332,7 +185,9 @@ function AssistantComposerInner({
       <OnChangePlugin
         ignoreSelectionChange
         onChange={(editorState) => {
-          onTextChange?.(compileAssistantComposerState(editorState).text);
+          const payload = compileAssistantComposerState(editorState);
+          onTextChange?.(payload.text);
+          onPayloadChange?.(payload);
         }}
       />
       <AssistantPromptTypeaheadPlugin onOpenChange={setTypeaheadOpen} disabled={disabled} />
@@ -468,20 +323,6 @@ function AssistantPromptTypeaheadPlugin({
       preselectFirstItem
     />
   );
-}
-
-export function compileAssistantComposerState(
-  editorState: EditorState,
-): AssistantComposerSubmitPayload {
-  let text = "";
-  editorState.read(() => {
-    text = $getRoot().getTextContent();
-  });
-
-  return {
-    text,
-    mentions: [],
-  };
 }
 
 function seedEditorText(text: string) {

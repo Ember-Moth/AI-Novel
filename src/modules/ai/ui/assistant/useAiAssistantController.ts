@@ -441,6 +441,7 @@ export function useAiAssistantController(
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [draft, setDraft] = useState("");
+  const [draftMentionCount, setDraftMentionCount] = useState(0);
   const [selectionHydrated, setSelectionHydrated] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAssistantAction | null>(null);
   const [editingThread, setEditingThread] = useState<EditingThreadState | null>(null);
@@ -525,6 +526,7 @@ export function useAiAssistantController(
   const isBusy = isGenerating || isThreadBusy;
   const canSubmit = canSendAssistantMessage({
     draft,
+    mentionCount: draftMentionCount,
     selectedConnectionId,
     selectedModelId,
     selectionHydrated,
@@ -612,15 +614,17 @@ export function useAiAssistantController(
   );
 
   const sendAssistantMessage = useCallback(
-    async (text: string) => {
+    async (payload: AssistantComposerSubmitPayload) => {
+      const text = payload.text.trim();
       const activeTools = selectedModelSupportsToolUse
         ? buildProjectAssistantSendActiveTools({
             allowWrites: allowWritesForNextSend,
           })
         : null;
       setComposerError(null);
-      setPendingAction({ kind: "send", text });
+      setPendingAction({ kind: "send", text, mentions: payload.mentions });
       setDraft("");
+      setDraftMentionCount(0);
       let clearPendingAction = true;
       let streamStarted = false;
 
@@ -670,6 +674,7 @@ export function useAiAssistantController(
         setActiveStream(null);
       } catch (error) {
         setDraft(text);
+        setDraftMentionCount(0);
         if (error instanceof Error && error.name === "RpcStreamAborted") {
           void assistantOverviewQuery.refetch();
           setActiveStream(null);
@@ -726,7 +731,10 @@ export function useAiAssistantController(
         return false;
       }
 
-      void sendAssistantMessage(text);
+      void sendAssistantMessage({
+        ...payload,
+        text,
+      });
       return true;
     },
     [
@@ -1092,6 +1100,7 @@ export function useAiAssistantController(
     sessionRows,
     setAllowWritesForNextSend,
     setDraft,
+    setDraftMentionCount,
     showArchivedThreads,
     setShowArchivedThreads,
     showEmptyState,

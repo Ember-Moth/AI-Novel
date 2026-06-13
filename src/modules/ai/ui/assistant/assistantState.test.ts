@@ -606,3 +606,17 @@ test("canSendAssistantMessage allows sending before a thread exists", () => {
     }),
   ).toBe(true);
 });
+
+test("canSendAssistantMessage allows mention-only drafts", () => {
+  expect(
+    canSendAssistantMessage({
+      draft: "",
+      mentionCount: 1,
+      selectedConnectionId: "connection_1",
+      selectedModelId: "model_1",
+      selectionHydrated: true,
+      isBusy: false,
+      hasPendingRun: false,
+    }),
+  ).toBe(true);
+});
