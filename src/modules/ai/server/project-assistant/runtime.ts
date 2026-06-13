@@ -11,7 +11,6 @@ import type {
   ProjectAssistantToolName,
 } from "@/modules/ai/domain/types";
 import {
-  PROJECT_ASSISTANT_MAX_STEPS,
   PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES,
   PROJECT_ASSISTANT_TOOL_NAMES,
 } from "@/modules/ai/domain/types";
@@ -21,6 +20,7 @@ import {
   getAiAssistantModelSelection,
   type AiAssistantModelSelection,
 } from "@/modules/config/domain/ai-assistant-model-selection";
+import { getAiAssistantMaxSteps } from "@/modules/config/domain/ai-assistant-options";
 import { invariant } from "@/shared/lib/domain";
 
 import type { ToolRuntimeContext } from "../assistant-tools/context";
@@ -440,10 +440,11 @@ export function createAbortPromise(signal: AbortSignal) {
 
 export function runNeedsContinuation(trace: AgentRunTraceView) {
   const lastStep = trace.steps.at(-1);
+  const maxSteps = getAiAssistantMaxSteps();
   return (
     trace.run.status === "succeeded" &&
     trace.run.activeTools != null &&
-    trace.steps.length >= PROJECT_ASSISTANT_MAX_STEPS &&
+    trace.steps.length >= maxSteps &&
     lastStep?.finishReason === "tool-calls"
   );
 }

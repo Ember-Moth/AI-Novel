@@ -1,6 +1,6 @@
 import { stepCountIs, streamText } from "ai";
 
-import { PROJECT_ASSISTANT_MAX_STEPS } from "@/modules/ai/domain/types";
+import { getAiAssistantMaxSteps } from "@/modules/config/domain/ai-assistant-options";
 
 import { createAssistantTools } from "../assistant-tools";
 import { createLanguageModelForConnection } from "../provider-factories";
@@ -25,6 +25,7 @@ export function defaultStreamAssistantText({
   const model = createLanguageModelForConnection({ connection, modelId });
   const preparedMessagesByStep = new Map<number, StreamAssistantTextInput["messages"]>();
   const tools = createAssistantTools({ projectId, runtimeContext });
+  const maxSteps = getAiAssistantMaxSteps();
   const result = streamText({
     model,
     messages,
@@ -32,7 +33,7 @@ export function defaultStreamAssistantText({
     ...(providerOptions == null ? {} : { providerOptions }),
     ...(abortSignal == null ? {} : { abortSignal }),
     ...(activeTools.length > 0 ? { tools, activeTools: [...activeTools] } : {}),
-    stopWhen: stepCountIs(PROJECT_ASSISTANT_MAX_STEPS),
+    stopWhen: stepCountIs(maxSteps),
     prepareStep: ({ messages: stepMessages, stepNumber }) => {
       preparedMessagesByStep.set(stepNumber, stepMessages);
       return undefined;

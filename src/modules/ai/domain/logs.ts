@@ -2,9 +2,9 @@ import type { ModelMessage } from "ai";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { type DatabaseExecutor, db, schema } from "@/db";
+import { getAiAssistantMaxSteps } from "@/modules/config/domain/ai-assistant-options";
 import { createId, invariant, now } from "@/shared/lib/domain";
 
-import { PROJECT_ASSISTANT_MAX_STEPS } from "./types";
 import {
   aiRunsRef,
   commitCustomRefSync,
@@ -1948,6 +1948,7 @@ function buildRunSummaries(threadId: string, activePath: AgentThreadNodeView[]) 
 
   return relevantRuns
     .flatMap((row) => {
+      const maxSteps = getAiAssistantMaxSteps();
       const displayNodeId =
         assistantDisplayNodeByRunId.get(row.id) ??
         (row.triggerNodeId && activeNodeIds.has(row.triggerNodeId) ? row.triggerNodeId : null);
@@ -1959,7 +1960,7 @@ function buildRunSummaries(threadId: string, activePath: AgentThreadNodeView[]) 
       const continuationReason =
         row.status === "succeeded" &&
         row.activeTools != null &&
-        cachedRun.stepCount >= PROJECT_ASSISTANT_MAX_STEPS &&
+        cachedRun.stepCount >= maxSteps &&
         cachedRun.lastFinishReason === "tool-calls"
           ? "step-limit"
           : null;

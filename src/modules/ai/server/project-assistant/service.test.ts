@@ -4,6 +4,7 @@ import {
   PROJECT_ASSISTANT_MAX_STEPS,
   type ProjectAssistantToolName,
 } from "@/modules/ai/domain/types";
+import { setAiAssistantMaxSteps } from "@/modules/config/domain/ai-assistant-options";
 
 import {
   createDeferred,
@@ -669,6 +670,40 @@ test("step-limited runs ending with stop are not continueable", async () => {
 
   expect(summary?.needsContinuation).toBe(false);
   expect(summary?.continuationReason).toBeNull();
+});
+
+test("step-limit continuation follows the configured assistant max steps", async () => {
+  setAiAssistantMaxSteps(3);
+  seedProject("assistant_configured_step_limit");
+  const seeded = seedCustomConnection({
+    connectionId: "conn_configured_step_limit",
+    modelId: "story-model",
+    modelRowId: "cmodel_configured_step_limit",
+    supportsToolUse: true,
+  });
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+    streamAssistantText: createStepLimitMockStream({
+      modelId: "story-model",
+      finalFinishReason: "tool-calls",
+      stepCount: 3,
+    }) as any,
+  });
+  const thread = service.createProjectAssistantThread("assistant_configured_step_limit");
+
+  const result = await service.sendProjectAssistantMessage({
+    projectId: "assistant_configured_step_limit",
+    threadId: thread.id,
+    text: "三步后继续",
+    activeTools: ["read_file"],
+  });
+  const summary = result.state.runSummaries.find((entry) => entry.runId === result.run.id);
+
+  expect(summary).toMatchObject({
+    stepCount: 3,
+    needsContinuation: true,
+    continuationReason: "step-limit",
+  });
 });
 
 test("continueProjectAssistantRun creates a child run and inherits original active tools", async () => {

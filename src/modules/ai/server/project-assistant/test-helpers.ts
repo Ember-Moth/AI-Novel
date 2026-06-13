@@ -112,30 +112,32 @@ export function seedCustomConnection({
 export function createStepLimitMockStream({
   modelId,
   finalFinishReason = "tool-calls",
+  stepCount = PROJECT_ASSISTANT_MAX_STEPS,
 }: {
   modelId: string;
   finalFinishReason?: string;
+  stepCount?: number;
 }) {
   return createMockStream({
-    chunks: Array.from({ length: PROJECT_ASSISTANT_MAX_STEPS }, (_, index) => [
+    chunks: Array.from({ length: stepCount }, (_, index) => [
       { type: "start-step", stepNumber: index },
       { type: "text-delta", stepNumber: index, delta: `step ${index}` },
       {
         type: "finish-step",
         stepNumber: index,
-        finishReason: index === PROJECT_ASSISTANT_MAX_STEPS - 1 ? finalFinishReason : "tool-calls",
+        finishReason: index === stepCount - 1 ? finalFinishReason : "tool-calls",
         usage: { totalTokens: 1 },
       },
     ]).flat(),
     text: "step limited",
-    usage: { totalTokens: PROJECT_ASSISTANT_MAX_STEPS },
+    usage: { totalTokens: stepCount },
     finishReason: finalFinishReason,
-    steps: Array.from({ length: PROJECT_ASSISTANT_MAX_STEPS }, (_, index) => ({
+    steps: Array.from({ length: stepCount }, (_, index) => ({
       stepNumber: index,
       preparedMessages: [],
       model: { provider: "openai", modelId },
-      finishReason: index === PROJECT_ASSISTANT_MAX_STEPS - 1 ? finalFinishReason : "tool-calls",
-      rawFinishReason: index === PROJECT_ASSISTANT_MAX_STEPS - 1 ? finalFinishReason : "tool_calls",
+      finishReason: index === stepCount - 1 ? finalFinishReason : "tool-calls",
+      rawFinishReason: index === stepCount - 1 ? finalFinishReason : "tool_calls",
       usage: { totalTokens: 1 },
       request: { body: { step: index } },
       response: {

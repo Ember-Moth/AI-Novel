@@ -55,6 +55,8 @@ export const ai = {
 export const config = {
   getAiAssistantModelSelection: configHandlers.getAiAssistantModelSelection,
   setAiAssistantModelSelection: configHandlers.setAiAssistantModelSelection,
+  getAiAssistantMaxSteps: configHandlers.getAiAssistantMaxSteps,
+  setAiAssistantMaxSteps: configHandlers.setAiAssistantMaxSteps,
 };
 
 export const projects = {
