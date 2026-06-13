@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6a63ca72-c0ca-43fd-bcfb-1146f0009752",
+  "id": "ea15153a-4d70-40b1-860b-d9b6d1e216d8",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "agent_artifacts": {
@@ -119,6 +119,123 @@
         "agent_artifacts_visibility_valid": {
           "name": "agent_artifacts_visibility_valid",
           "value": "\"agent_artifacts\".\"visibility\" IN ('public', 'hidden', 'internal')"
+        }
+      }
+    },
+    "agent_message_parts": {
+      "name": "agent_message_parts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "part_index": {
+          "name": "part_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "part_kind": {
+          "name": "part_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'public'"
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'done'"
+        },
+        "provider_options_json": {
+          "name": "provider_options_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "provider_metadata_json": {
+          "name": "provider_metadata_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "payload_json": {
+          "name": "payload_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "agent_message_parts_node_idx": {
+          "name": "agent_message_parts_node_idx",
+          "columns": ["node_id", "part_index"],
+          "isUnique": true
+        },
+        "agent_message_parts_kind_idx": {
+          "name": "agent_message_parts_kind_idx",
+          "columns": ["part_kind"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_message_parts_node_id_agent_thread_nodes_id_fk": {
+          "name": "agent_message_parts_node_id_agent_thread_nodes_id_fk",
+          "tableFrom": "agent_message_parts",
+          "tableTo": "agent_thread_nodes",
+          "columnsFrom": ["node_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "agent_message_parts_kind_valid": {
+          "name": "agent_message_parts_kind_valid",
+          "value": "\"agent_message_parts\".\"part_kind\" IN ('text', 'data-assistant-ref', 'reasoning', 'tool-call', 'tool-result', 'tool-error', 'file', 'source-url', 'source-document', 'data', 'step-start')"
+        },
+        "agent_message_parts_visibility_valid": {
+          "name": "agent_message_parts_visibility_valid",
+          "value": "\"agent_message_parts\".\"visibility\" IN ('public', 'hidden', 'internal')"
+        },
+        "agent_message_parts_state_valid": {
+          "name": "agent_message_parts_state_valid",
+          "value": "\"agent_message_parts\".\"state\" IN ('streaming', 'done')"
         }
       }
     },
@@ -370,6 +487,212 @@
           "value": "\"agent_run_events\".\"event_kind\" IN ('run-started', 'step-started', 'provider-requested', 'provider-responded', 'tool-call-started', 'tool-call-finished', 'tool-call-failed', 'node-materialized', 'active-tip-moved', 'child-run-started', 'run-failed', 'run-succeeded')"
         }
       }
+    },
+    "agent_run_input_refs": {
+      "name": "agent_run_input_refs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ref_index": {
+          "name": "ref_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_json": {
+          "name": "source_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "snapshot_json": {
+          "name": "snapshot_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "display_json": {
+          "name": "display_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "agent_run_input_refs_run_index_idx": {
+          "name": "agent_run_input_refs_run_index_idx",
+          "columns": ["run_id", "ref_index"],
+          "isUnique": true
+        },
+        "agent_run_input_refs_run_idx": {
+          "name": "agent_run_input_refs_run_idx",
+          "columns": ["run_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_run_input_refs_run_id_agent_runs_id_fk": {
+          "name": "agent_run_input_refs_run_id_agent_runs_id_fk",
+          "tableFrom": "agent_run_input_refs",
+          "tableTo": "agent_runs",
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "agent_run_input_refs_label_nonempty": {
+          "name": "agent_run_input_refs_label_nonempty",
+          "value": "length(\"agent_run_input_refs\".\"label\") > 0"
+        },
+        "agent_run_input_refs_kind_valid": {
+          "name": "agent_run_input_refs_kind_valid",
+          "value": "\"agent_run_input_refs\".\"kind\" IN ('global-prompt')"
+        },
+        "agent_run_input_refs_mode_valid": {
+          "name": "agent_run_input_refs_mode_valid",
+          "value": "\"agent_run_input_refs\".\"mode\" IN ('snapshot-ref')"
+        }
+      }
+    },
+    "agent_run_inputs": {
+      "name": "agent_run_inputs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "selection_snapshot_json": {
+          "name": "selection_snapshot_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "context_snapshot_json": {
+          "name": "context_snapshot_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "active_tools_json": {
+          "name": "active_tools_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "agent_run_inputs_run_idx": {
+          "name": "agent_run_inputs_run_idx",
+          "columns": ["run_id"],
+          "isUnique": true
+        },
+        "agent_run_inputs_run_lookup_idx": {
+          "name": "agent_run_inputs_run_lookup_idx",
+          "columns": ["run_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_run_inputs_run_id_agent_runs_id_fk": {
+          "name": "agent_run_inputs_run_id_agent_runs_id_fk",
+          "tableFrom": "agent_run_inputs",
+          "tableTo": "agent_runs",
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "agent_run_steps": {
       "name": "agent_run_steps",
@@ -644,28 +967,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "selection_snapshot_json": {
-          "name": "selection_snapshot_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'{}'"
-        },
-        "context_snapshot_json": {
-          "name": "context_snapshot_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "active_tools_json": {
-          "name": "active_tools_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "error_artifact_id": {
           "name": "error_artifact_id",
           "type": "text",
@@ -800,123 +1101,6 @@
         }
       }
     },
-    "agent_thread_node_parts": {
-      "name": "agent_thread_node_parts",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "node_id": {
-          "name": "node_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "part_index": {
-          "name": "part_index",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "part_kind": {
-          "name": "part_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'public'"
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'done'"
-        },
-        "provider_options_json": {
-          "name": "provider_options_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "provider_metadata_json": {
-          "name": "provider_metadata_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "payload_json": {
-          "name": "payload_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch() * 1000)"
-        }
-      },
-      "indexes": {
-        "agent_thread_node_parts_node_idx": {
-          "name": "agent_thread_node_parts_node_idx",
-          "columns": ["node_id", "part_index"],
-          "isUnique": true
-        },
-        "agent_thread_node_parts_kind_idx": {
-          "name": "agent_thread_node_parts_kind_idx",
-          "columns": ["part_kind"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "agent_thread_node_parts_node_id_agent_thread_nodes_id_fk": {
-          "name": "agent_thread_node_parts_node_id_agent_thread_nodes_id_fk",
-          "tableFrom": "agent_thread_node_parts",
-          "tableTo": "agent_thread_nodes",
-          "columnsFrom": ["node_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "agent_thread_node_parts_kind_valid": {
-          "name": "agent_thread_node_parts_kind_valid",
-          "value": "\"agent_thread_node_parts\".\"part_kind\" IN ('text', 'reasoning', 'tool-call', 'tool-result', 'tool-error', 'file', 'source-url', 'source-document', 'data', 'step-start')"
-        },
-        "agent_thread_node_parts_visibility_valid": {
-          "name": "agent_thread_node_parts_visibility_valid",
-          "value": "\"agent_thread_node_parts\".\"visibility\" IN ('public', 'hidden', 'internal')"
-        },
-        "agent_thread_node_parts_state_valid": {
-          "name": "agent_thread_node_parts_state_valid",
-          "value": "\"agent_thread_node_parts\".\"state\" IN ('streaming', 'done')"
-        }
-      }
-    },
     "agent_thread_nodes": {
       "name": "agent_thread_nodes",
       "columns": {
@@ -974,13 +1158,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false,
-          "autoincrement": false
-        },
-        "message_json": {
-          "name": "message_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
           "autoincrement": false
         },
         "created_at": {
@@ -2669,6 +2846,83 @@
         "global_config_options_key_nonempty": {
           "name": "global_config_options_key_nonempty",
           "value": "length(\"global_config_options\".\"key\") > 0"
+        }
+      }
+    },
+    "global_prompts": {
+      "name": "global_prompts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "is_enabled": {
+          "name": "is_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "global_prompts_name_idx": {
+          "name": "global_prompts_name_idx",
+          "columns": ["name"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "global_prompts_name_nonempty": {
+          "name": "global_prompts_name_nonempty",
+          "value": "length(\"global_prompts\".\"name\") > 0"
+        },
+        "global_prompts_content_nonempty": {
+          "name": "global_prompts_content_nonempty",
+          "value": "length(\"global_prompts\".\"content\") > 0"
         }
       }
     },

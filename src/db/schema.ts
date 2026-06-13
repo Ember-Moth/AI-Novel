@@ -505,10 +505,6 @@ export const agentRuns = sqliteTable(
     runMode: text("run_mode").notNull(),
     status: text("status").notNull(),
     agentProfile: text("agent_profile").notNull(),
-    selectionSnapshotJson: text("selection_snapshot_json").notNull().default("{}"),
-    contextSnapshotJson: text("context_snapshot_json"),
-    inputRefsSnapshotJson: text("input_refs_snapshot_json"),
-    activeToolsJson: text("active_tools_json"),
     errorArtifactId: text("error_artifact_id").references((): any => agentArtifacts.id, {
       onDelete: "set null",
     }),
@@ -532,6 +528,49 @@ export const agentRuns = sqliteTable(
     index("agent_runs_parent_run_idx").on(table.parentRunId),
     index("agent_runs_trigger_node_idx").on(table.triggerNodeId),
     index("agent_runs_thread_status_idx").on(table.threadId, table.status),
+  ],
+);
+
+export const agentRunInputs = sqliteTable(
+  "agent_run_inputs",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: "cascade" }),
+    selectionSnapshotJson: text("selection_snapshot_json").notNull().default("{}"),
+    contextSnapshotJson: text("context_snapshot_json"),
+    activeToolsJson: text("active_tools_json"),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex("agent_run_inputs_run_idx").on(table.runId),
+    index("agent_run_inputs_run_lookup_idx").on(table.runId),
+  ],
+);
+
+export const agentRunInputRefs = sqliteTable(
+  "agent_run_input_refs",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: "cascade" }),
+    refIndex: integer("ref_index").notNull(),
+    kind: text("kind").notNull(),
+    mode: text("mode").notNull(),
+    label: text("label").notNull(),
+    sourceJson: text("source_json").notNull(),
+    snapshotJson: text("snapshot_json").notNull(),
+    displayJson: text("display_json").notNull(),
+    ...timestampColumns,
+  },
+  (table) => [
+    check("agent_run_input_refs_label_nonempty", sql`length(${table.label}) > 0`),
+    check("agent_run_input_refs_kind_valid", sql`${table.kind} IN ('global-prompt')`),
+    check("agent_run_input_refs_mode_valid", sql`${table.mode} IN ('snapshot-ref')`),
+    uniqueIndex("agent_run_input_refs_run_index_idx").on(table.runId, table.refIndex),
+    index("agent_run_input_refs_run_idx").on(table.runId),
   ],
 );
 
@@ -638,7 +677,6 @@ export const agentThreadNodes = sqliteTable(
     }),
     sourceKind: text("source_kind").notNull(),
     summaryText: text("summary_text"),
-    messageJson: text("message_json").notNull(),
     createdAt: integer("created_at", { mode: "number" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -663,8 +701,8 @@ export const agentThreadNodes = sqliteTable(
   ],
 );
 
-export const agentThreadNodeParts = sqliteTable(
-  "agent_thread_node_parts",
+export const agentMessageParts = sqliteTable(
+  "agent_message_parts",
   {
     id: text("id").primaryKey(),
     nodeId: text("node_id")
@@ -683,16 +721,16 @@ export const agentThreadNodeParts = sqliteTable(
   },
   (table) => [
     check(
-      "agent_thread_node_parts_kind_valid",
+      "agent_message_parts_kind_valid",
       sql`${table.partKind} IN ('text', 'data-assistant-ref', 'reasoning', 'tool-call', 'tool-result', 'tool-error', 'file', 'source-url', 'source-document', 'data', 'step-start')`,
     ),
     check(
-      "agent_thread_node_parts_visibility_valid",
+      "agent_message_parts_visibility_valid",
       sql`${table.visibility} IN ('public', 'hidden', 'internal')`,
     ),
-    check("agent_thread_node_parts_state_valid", sql`${table.state} IN ('streaming', 'done')`),
-    uniqueIndex("agent_thread_node_parts_node_idx").on(table.nodeId, table.partIndex),
-    index("agent_thread_node_parts_kind_idx").on(table.partKind),
+    check("agent_message_parts_state_valid", sql`${table.state} IN ('streaming', 'done')`),
+    uniqueIndex("agent_message_parts_node_idx").on(table.nodeId, table.partIndex),
+    index("agent_message_parts_kind_idx").on(table.partKind),
   ],
 );
 

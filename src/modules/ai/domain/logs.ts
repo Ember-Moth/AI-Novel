@@ -17,6 +17,8 @@ import type {
   AgentRunEventKind,
   AgentRunEventRow,
   AgentRunEventView,
+  AgentRunInputRefRow,
+  AgentRunInputRow,
   AgentRunMode,
   AgentRunRow,
   AgentRunStatus,
@@ -27,7 +29,7 @@ import type {
   AgentRunView,
   AssistantInputRefSnapshot,
   AgentThreadNodePartKind,
-  AgentThreadNodePartRow,
+  AgentMessagePartRow,
   AgentThreadNodePartView,
   AgentThreadRole,
   AgentThreadNodeRow,
@@ -853,6 +855,68 @@ function normalizeExtraNodeParts(parts: CreateNodeExtraPartInput[], startIndex: 
   }));
 }
 
+function isModelMessagePart(part: AgentThreadNodePartView) {
+  return part.partKind !== "data-assistant-ref";
+}
+
+function buildModelMessageFromParts(
+  role: AgentThreadRole,
+  parts: AgentThreadNodePartView[],
+): ModelMessage {
+  const contentParts = parts
+    .filter(isModelMessagePart)
+    .sort((a, b) => a.partIndex - b.partIndex)
+    .map((part) => projectStoredPartPayload(part.payload));
+
+  if (role === "system") {
+    return {
+      role,
+      content: contentParts
+        .flatMap((part) => {
+          if (!part || typeof part !== "object") {
+            return [];
+          }
+          const text = Reflect.get(part as Record<string, unknown>, "text");
+          return typeof text === "string" ? [text] : [];
+        })
+        .join("\n"),
+    } as ModelMessage;
+  }
+
+  return {
+    role,
+    content: contentParts,
+  } as ModelMessage;
+}
+
+function projectStoredPartPayload(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+
+  const record = { ...(payload as Record<string, unknown>) };
+  delete record.state;
+  if (record.providerOptions == null && record.providerMetadata != null) {
+    record.providerOptions = record.providerMetadata;
+  }
+  delete record.providerMetadata;
+  return record;
+}
+
+function getNodeModelMessage(executor: DatabaseExecutor, node: AgentThreadNodeRow): ModelMessage {
+  assertThreadRole(node.role);
+  return buildModelMessageFromParts(node.role, listNodePartViews(executor, node.id));
+}
+
+function getMessageContentParts(message: ModelMessage): unknown[] {
+  const rawContent = (message as { content?: unknown }).content;
+  return typeof rawContent === "string"
+    ? [{ type: "text", text: rawContent }]
+    : Array.isArray(rawContent)
+      ? [...rawContent]
+      : [];
+}
+
 function getTextishSummary(message: ModelMessage) {
   const content = (message as { content?: unknown }).content;
   if (typeof content === "string") {
@@ -931,7 +995,7 @@ function mapThreadRow(row: AgentThreadRow): AgentThreadView {
   };
 }
 
-function mapNodePartRow(row: AgentThreadNodePartRow): AgentThreadNodePartView {
+function mapNodePartRow(row: AgentMessagePartRow): AgentThreadNodePartView {
   assertPartKind(row.partKind);
   assertVisibility(row.visibility);
   assertPartState(row.state);
@@ -952,9 +1016,9 @@ function mapNodePartRow(row: AgentThreadNodePartRow): AgentThreadNodePartView {
 function listNodePartViews(executor: DatabaseExecutor, nodeId: string) {
   return executor
     .select()
-    .from(schema.agentThreadNodeParts)
-    .where(eq(schema.agentThreadNodeParts.nodeId, nodeId))
-    .orderBy(schema.agentThreadNodeParts.partIndex)
+    .from(schema.agentMessageParts)
+    .where(eq(schema.agentMessageParts.nodeId, nodeId))
+    .orderBy(schema.agentMessageParts.partIndex)
     .all()
     .map(mapNodePartRow);
 }
@@ -962,6 +1026,7 @@ function listNodePartViews(executor: DatabaseExecutor, nodeId: string) {
 function mapNodeRow(executor: DatabaseExecutor, row: AgentThreadNodeRow): AgentThreadNodeView {
   assertThreadRole(row.role);
   assertSourceKind(row.sourceKind);
+  const parts = listNodePartViews(executor, row.id);
   return {
     id: row.id,
     threadId: row.threadId,
@@ -971,8 +1036,8 @@ function mapNodeRow(executor: DatabaseExecutor, row: AgentThreadNodeRow): AgentT
     sourceStepId: row.sourceStepId,
     sourceKind: row.sourceKind,
     summaryText: row.summaryText,
-    message: JSON.parse(row.messageJson) as ModelMessage,
-    parts: listNodePartViews(executor, row.id),
+    message: buildModelMessageFromParts(row.role, parts),
+    parts,
     createdAt: row.createdAt,
   };
 }
@@ -993,9 +1058,45 @@ function mapArtifactRow(row: AgentArtifactRow): AgentArtifactView {
   };
 }
 
-function mapRunRow(row: AgentRunRow): AgentRunView {
+function getRunInputRow(executor: DatabaseExecutor, runId: string): AgentRunInputRow | null {
+  return (
+    executor
+      .select()
+      .from(schema.agentRunInputs)
+      .where(eq(schema.agentRunInputs.runId, runId))
+      .get() ?? null
+  );
+}
+
+function mapRunInputRefRow(row: AgentRunInputRefRow): AssistantInputRefSnapshot {
+  invariant(row.kind === "global-prompt", "不支持的 run input ref 类型。");
+  invariant(row.mode === "snapshot-ref", "不支持的 run input ref 模式。");
+  const display = JSON.parse(row.displayJson) as { refId?: unknown };
+  const refId = typeof display.refId === "string" ? display.refId : row.id;
+  return {
+    refId,
+    kind: row.kind,
+    mode: row.mode,
+    label: row.label,
+    source: JSON.parse(row.sourceJson) as AssistantInputRefSnapshot["source"],
+    snapshot: JSON.parse(row.snapshotJson) as AssistantInputRefSnapshot["snapshot"],
+  };
+}
+
+function listRunInputRefs(executor: DatabaseExecutor, runId: string) {
+  return executor
+    .select()
+    .from(schema.agentRunInputRefs)
+    .where(eq(schema.agentRunInputRefs.runId, runId))
+    .orderBy(schema.agentRunInputRefs.refIndex)
+    .all()
+    .map(mapRunInputRefRow);
+}
+
+function mapRunRow(executor: DatabaseExecutor, row: AgentRunRow): AgentRunView {
   assertRunMode(row.runMode);
   assertRunStatus(row.status);
+  const input = getRunInputRow(executor, row.id);
   return {
     id: row.id,
     threadId: row.threadId,
@@ -1006,10 +1107,12 @@ function mapRunRow(row: AgentRunRow): AgentRunView {
     runMode: row.runMode,
     status: row.status,
     agentProfile: row.agentProfile,
-    selectionSnapshot: JSON.parse(row.selectionSnapshotJson),
-    contextSnapshot: parseStoredJson<ProjectAssistantContextSnapshot>(row.contextSnapshotJson),
-    inputRefsSnapshot: parseStoredJson<AssistantInputRefSnapshot[]>(row.inputRefsSnapshotJson),
-    activeTools: parseStoredActiveTools(row.activeToolsJson),
+    selectionSnapshot: input ? JSON.parse(input.selectionSnapshotJson) : {},
+    contextSnapshot: input
+      ? parseStoredJson<ProjectAssistantContextSnapshot>(input.contextSnapshotJson)
+      : null,
+    inputRefsSnapshot: input ? listRunInputRefs(executor, row.id) : null,
+    activeTools: input ? parseStoredActiveTools(input.activeToolsJson) : null,
     errorArtifactId: row.errorArtifactId,
     startedAt: row.startedAt,
     completedAt: row.completedAt,
@@ -1181,17 +1284,16 @@ function insertNode(executor: DatabaseExecutor, input: CreateNodeInput) {
       sourceStepId: trimOptionalString(input.sourceStepId),
       sourceKind: input.sourceKind,
       summaryText: normalizeSummaryText(input.summaryText) ?? buildMessageSummary(storedMessage),
-      messageJson: serializeRequiredJson(storedMessage, "线程消息"),
       createdAt,
     })
     .run();
 
-  const messageParts = normalizeMessageParts(input.message);
+  const messageParts = normalizeMessageParts(storedMessage);
   const extraParts = normalizeExtraNodeParts(input.extraParts ?? [], messageParts.length);
   const parts = [...messageParts, ...extraParts];
   parts.forEach((part) => {
     executor
-      .insert(schema.agentThreadNodeParts)
+      .insert(schema.agentMessageParts)
       .values({
         id: createId("agent_part"),
         nodeId: id,
@@ -1212,28 +1314,6 @@ function insertNode(executor: DatabaseExecutor, input: CreateNodeInput) {
   return mapNodeRow(executor, getNodeOrThrow(executor, id));
 }
 
-function updateNodeMessage(
-  executor: DatabaseExecutor,
-  nodeId: string,
-  message: ModelMessage,
-  summaryText?: string | null,
-) {
-  const node = getNodeOrThrow(executor, nodeId);
-  const storedMessage = normalizeModelMessage(message);
-  executor
-    .update(schema.agentThreadNodes)
-    .set({
-      messageJson: serializeRequiredJson(storedMessage, "线程消息"),
-      summaryText:
-        normalizeSummaryText(summaryText) ??
-        normalizeSummaryText(buildMessageSummary(storedMessage)),
-    })
-    .where(eq(schema.agentThreadNodes.id, node.id))
-    .run();
-  touchThread(executor, node.threadId);
-  return mapNodeRow(executor, getNodeOrThrow(executor, node.id));
-}
-
 function updateNodePart(
   executor: DatabaseExecutor,
   nodeId: string,
@@ -1250,27 +1330,29 @@ function updateNodePart(
     providerMetadata?: unknown;
   },
 ) {
+  const node = getNodeOrThrow(executor, nodeId);
   const row = executor
     .select()
-    .from(schema.agentThreadNodeParts)
+    .from(schema.agentMessageParts)
     .where(
       and(
-        eq(schema.agentThreadNodeParts.nodeId, nodeId),
-        eq(schema.agentThreadNodeParts.partIndex, partIndex),
+        eq(schema.agentMessageParts.nodeId, nodeId),
+        eq(schema.agentMessageParts.partIndex, partIndex),
       ),
     )
     .get();
   invariant(row, "未找到节点 part。");
   executor
-    .update(schema.agentThreadNodeParts)
+    .update(schema.agentMessageParts)
     .set({
       state,
       providerOptionsJson: serializeOptionalJson(providerOptions),
       providerMetadataJson: serializeOptionalJson(providerMetadata),
       payloadJson: serializeRequiredJson(payload, "节点 part"),
     })
-    .where(eq(schema.agentThreadNodeParts.id, row.id))
+    .where(eq(schema.agentMessageParts.id, row.id))
     .run();
+  touchThread(executor, node.threadId);
 }
 
 function appendNodePart(
@@ -1285,15 +1367,16 @@ function appendNodePart(
     providerMetadata?: unknown;
   },
 ) {
+  const node = getNodeOrThrow(executor, nodeId);
   const latest = executor
-    .select({ partIndex: schema.agentThreadNodeParts.partIndex })
-    .from(schema.agentThreadNodeParts)
-    .where(eq(schema.agentThreadNodeParts.nodeId, nodeId))
-    .orderBy(desc(schema.agentThreadNodeParts.partIndex))
+    .select({ partIndex: schema.agentMessageParts.partIndex })
+    .from(schema.agentMessageParts)
+    .where(eq(schema.agentMessageParts.nodeId, nodeId))
+    .orderBy(desc(schema.agentMessageParts.partIndex))
     .get();
   const partIndex = (latest?.partIndex ?? -1) + 1;
   executor
-    .insert(schema.agentThreadNodeParts)
+    .insert(schema.agentMessageParts)
     .values({
       id: createId("agent_part"),
       nodeId,
@@ -1307,6 +1390,21 @@ function appendNodePart(
       createdAt: now(),
     })
     .run();
+  touchThread(executor, node.threadId);
+}
+
+function updateNodeSummary(
+  executor: DatabaseExecutor,
+  nodeId: string,
+  summaryText: string | null | undefined,
+) {
+  const node = getNodeOrThrow(executor, nodeId);
+  executor
+    .update(schema.agentThreadNodes)
+    .set({ summaryText: normalizeSummaryText(summaryText) })
+    .where(eq(schema.agentThreadNodes.id, node.id))
+    .run();
+  touchThread(executor, node.threadId);
 }
 
 function getLatestUnarchivedThreadRow(
@@ -1588,7 +1686,7 @@ function buildRunSummaries(threadId: string, activePath: AgentThreadNodeView[]) 
       row.status === "failed" && row.triggerNodeId != null && activeNodeIds.has(row.triggerNodeId)
     );
   });
-  const relevantRuns = relevantRunRows.map(mapRunRow);
+  const relevantRuns = relevantRunRows.map((row) => mapRunRow(db, row));
 
   if (relevantRuns.length === 0) {
     return [] as AgentRunSummaryView[];
@@ -1700,7 +1798,7 @@ export function listLatestRuns(threadId: string, limit = 10) {
     .orderBy(desc(schema.agentRuns.createdAt))
     .limit(limit)
     .all()
-    .map(mapRunRow);
+    .map((row) => mapRunRow(db, row));
 }
 
 export function getLatestRunForTriggerNode(threadId: string, triggerNodeId: string) {
@@ -1718,7 +1816,7 @@ export function getLatestRunForTriggerNode(threadId: string, triggerNodeId: stri
       .orderBy(desc(schema.agentRuns.createdAt))
       .limit(1)
       .all()
-      .map(mapRunRow)[0] ?? null
+      .map((row) => mapRunRow(db, row))[0] ?? null
   );
 }
 
@@ -1848,10 +1946,6 @@ export function createRun(input: CreateRunInput) {
         runMode: input.runMode,
         status,
         agentProfile: input.agentProfile,
-        selectionSnapshotJson: serializeRequiredJson(input.selectionSnapshot ?? {}, "run 选择快照"),
-        contextSnapshotJson: serializeOptionalJson(input.contextSnapshot),
-        inputRefsSnapshotJson: serializeOptionalJson(input.inputRefsSnapshot),
-        activeToolsJson: serializeOptionalJson(input.activeTools),
         errorArtifactId: null,
         startedAt: timestamp,
         completedAt: null,
@@ -1859,9 +1953,45 @@ export function createRun(input: CreateRunInput) {
         updatedAt: timestamp,
       })
       .run();
+    tx.insert(schema.agentRunInputs)
+      .values({
+        id: createId("agent_run_input"),
+        runId: id,
+        selectionSnapshotJson: serializeRequiredJson(input.selectionSnapshot ?? {}, "run 选择快照"),
+        contextSnapshotJson: serializeOptionalJson(input.contextSnapshot),
+        activeToolsJson: serializeOptionalJson(input.activeTools),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
+    (input.inputRefsSnapshot ?? []).forEach((ref, refIndex) => {
+      tx.insert(schema.agentRunInputRefs)
+        .values({
+          id: createId("agent_run_ref"),
+          runId: id,
+          refIndex,
+          kind: ref.kind,
+          mode: ref.mode,
+          label: ref.label,
+          sourceJson: serializeRequiredJson(ref.source, "run ref source"),
+          snapshotJson: serializeRequiredJson(ref.snapshot, "run ref snapshot"),
+          displayJson: serializeRequiredJson(
+            {
+              refId: ref.refId,
+              kind: ref.kind,
+              mode: ref.mode,
+              label: ref.label,
+            },
+            "run ref display",
+          ),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+        .run();
+    });
     touchThread(tx, thread.id);
     touchProject(tx, thread.projectId);
-    return mapRunRow(getRunOrThrow(tx, id));
+    return mapRunRow(tx, getRunOrThrow(tx, id));
   });
 }
 
@@ -2035,14 +2165,8 @@ export function appendAssistantTextDelta(input: { nodeId: string; delta: string 
   return db.transaction((tx) => {
     const node = getNodeOrThrow(tx, input.nodeId);
     invariant(node.role === "assistant", "只能向 assistant 节点追加文本。");
-    const message = JSON.parse(node.messageJson) as ModelMessage;
-    const rawContent = (message as { content?: unknown }).content;
-    const content =
-      typeof rawContent === "string"
-        ? [{ type: "text", text: rawContent }]
-        : Array.isArray(rawContent)
-          ? [...rawContent]
-          : [];
+    const message = getNodeModelMessage(tx, node);
+    const content = getMessageContentParts(message);
 
     let textPartIndex = content.findIndex(
       (part) =>
@@ -2064,13 +2188,7 @@ export function appendAssistantTextDelta(input: { nodeId: string; delta: string 
       text: `${String(Reflect.get(existingPart as Record<string, unknown>, "text") ?? "")}${input.delta}`,
       state: "streaming",
     };
-    content[textPartIndex] = nextPart;
 
-    const nextMessage = {
-      ...message,
-      content,
-    } as ModelMessage;
-    updateNodeMessage(tx, node.id, nextMessage);
     if (hadExistingTextPart) {
       updateNodePart(tx, node.id, textPartIndex, {
         payload: nextPart,
@@ -2088,6 +2206,11 @@ export function appendAssistantTextDelta(input: { nodeId: string; delta: string 
         providerMetadata: Reflect.get(nextPart, "providerMetadata"),
       });
     }
+    updateNodeSummary(
+      tx,
+      node.id,
+      buildMessageSummary({ ...message, content: [nextPart] } as ModelMessage),
+    );
     return mapNodeRow(tx, getNodeOrThrow(tx, node.id));
   });
 }
@@ -2099,14 +2222,8 @@ export function appendAssistantReasoningPart(input: {
   return db.transaction((tx) => {
     const node = getNodeOrThrow(tx, input.nodeId);
     invariant(node.role === "assistant", "只能向 assistant 节点追加 reasoning。");
-    const message = JSON.parse(node.messageJson) as ModelMessage;
-    const rawContent = (message as { content?: unknown }).content;
-    const content =
-      typeof rawContent === "string"
-        ? [{ type: "text", text: rawContent }]
-        : Array.isArray(rawContent)
-          ? [...rawContent]
-          : [];
+    const message = getNodeModelMessage(tx, node);
+    const content = getMessageContentParts(message);
     const nextPart = {
       type: "reasoning",
       text: "",
@@ -2114,12 +2231,6 @@ export function appendAssistantReasoningPart(input: {
       ...(input.providerMetadata == null ? {} : { providerMetadata: input.providerMetadata }),
     };
     const partIndex = content.length;
-    content.push(nextPart);
-    const nextMessage = {
-      ...message,
-      content,
-    } as ModelMessage;
-    const nextNode = updateNodeMessage(tx, node.id, nextMessage);
     appendNodePart(tx, node.id, {
       partKind: "reasoning",
       visibility: "hidden",
@@ -2129,7 +2240,7 @@ export function appendAssistantReasoningPart(input: {
       providerMetadata: input.providerMetadata,
     });
     return {
-      node: nextNode,
+      node: mapNodeRow(tx, getNodeOrThrow(tx, node.id)),
       partIndex,
     };
   });
@@ -2144,14 +2255,8 @@ export function appendAssistantReasoningDelta(input: {
   return db.transaction((tx) => {
     const node = getNodeOrThrow(tx, input.nodeId);
     invariant(node.role === "assistant", "只能向 assistant 节点追加 reasoning。");
-    const message = JSON.parse(node.messageJson) as ModelMessage;
-    const rawContent = (message as { content?: unknown }).content;
-    const content =
-      typeof rawContent === "string"
-        ? [{ type: "text", text: rawContent }]
-        : Array.isArray(rawContent)
-          ? [...rawContent]
-          : [];
+    const message = getNodeModelMessage(tx, node);
+    const content = getMessageContentParts(message);
     const existingPart = content[input.partIndex];
     invariant(existingPart && typeof existingPart === "object", "未找到 reasoning part。");
     invariant(
@@ -2166,13 +2271,7 @@ export function appendAssistantReasoningDelta(input: {
       state: "streaming",
       ...(input.providerMetadata == null ? {} : { providerMetadata: input.providerMetadata }),
     };
-    content[input.partIndex] = nextPart;
 
-    const nextMessage = {
-      ...message,
-      content,
-    } as ModelMessage;
-    updateNodeMessage(tx, node.id, nextMessage);
     updateNodePart(tx, node.id, input.partIndex, {
       payload: nextPart,
       state: "streaming",
@@ -2190,24 +2289,11 @@ export function appendAssistantToolCallPart(input: {
   return db.transaction((tx) => {
     const node = getNodeOrThrow(tx, input.nodeId);
     invariant(node.role === "assistant", "只能向 assistant 节点追加工具调用。");
-    const message = JSON.parse(node.messageJson) as ModelMessage;
-    const rawContent = (message as { content?: unknown }).content;
-    const content =
-      typeof rawContent === "string"
-        ? [{ type: "text", text: rawContent }]
-        : Array.isArray(rawContent)
-          ? [...rawContent]
-          : [];
+    const message = getNodeModelMessage(tx, node);
     const nextPart = {
       type: "tool-call",
       ...input.toolCall,
     };
-    content.push(nextPart);
-    const nextMessage = {
-      ...message,
-      content,
-    } as ModelMessage;
-    const nextNode = updateNodeMessage(tx, node.id, nextMessage);
     appendNodePart(tx, node.id, {
       partKind: "tool-call",
       visibility: "internal",
@@ -2216,7 +2302,12 @@ export function appendAssistantToolCallPart(input: {
       providerOptions: Reflect.get(nextPart, "providerOptions"),
       providerMetadata: Reflect.get(nextPart, "providerMetadata"),
     });
-    return nextNode;
+    updateNodeSummary(
+      tx,
+      node.id,
+      buildMessageSummary({ ...message, content: [nextPart] } as ModelMessage),
+    );
+    return mapNodeRow(tx, getNodeOrThrow(tx, node.id));
   });
 }
 
@@ -2253,37 +2344,29 @@ export function createStreamingToolResultNode(input: {
 export function markThreadNodePartsDone(nodeId: string) {
   return db.transaction((tx) => {
     const node = getNodeOrThrow(tx, nodeId);
-    const message = JSON.parse(node.messageJson) as ModelMessage;
-    const rawContent = (message as { content?: unknown }).content;
-    const content =
-      typeof rawContent === "string"
-        ? [{ type: "text", text: rawContent }]
-        : Array.isArray(rawContent)
-          ? rawContent.map((part) => {
-              if (!part || typeof part !== "object") {
-                return part;
-              }
-              if (
-                Reflect.get(part as Record<string, unknown>, "state") === "streaming" ||
-                Reflect.get(part as Record<string, unknown>, "state") === "done"
-              ) {
-                return {
-                  ...(part as Record<string, unknown>),
-                  state: "done",
-                };
-              }
-              return part;
-            })
-          : [];
-    const nextMessage = {
-      ...message,
-      content,
-    } as ModelMessage;
-    tx.update(schema.agentThreadNodeParts)
+    const message = getNodeModelMessage(tx, node);
+    const parts = listNodePartViews(tx, node.id);
+    parts.forEach((part) => {
+      if (part.state !== "streaming") {
+        return;
+      }
+      const payload =
+        part.payload && typeof part.payload === "object"
+          ? { ...(part.payload as Record<string, unknown>), state: "done" }
+          : part.payload;
+      updateNodePart(tx, node.id, part.partIndex, {
+        payload,
+        state: "done",
+        providerOptions: part.providerOptions,
+        providerMetadata: part.providerMetadata,
+      });
+    });
+    tx.update(schema.agentMessageParts)
       .set({ state: "done" })
-      .where(eq(schema.agentThreadNodeParts.nodeId, node.id))
+      .where(eq(schema.agentMessageParts.nodeId, node.id))
       .run();
-    return updateNodeMessage(tx, node.id, nextMessage);
+    updateNodeSummary(tx, node.id, buildMessageSummary(message));
+    return mapNodeRow(tx, getNodeOrThrow(tx, node.id));
   });
 }
 
@@ -2346,7 +2429,7 @@ export function markRunSucceeded(runId: string) {
       })
       .where(eq(schema.agentRuns.id, run.id))
       .run();
-    return mapRunRow(getRunOrThrow(tx, run.id));
+    return mapRunRow(tx, getRunOrThrow(tx, run.id));
   });
 }
 
@@ -2365,7 +2448,7 @@ export function markRunFailed(runId: string, errorArtifactId?: string | null) {
       })
       .where(eq(schema.agentRuns.id, run.id))
       .run();
-    return mapRunRow(getRunOrThrow(tx, run.id));
+    return mapRunRow(tx, getRunOrThrow(tx, run.id));
   });
 }
 
@@ -2380,7 +2463,7 @@ export function markRunCancelled(runId: string) {
       })
       .where(eq(schema.agentRuns.id, run.id))
       .run();
-    return mapRunRow(getRunOrThrow(tx, run.id));
+    return mapRunRow(tx, getRunOrThrow(tx, run.id));
   });
 }
 
@@ -2390,14 +2473,16 @@ export function updateRunContextSnapshot(
 ) {
   return db.transaction((tx) => {
     const run = getRunOrThrow(tx, runId);
-    tx.update(schema.agentRuns)
+    const input = getRunInputRow(tx, run.id);
+    invariant(input, "run 缺少输入快照。");
+    tx.update(schema.agentRunInputs)
       .set({
         contextSnapshotJson: serializeOptionalJson(contextSnapshot),
         updatedAt: now(),
       })
-      .where(eq(schema.agentRuns.id, run.id))
+      .where(eq(schema.agentRunInputs.id, input.id))
       .run();
-    return mapRunRow(getRunOrThrow(tx, run.id));
+    return mapRunRow(tx, getRunOrThrow(tx, run.id));
   });
 }
 
@@ -2430,10 +2515,10 @@ export function getRunTrace(runId: string): AgentRunTraceView {
     .where(eq(schema.agentRuns.parentRunId, run.id))
     .orderBy(schema.agentRuns.createdAt)
     .all()
-    .map(mapRunRow);
+    .map((row) => mapRunRow(db, row));
 
   return {
-    run: mapRunRow(run),
+    run: mapRunRow(db, run),
     steps,
     events,
     artifacts,
@@ -2449,5 +2534,5 @@ export function listChildRuns(runId: string) {
     .where(eq(schema.agentRuns.parentRunId, runId))
     .orderBy(schema.agentRuns.createdAt)
     .all()
-    .map(mapRunRow);
+    .map((row) => mapRunRow(db, row));
 }

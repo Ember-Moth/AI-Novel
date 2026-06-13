@@ -17,6 +17,25 @@ CREATE TABLE `agent_artifacts` (
 CREATE INDEX `agent_artifacts_run_idx` ON `agent_artifacts` (`run_id`);--> statement-breakpoint
 CREATE INDEX `agent_artifacts_step_idx` ON `agent_artifacts` (`step_id`);--> statement-breakpoint
 CREATE INDEX `agent_artifacts_kind_idx` ON `agent_artifacts` (`artifact_kind`);--> statement-breakpoint
+CREATE TABLE `agent_message_parts` (
+	`id` text PRIMARY KEY NOT NULL,
+	`node_id` text NOT NULL,
+	`part_index` integer NOT NULL,
+	`part_kind` text NOT NULL,
+	`visibility` text DEFAULT 'public' NOT NULL,
+	`state` text DEFAULT 'done' NOT NULL,
+	`provider_options_json` text,
+	`provider_metadata_json` text,
+	`payload_json` text NOT NULL,
+	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	FOREIGN KEY (`node_id`) REFERENCES `agent_thread_nodes`(`id`) ON UPDATE no action ON DELETE cascade,
+	CONSTRAINT "agent_message_parts_kind_valid" CHECK("agent_message_parts"."part_kind" IN ('text', 'data-assistant-ref', 'reasoning', 'tool-call', 'tool-result', 'tool-error', 'file', 'source-url', 'source-document', 'data', 'step-start')),
+	CONSTRAINT "agent_message_parts_visibility_valid" CHECK("agent_message_parts"."visibility" IN ('public', 'hidden', 'internal')),
+	CONSTRAINT "agent_message_parts_state_valid" CHECK("agent_message_parts"."state" IN ('streaming', 'done'))
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `agent_message_parts_node_idx` ON `agent_message_parts` (`node_id`,`part_index`);--> statement-breakpoint
+CREATE INDEX `agent_message_parts_kind_idx` ON `agent_message_parts` (`part_kind`);--> statement-breakpoint
 CREATE TABLE `agent_project_state` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -55,6 +74,39 @@ CREATE UNIQUE INDEX `agent_run_events_run_seq_idx` ON `agent_run_events` (`run_i
 CREATE INDEX `agent_run_events_step_idx` ON `agent_run_events` (`step_id`);--> statement-breakpoint
 CREATE INDEX `agent_run_events_node_idx` ON `agent_run_events` (`node_id`);--> statement-breakpoint
 CREATE INDEX `agent_run_events_related_run_idx` ON `agent_run_events` (`related_run_id`);--> statement-breakpoint
+CREATE TABLE `agent_run_input_refs` (
+	`id` text PRIMARY KEY NOT NULL,
+	`run_id` text NOT NULL,
+	`ref_index` integer NOT NULL,
+	`kind` text NOT NULL,
+	`mode` text NOT NULL,
+	`label` text NOT NULL,
+	`source_json` text NOT NULL,
+	`snapshot_json` text NOT NULL,
+	`display_json` text NOT NULL,
+	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	FOREIGN KEY (`run_id`) REFERENCES `agent_runs`(`id`) ON UPDATE no action ON DELETE cascade,
+	CONSTRAINT "agent_run_input_refs_label_nonempty" CHECK(length("agent_run_input_refs"."label") > 0),
+	CONSTRAINT "agent_run_input_refs_kind_valid" CHECK("agent_run_input_refs"."kind" IN ('global-prompt')),
+	CONSTRAINT "agent_run_input_refs_mode_valid" CHECK("agent_run_input_refs"."mode" IN ('snapshot-ref'))
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `agent_run_input_refs_run_index_idx` ON `agent_run_input_refs` (`run_id`,`ref_index`);--> statement-breakpoint
+CREATE INDEX `agent_run_input_refs_run_idx` ON `agent_run_input_refs` (`run_id`);--> statement-breakpoint
+CREATE TABLE `agent_run_inputs` (
+	`id` text PRIMARY KEY NOT NULL,
+	`run_id` text NOT NULL,
+	`selection_snapshot_json` text DEFAULT '{}' NOT NULL,
+	`context_snapshot_json` text,
+	`active_tools_json` text,
+	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	FOREIGN KEY (`run_id`) REFERENCES `agent_runs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `agent_run_inputs_run_idx` ON `agent_run_inputs` (`run_id`);--> statement-breakpoint
+CREATE INDEX `agent_run_inputs_run_lookup_idx` ON `agent_run_inputs` (`run_id`);--> statement-breakpoint
 CREATE TABLE `agent_run_steps` (
 	`id` text PRIMARY KEY NOT NULL,
 	`run_id` text NOT NULL,
@@ -95,9 +147,6 @@ CREATE TABLE `agent_runs` (
 	`run_mode` text NOT NULL,
 	`status` text NOT NULL,
 	`agent_profile` text NOT NULL,
-	`selection_snapshot_json` text DEFAULT '{}' NOT NULL,
-	`context_snapshot_json` text,
-	`active_tools_json` text,
 	`error_artifact_id` text,
 	`started_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	`completed_at` integer,
@@ -118,25 +167,6 @@ CREATE INDEX `agent_runs_thread_idx` ON `agent_runs` (`thread_id`);--> statement
 CREATE INDEX `agent_runs_parent_run_idx` ON `agent_runs` (`parent_run_id`);--> statement-breakpoint
 CREATE INDEX `agent_runs_trigger_node_idx` ON `agent_runs` (`trigger_node_id`);--> statement-breakpoint
 CREATE INDEX `agent_runs_thread_status_idx` ON `agent_runs` (`thread_id`,`status`);--> statement-breakpoint
-CREATE TABLE `agent_thread_node_parts` (
-	`id` text PRIMARY KEY NOT NULL,
-	`node_id` text NOT NULL,
-	`part_index` integer NOT NULL,
-	`part_kind` text NOT NULL,
-	`visibility` text DEFAULT 'public' NOT NULL,
-	`state` text DEFAULT 'done' NOT NULL,
-	`provider_options_json` text,
-	`provider_metadata_json` text,
-	`payload_json` text NOT NULL,
-	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
-	FOREIGN KEY (`node_id`) REFERENCES `agent_thread_nodes`(`id`) ON UPDATE no action ON DELETE cascade,
-	CONSTRAINT "agent_thread_node_parts_kind_valid" CHECK("agent_thread_node_parts"."part_kind" IN ('text', 'reasoning', 'tool-call', 'tool-result', 'tool-error', 'file', 'source-url', 'source-document', 'data', 'step-start')),
-	CONSTRAINT "agent_thread_node_parts_visibility_valid" CHECK("agent_thread_node_parts"."visibility" IN ('public', 'hidden', 'internal')),
-	CONSTRAINT "agent_thread_node_parts_state_valid" CHECK("agent_thread_node_parts"."state" IN ('streaming', 'done'))
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `agent_thread_node_parts_node_idx` ON `agent_thread_node_parts` (`node_id`,`part_index`);--> statement-breakpoint
-CREATE INDEX `agent_thread_node_parts_kind_idx` ON `agent_thread_node_parts` (`part_kind`);--> statement-breakpoint
 CREATE TABLE `agent_thread_nodes` (
 	`id` text PRIMARY KEY NOT NULL,
 	`thread_id` text NOT NULL,
@@ -146,7 +176,6 @@ CREATE TABLE `agent_thread_nodes` (
 	`source_step_id` text,
 	`source_kind` text NOT NULL,
 	`summary_text` text,
-	`message_json` text NOT NULL,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	FOREIGN KEY (`thread_id`) REFERENCES `agent_threads`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`parent_node_id`) REFERENCES `agent_thread_nodes`(`id`) ON UPDATE no action ON DELETE cascade,
@@ -413,6 +442,19 @@ CREATE TABLE `global_config_options` (
 	CONSTRAINT "global_config_options_key_nonempty" CHECK(length("global_config_options"."key") > 0)
 );
 --> statement-breakpoint
+CREATE TABLE `global_prompts` (
+	`id` text PRIMARY KEY NOT NULL,
+	`name` text NOT NULL,
+	`description` text,
+	`content` text NOT NULL,
+	`is_enabled` integer DEFAULT true NOT NULL,
+	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	CONSTRAINT "global_prompts_name_nonempty" CHECK(length("global_prompts"."name") > 0),
+	CONSTRAINT "global_prompts_content_nonempty" CHECK(length("global_prompts"."content") > 0)
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `global_prompts_name_idx` ON `global_prompts` (`name`);--> statement-breakpoint
 CREATE TABLE `projects` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
