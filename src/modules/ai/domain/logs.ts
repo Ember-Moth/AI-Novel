@@ -25,6 +25,7 @@ import type {
   AgentRunSummaryView,
   AgentRunTraceView,
   AgentRunView,
+  AssistantInputRefSnapshot,
   AgentThreadNodePartKind,
   AgentThreadNodePartRow,
   AgentThreadNodePartView,
@@ -56,6 +57,16 @@ interface CreateNodeInput {
   createdByRunId?: string | null;
   sourceStepId?: string | null;
   summaryText?: string | null;
+  extraParts?: CreateNodeExtraPartInput[];
+}
+
+interface CreateNodeExtraPartInput {
+  partKind: AgentThreadNodePartKind;
+  visibility?: AgentVisibility;
+  state?: AgentPartState;
+  providerOptions?: unknown;
+  providerMetadata?: unknown;
+  payload: unknown;
 }
 
 interface CreateRunInput {
@@ -69,6 +80,7 @@ interface CreateRunInput {
   agentProfile: string;
   selectionSnapshot?: unknown;
   contextSnapshot?: ProjectAssistantContextSnapshot | null;
+  inputRefsSnapshot?: readonly AssistantInputRefSnapshot[] | null;
   activeTools?: readonly ProjectAssistantToolName[] | null;
 }
 
@@ -185,6 +197,7 @@ function assertRunStatus(status: string): asserts status is AgentRunStatus {
 function assertPartKind(kind: string): asserts kind is AgentThreadNodePartKind {
   invariant(
     kind === "text" ||
+      kind === "data-assistant-ref" ||
       kind === "reasoning" ||
       kind === "tool-call" ||
       kind === "tool-result" ||
@@ -828,6 +841,18 @@ function normalizeMessageParts(message: ModelMessage) {
   });
 }
 
+function normalizeExtraNodeParts(parts: CreateNodeExtraPartInput[], startIndex: number) {
+  return parts.map((part, offset) => ({
+    partIndex: startIndex + offset,
+    partKind: part.partKind,
+    visibility: part.visibility ?? inferVisibility(part.partKind),
+    state: part.state ?? "done",
+    providerOptions: part.providerOptions,
+    providerMetadata: part.providerMetadata,
+    payload: part.payload,
+  }));
+}
+
 function getTextishSummary(message: ModelMessage) {
   const content = (message as { content?: unknown }).content;
   if (typeof content === "string") {
@@ -983,6 +1008,7 @@ function mapRunRow(row: AgentRunRow): AgentRunView {
     agentProfile: row.agentProfile,
     selectionSnapshot: JSON.parse(row.selectionSnapshotJson),
     contextSnapshot: parseStoredJson<ProjectAssistantContextSnapshot>(row.contextSnapshotJson),
+    inputRefsSnapshot: parseStoredJson<AssistantInputRefSnapshot[]>(row.inputRefsSnapshotJson),
     activeTools: parseStoredActiveTools(row.activeToolsJson),
     errorArtifactId: row.errorArtifactId,
     startedAt: row.startedAt,
@@ -1160,7 +1186,9 @@ function insertNode(executor: DatabaseExecutor, input: CreateNodeInput) {
     })
     .run();
 
-  const parts = normalizeMessageParts(input.message);
+  const messageParts = normalizeMessageParts(input.message);
+  const extraParts = normalizeExtraNodeParts(input.extraParts ?? [], messageParts.length);
+  const parts = [...messageParts, ...extraParts];
   parts.forEach((part) => {
     executor
       .insert(schema.agentThreadNodeParts)
@@ -1724,6 +1752,7 @@ export function appendUserNode(input: {
   parentNodeId: string | null;
   message: ModelMessage;
   sourceKind?: Extract<AgentThreadNodeSourceKind, "user_input" | "edit_rewrite">;
+  extraParts?: CreateNodeExtraPartInput[];
 }) {
   return db.transaction((tx) => {
     const node = insertNode(tx, {
@@ -1731,6 +1760,7 @@ export function appendUserNode(input: {
       parentNodeId: input.parentNodeId,
       message: input.message,
       sourceKind: input.sourceKind ?? "user_input",
+      extraParts: input.extraParts,
     });
     tx.update(schema.agentThreads)
       .set({
@@ -1747,6 +1777,7 @@ export function createReplacementNode(input: {
   threadId: string;
   nodeId: string;
   message: ModelMessage;
+  extraParts?: CreateNodeExtraPartInput[];
 }) {
   return db.transaction((tx) => {
     const node = getNodeOrThrow(tx, input.nodeId);
@@ -1756,6 +1787,7 @@ export function createReplacementNode(input: {
       parentNodeId: node.parentNodeId,
       message: input.message,
       sourceKind: "edit_rewrite",
+      extraParts: input.extraParts,
     });
     tx.update(schema.agentThreads)
       .set({
@@ -1799,6 +1831,7 @@ export function createRun(input: CreateRunInput) {
         agentProfile: input.agentProfile,
         selectionSnapshotJson: serializeRequiredJson(input.selectionSnapshot ?? {}, "run 选择快照"),
         contextSnapshotJson: serializeOptionalJson(input.contextSnapshot),
+        inputRefsSnapshotJson: serializeOptionalJson(input.inputRefsSnapshot),
         activeToolsJson: serializeOptionalJson(input.activeTools),
         errorArtifactId: null,
         startedAt: timestamp,

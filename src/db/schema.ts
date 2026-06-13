@@ -507,6 +507,7 @@ export const agentRuns = sqliteTable(
     agentProfile: text("agent_profile").notNull(),
     selectionSnapshotJson: text("selection_snapshot_json").notNull().default("{}"),
     contextSnapshotJson: text("context_snapshot_json"),
+    inputRefsSnapshotJson: text("input_refs_snapshot_json"),
     activeToolsJson: text("active_tools_json"),
     errorArtifactId: text("error_artifact_id").references((): any => agentArtifacts.id, {
       onDelete: "set null",
@@ -683,7 +684,7 @@ export const agentThreadNodeParts = sqliteTable(
   (table) => [
     check(
       "agent_thread_node_parts_kind_valid",
-      sql`${table.partKind} IN ('text', 'reasoning', 'tool-call', 'tool-result', 'tool-error', 'file', 'source-url', 'source-document', 'data', 'step-start')`,
+      sql`${table.partKind} IN ('text', 'data-assistant-ref', 'reasoning', 'tool-call', 'tool-result', 'tool-error', 'file', 'source-url', 'source-document', 'data', 'step-start')`,
     ),
     check(
       "agent_thread_node_parts_visibility_valid",

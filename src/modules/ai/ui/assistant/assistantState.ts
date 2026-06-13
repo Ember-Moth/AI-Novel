@@ -6,9 +6,10 @@ import type {
   AgentThreadStateView,
   AgentThreadView,
   AgentToolTraceStatus,
+  AssistantInputRefDisplay,
+  AssistantMentionInput,
   ProjectAssistantContextSnapshot,
 } from "@/modules/ai/domain/types";
-import type { AssistantMentionInput } from "./AssistantComposer";
 
 export type AssistantState = AgentThreadStateView;
 
@@ -114,6 +115,44 @@ export function getMessageText(node: AgentThreadNodeView | null | undefined) {
     })
     .filter((value): value is string => typeof value === "string")
     .join("\n");
+}
+
+export function getAssistantRefDisplays(
+  node: AgentThreadNodeView | null | undefined,
+): AssistantInputRefDisplay[] {
+  if (!node || node.role !== "user") {
+    return [];
+  }
+
+  return node.parts.flatMap((part) => {
+    if (part.partKind !== "data-assistant-ref") {
+      return [];
+    }
+    const payload = part.payload;
+    if (!payload || typeof payload !== "object") {
+      return [];
+    }
+    const refId = Reflect.get(payload, "refId");
+    const kind = Reflect.get(payload, "kind");
+    const mode = Reflect.get(payload, "mode");
+    const label = Reflect.get(payload, "label");
+    if (
+      typeof refId !== "string" ||
+      kind !== "global-prompt" ||
+      mode !== "snapshot-ref" ||
+      typeof label !== "string"
+    ) {
+      return [];
+    }
+    return [
+      {
+        refId,
+        kind,
+        mode,
+        label,
+      },
+    ];
+  });
 }
 
 export function getAssistantContentBlocks(node: AgentThreadNodeView | null | undefined) {

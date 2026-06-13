@@ -4,9 +4,11 @@ import { modelMessageSchema, type ModelMessage } from "ai";
 import {
   createMockStream,
   createProjectAssistantService,
+  db,
   seedCustomConnection,
   seedOpenAiConnection,
   seedProject,
+  schema,
 } from "./test-helpers";
 
 test("follow-up send after tool results reuses sanitized history messages", async () => {
@@ -272,6 +274,15 @@ test("openai follow-up send uses previous response id and only sends incremental
     modelId: "gpt-5",
     modelRowId: "cmodel_openai_followup",
   });
+  db.insert(schema.globalPrompts)
+    .values({
+      id: "prompt_openai_followup",
+      name: "追问扩写",
+      description: null,
+      content: "请围绕上一轮方向继续扩写，保持语气克制。",
+      isEnabled: true,
+    })
+    .run();
   let invocation = 0;
   const secondCallInput: {
     current: {
@@ -430,6 +441,14 @@ test("openai follow-up send uses previous response id and only sends incremental
     projectId: "assistant_openai_followup",
     threadId: thread.id,
     text: "继续展开",
+    mentions: [
+      {
+        kind: "global-prompt",
+        mode: "snapshot-ref",
+        targetId: "prompt_openai_followup",
+        label: "追问扩写",
+      },
+    ],
     context: {
       workspaceId: "workspace_openai_followup",
       activeContentNodeId: null,
@@ -458,6 +477,21 @@ test("openai follow-up send uses previous response id and only sends incremental
         {
           type: "text",
           text: "当前编辑器：辅助路径=/设定/角色.md；时间锚点 id=point_now，label=现在",
+        },
+      ],
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: [
+            "用户通过 @ 引用了以下全局 Prompt：",
+            "",
+            '<global_prompt id="prompt_openai_followup" name="追问扩写">',
+            "请围绕上一轮方向继续扩写，保持语气克制。",
+            "</global_prompt>",
+          ].join("\n"),
         },
       ],
     },

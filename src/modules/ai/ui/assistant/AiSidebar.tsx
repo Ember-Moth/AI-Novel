@@ -5,6 +5,8 @@ import { AnimatePresence } from "./AiSidebarView";
 import { AiMarkdown } from "./AiMarkdown";
 import type {
   AgentRunSummaryView,
+  AssistantInputRefDisplay,
+  AssistantMentionInput,
   ProjectAssistantContextSnapshot,
   TimelineSelectionUpdatedEvent,
   WorkspaceRefreshRequestedEvent,
@@ -17,10 +19,10 @@ import {
   SessionStatusOverlay,
 } from "./AiSidebarView";
 import { AssistantComposer } from "./AssistantComposer";
-import type { AssistantMentionInput } from "./AssistantComposer";
 import { AiAssistantSheetLayout } from "./AiAssistantSheetLayout";
 import {
   getAssistantContentBlocks,
+  getAssistantRefDisplays,
   getAssistantToolTrace,
   getMessageText,
   getRunSummaryByDisplayNode,
@@ -475,10 +477,11 @@ function AiSidebarMessagesContent({
       <AnimatePresence initial={false} mode="popLayout">
         {visibleMessages.map(({ message, index }) => {
           const text = getMessageText(message);
+          const refDisplays = getAssistantRefDisplays(message);
           const assistantContentBlocks = getAssistantContentBlocks(message);
           const toolTrace = getAssistantToolTrace(controller.messages, index);
           const isUser = message.role === "user";
-          const showMessageBubble = isUser || text.trim().length > 0;
+          const showMessageBubble = isUser || text.trim().length > 0 || refDisplays.length > 0;
           const candidateGroup = controller.getCandidateGroupForNode(message);
           const streamOverlayForMessage =
             controller.activeStream?.kind === "retry" &&
@@ -509,7 +512,7 @@ function AiSidebarMessagesContent({
               {isUser ? (
                 showMessageBubble ? (
                   <div className="flex justify-end">
-                    <UserMessageBubble text={text} mentions={[]} />
+                    <UserMessageBubble text={text} mentions={refDisplays} />
                   </div>
                 ) : null
               ) : null}
@@ -827,13 +830,13 @@ function UserMessageBubble({
   mentions,
 }: {
   text: string;
-  mentions: AssistantMentionInput[];
+  mentions: Array<AssistantMentionInput | AssistantInputRefDisplay>;
 }) {
   return (
     <div className="flex max-w-[88%] flex-wrap items-center gap-1.5 rounded-lg bg-accent-foreground px-3 py-2 text-[13px] leading-5 text-sidebar-background">
       {mentions.map((mention, index) => (
         <AssistantMentionDisplayChip
-          key={`${mention.kind}:${mention.targetId}:${index}`}
+          key={`${mention.kind}:${getAssistantMentionDisplayKey(mention)}:${index}`}
           mention={mention}
         />
       ))}
@@ -842,7 +845,15 @@ function UserMessageBubble({
   );
 }
 
-function AssistantMentionDisplayChip({ mention }: { mention: AssistantMentionInput }) {
+function getAssistantMentionDisplayKey(mention: AssistantMentionInput | AssistantInputRefDisplay) {
+  return "targetId" in mention ? mention.targetId : mention.refId;
+}
+
+function AssistantMentionDisplayChip({
+  mention,
+}: {
+  mention: AssistantMentionInput | AssistantInputRefDisplay;
+}) {
   return (
     <span className="inline-flex max-w-44 items-center gap-1 rounded-sm border border-sidebar-background/20 bg-sidebar-background/12 px-1.5 py-0.5 text-[12px] leading-4 text-sidebar-background">
       <span className="icon-[material-symbols--prompt-suggestion] shrink-0 text-sm" />

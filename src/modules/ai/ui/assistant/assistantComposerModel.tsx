@@ -14,16 +14,16 @@ import {
 } from "lexical";
 import type { ReactNode } from "react";
 
-export type AssistantMentionKind = "global-prompt" | "content-node" | "aux-path" | "timeline-point";
-
-export type AssistantMentionMode = "snapshot-ref" | "inline-link";
-
-export type AssistantMentionInput = {
-  kind: AssistantMentionKind;
-  mode: AssistantMentionMode;
-  targetId: string;
-  label: string;
-};
+import type {
+  AssistantMentionInput,
+  AssistantMentionKind,
+  AssistantMentionMode,
+} from "@/modules/ai/domain/types";
+export type {
+  AssistantMentionInput,
+  AssistantMentionKind,
+  AssistantMentionMode,
+} from "@/modules/ai/domain/types";
 
 export type AssistantComposerSubmitPayload = {
   text: string;

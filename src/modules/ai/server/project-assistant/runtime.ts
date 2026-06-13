@@ -8,6 +8,7 @@ import type {
   AgentThreadNodeView,
   AgentThreadStateView,
   AiConnectionRow,
+  AssistantInputRefSnapshot,
   ProjectAssistantContextSnapshot,
   ProjectAssistantToolName,
 } from "@/modules/ai/domain/types";
@@ -144,6 +145,25 @@ export function buildProjectAssistantContextMessage(
   return buildUserTextMessage(`当前编辑器：${details.join("；")}`);
 }
 
+export function buildProjectAssistantRefsMessage(
+  refs: readonly AssistantInputRefSnapshot[] | null | undefined,
+): ModelMessage | null {
+  if (refs == null || refs.length === 0) {
+    return null;
+  }
+
+  const blocks = refs.map((ref) => {
+    invariant(ref.kind === "global-prompt", "当前只支持注入全局 Prompt 引用。");
+    return [
+      `<global_prompt id="${ref.snapshot.id}" name="${ref.snapshot.name}">`,
+      ref.snapshot.content,
+      "</global_prompt>",
+    ].join("\n");
+  });
+
+  return buildUserTextMessage(`用户通过 @ 引用了以下全局 Prompt：\n\n${blocks.join("\n\n")}`);
+}
+
 export function resolveProjectAssistantActiveTools({
   selection,
   activeTools,
@@ -230,12 +250,14 @@ export function resolveAssistantRequest({
   system,
   selection,
   context,
+  inputRefs,
 }: {
   threadId: string;
   triggerNodeId: string;
   system: string;
   selection: AssistantModelSelection;
   context?: ProjectAssistantContextSnapshot | null;
+  inputRefs?: readonly AssistantInputRefSnapshot[] | null;
 }): {
   messages: ModelMessage[];
   transportSystem: string | null;
@@ -243,12 +265,16 @@ export function resolveAssistantRequest({
 } {
   const path = resolveThreadPath(threadId, triggerNodeId);
   const contextMessage = buildProjectAssistantContextMessage(context ?? null);
-  const appendContextMessage = (messages: ModelMessage[]) =>
-    contextMessage == null ? messages : [...messages, contextMessage];
+  const refsMessage = buildProjectAssistantRefsMessage(inputRefs);
+  const appendedMessages = [contextMessage, refsMessage].filter(
+    (message): message is ModelMessage => message != null,
+  );
+  const appendContextMessages = (messages: ModelMessage[]) =>
+    appendedMessages.length === 0 ? messages : [...messages, ...appendedMessages];
 
   if (!isOpenAIResponsesConnection(selection.connection)) {
     return {
-      messages: appendContextMessage(path.map((node) => node.message)),
+      messages: appendContextMessages(path.map((node) => node.message)),
       transportSystem: system,
       providerOptions: undefined,
     };
@@ -267,7 +293,7 @@ export function resolveAssistantRequest({
   };
 
   return {
-    messages: appendContextMessage(messages),
+    messages: appendContextMessages(messages),
     transportSystem: previousResponseId ? null : system,
     providerOptions:
       Object.keys(openaiOptions).length > 0

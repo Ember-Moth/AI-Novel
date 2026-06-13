@@ -37,6 +37,7 @@ import type {
   AgentRunTraceView,
   AgentThreadStateView,
   AgentThreadView,
+  AssistantMentionInput,
   AiCatalogModelView,
   AiCatalogProviderView,
   AiCatalogStatusView,
@@ -128,6 +129,7 @@ interface SendProjectAssistantMessageInput {
   projectId: string;
   threadId: string;
   text: string;
+  mentions?: AssistantMentionInput[] | null;
   context?: ProjectAssistantContextSnapshot | null;
   activeTools?: ProjectAssistantToolName[] | null;
 }
@@ -145,6 +147,7 @@ interface EditProjectAssistantMessageInput {
   threadId: string;
   nodeId: string;
   text: string;
+  mentions?: AssistantMentionInput[] | null;
   context?: ProjectAssistantContextSnapshot | null;
   activeTools?: ProjectAssistantToolName[] | null;
 }
@@ -955,12 +958,13 @@ export const sendProjectAssistantMessage = mutation<
   SendProjectAssistantMessageInput,
   ProjectAssistantSendResult,
   RpcTagList
->(async ({ projectId, threadId, text, context, activeTools }, ctx) => {
+>(async ({ projectId, threadId, text, mentions, context, activeTools }, ctx) => {
   try {
     const result = await getProjectAssistantService().sendProjectAssistantMessage({
       projectId,
       threadId,
       text,
+      mentions,
       context,
       activeTools,
     });
@@ -983,11 +987,12 @@ export const sendProjectAssistantMessageStream = stream<
   ProjectAssistantSendResult,
   RpcTagList
 >({
-  handler: async ({ projectId, threadId, text, context, activeTools }, ctx) => {
+  handler: async ({ projectId, threadId, text, mentions, context, activeTools }, ctx) => {
     const execution = getProjectAssistantService().sendProjectAssistantMessageStream({
       projectId,
       threadId,
       text,
+      mentions,
       context,
       activeTools,
     });
@@ -1099,13 +1104,14 @@ export const editProjectAssistantMessage = mutation<
   EditProjectAssistantMessageInput,
   ProjectAssistantEditResult,
   RpcTagList
->(async ({ projectId, threadId, nodeId, text, context, activeTools }, ctx) => {
+>(async ({ projectId, threadId, nodeId, text, mentions, context, activeTools }, ctx) => {
   try {
     const result = await getProjectAssistantService().editProjectAssistantMessage({
       projectId,
       threadId,
       nodeId,
       text,
+      mentions,
       context,
       activeTools,
     });
@@ -1128,12 +1134,13 @@ export const editProjectAssistantMessageStream = stream<
   ProjectAssistantEditResult,
   RpcTagList
 >({
-  handler: async ({ projectId, threadId, nodeId, text, context, activeTools }, ctx) => {
+  handler: async ({ projectId, threadId, nodeId, text, mentions, context, activeTools }, ctx) => {
     const execution = getProjectAssistantService().editProjectAssistantMessageStream({
       projectId,
       threadId,
       nodeId,
       text,
+      mentions,
       context,
       activeTools,
     });

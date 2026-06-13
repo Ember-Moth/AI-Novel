@@ -11,7 +11,9 @@ import {
   createProjectAssistantService,
   createStepLimitMockStream,
   createDefaultWorkspace,
+  db,
   logs,
+  schema,
   seedCustomConnection,
   seedProject,
   workspaceDomain,
@@ -78,6 +80,163 @@ test("sendProjectAssistantMessage materializes user and assistant nodes and reco
   expect(result.state.activePath.map((node) => node.role)).toEqual(["user", "assistant"]);
   expect(result.run.status).toBe("succeeded");
   expect(service.getRunTrace(result.run.id).steps).toHaveLength(1);
+});
+
+test("sendProjectAssistantMessage resolves global prompt mentions into run refs and user display parts", async () => {
+  seedProject("assistant_send_refs");
+  const seeded = seedCustomConnection({
+    connectionId: "conn_send_refs",
+    modelId: "story-model",
+    modelRowId: "cmodel_send_refs",
+  });
+  db.insert(schema.globalPrompts)
+    .values({
+      id: "prompt_expand",
+      name: "章节扩写",
+      description: "扩写当前章节",
+      content: "请扩写正文，但不要改变视角。",
+      isEnabled: true,
+      createdAt: 100,
+      updatedAt: 200,
+    })
+    .run();
+  let capturedMessages: unknown[] = [];
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+    streamAssistantText: ((input: { messages: unknown[] }) => {
+      capturedMessages = input.messages;
+      return createMockStream({
+        chunks: [
+          { type: "start-step", stepNumber: 0 },
+          { type: "text-delta", stepNumber: 0, delta: "Assistant reply" },
+          { type: "finish-step", stepNumber: 0, finishReason: "stop", usage: { totalTokens: 1 } },
+        ],
+        text: "Assistant reply",
+        usage: { totalTokens: 1 },
+        finishReason: "stop",
+        steps: [
+          {
+            stepNumber: 0,
+            preparedMessages: input.messages as never,
+            model: { provider: "openai", modelId: "story-model" },
+            finishReason: "stop",
+            rawFinishReason: "stop",
+            usage: { totalTokens: 1 },
+            request: { body: {} },
+            response: { body: {}, messages: [] },
+            providerMetadata: {},
+            toolCalls: [],
+            toolResults: [],
+          },
+        ],
+      })();
+    }) as any,
+  });
+  const thread = service.createProjectAssistantThread("assistant_send_refs");
+
+  const result = await service.sendProjectAssistantMessage({
+    projectId: "assistant_send_refs",
+    threadId: thread.id,
+    text: "请处理当前段落",
+    mentions: [
+      {
+        kind: "global-prompt",
+        mode: "snapshot-ref",
+        targetId: "prompt_expand",
+        label: "旧标签会被服务端快照覆盖",
+      },
+    ],
+  });
+
+  expect(result.userNode.message).toEqual({
+    role: "user",
+    content: [{ type: "text", text: "请处理当前段落" }],
+  });
+  expect(JSON.stringify(result.userNode.message)).not.toContain("请扩写正文");
+  expect(capturedMessages).toEqual([
+    {
+      role: "user",
+      content: [{ type: "text", text: "请处理当前段落" }],
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: [
+            "用户通过 @ 引用了以下全局 Prompt：",
+            "",
+            '<global_prompt id="prompt_expand" name="章节扩写">',
+            "请扩写正文，但不要改变视角。",
+            "</global_prompt>",
+          ].join("\n"),
+        },
+      ],
+    },
+  ]);
+  expect(result.userNode.parts).toContainEqual(
+    expect.objectContaining({
+      partKind: "data-assistant-ref",
+      payload: expect.objectContaining({
+        kind: "global-prompt",
+        mode: "snapshot-ref",
+        label: "章节扩写",
+      }),
+    }),
+  );
+  expect(result.run.inputRefsSnapshot).toEqual([
+    expect.objectContaining({
+      kind: "global-prompt",
+      mode: "snapshot-ref",
+      label: "章节扩写",
+      source: { promptId: "prompt_expand" },
+      snapshot: expect.objectContaining({
+        id: "prompt_expand",
+        name: "章节扩写",
+        description: "扩写当前章节",
+        content: "请扩写正文，但不要改变视角。",
+        updatedAt: 200,
+      }),
+    }),
+  ]);
+});
+
+test("sendProjectAssistantMessage rejects disabled global prompt mentions", async () => {
+  seedProject("assistant_send_disabled_refs");
+  const seeded = seedCustomConnection({
+    connectionId: "conn_send_disabled_refs",
+    modelId: "story-model",
+    modelRowId: "cmodel_send_disabled_refs",
+  });
+  db.insert(schema.globalPrompts)
+    .values({
+      id: "prompt_disabled",
+      name: "已停用",
+      description: null,
+      content: "disabled content",
+      isEnabled: false,
+    })
+    .run();
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+  });
+  const thread = service.createProjectAssistantThread("assistant_send_disabled_refs");
+
+  await expect(
+    service.sendProjectAssistantMessage({
+      projectId: "assistant_send_disabled_refs",
+      threadId: thread.id,
+      text: "请处理",
+      mentions: [
+        {
+          kind: "global-prompt",
+          mode: "snapshot-ref",
+          targetId: "prompt_disabled",
+          label: "已停用",
+        },
+      ],
+    }),
+  ).rejects.toThrow("引用的 Prompt 已被禁用。");
 });
 
 test("retryProjectAssistantMessage creates sibling assistant candidates", async () => {

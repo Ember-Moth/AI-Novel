@@ -18,6 +18,7 @@ import type {
   AgentThreadNodeView,
   AgentThreadStateView,
   AgentThreadView,
+  AssistantMentionInput,
   ProjectAssistantContextSnapshot,
   ProjectAssistantToolName,
 } from "@/modules/ai/domain/types";
@@ -163,12 +164,14 @@ export function createProjectAssistantService(
       projectId,
       threadId,
       text,
+      mentions,
       context,
       activeTools,
     }: {
       projectId: string;
       threadId: string;
       text: string;
+      mentions?: readonly AssistantMentionInput[] | null;
       context?: ProjectAssistantContextSnapshot | null;
       activeTools?: readonly ProjectAssistantToolName[] | null;
     }) {
@@ -177,6 +180,7 @@ export function createProjectAssistantService(
           projectId,
           threadId,
           text,
+          mentions,
           context,
           activeTools,
           readStoredSelection,
@@ -214,6 +218,7 @@ export function createProjectAssistantService(
       threadId,
       nodeId,
       text,
+      mentions,
       context,
       activeTools,
     }: {
@@ -221,6 +226,7 @@ export function createProjectAssistantService(
       threadId: string;
       nodeId: string;
       text: string;
+      mentions?: readonly AssistantMentionInput[] | null;
       context?: ProjectAssistantContextSnapshot | null;
       activeTools?: readonly ProjectAssistantToolName[] | null;
     }) {
@@ -230,6 +236,7 @@ export function createProjectAssistantService(
           threadId,
           nodeId,
           text,
+          mentions,
           context,
           activeTools,
           readStoredSelection,
@@ -289,6 +296,7 @@ export function createProjectAssistantService(
       projectId: string;
       threadId: string;
       text: string;
+      mentions?: readonly AssistantMentionInput[] | null;
       context?: ProjectAssistantContextSnapshot | null;
       activeTools?: readonly ProjectAssistantToolName[] | null;
     }): Promise<ProjectAssistantSendResult> {
@@ -310,6 +318,7 @@ export function createProjectAssistantService(
       threadId: string;
       nodeId: string;
       text: string;
+      mentions?: readonly AssistantMentionInput[] | null;
       context?: ProjectAssistantContextSnapshot | null;
       activeTools?: readonly ProjectAssistantToolName[] | null;
     }): Promise<ProjectAssistantEditResult> {

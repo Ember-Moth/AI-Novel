@@ -9,6 +9,7 @@ import {
   PROJECT_ASSISTANT_AGENT_PROFILE,
 } from "@/modules/ai/domain/logs";
 import type {
+  AssistantMentionInput,
   AgentThreadView,
   ProjectAssistantContextSnapshot,
   ProjectAssistantToolName,
@@ -27,14 +28,20 @@ import {
   buildUserTextMessage,
   createToolRuntimeContext,
   normalizeAssistantContextSnapshot,
-  normalizeUserText,
   resolveAssistantRequest,
   resolveProjectAssistantActiveTools,
   resolveProjectAssistantModelSelection,
   resolveProjectAssistantModelSelectionFromSnapshot,
   runNeedsContinuation,
 } from "./runtime";
+import { buildAssistantRefDisplayParts, resolveAssistantInputRefs } from "./refs";
 import type { PreparedProjectAssistantRun } from "./types-internal";
+
+function normalizeAssistantUserText(text: string, inputRefCount: number) {
+  const normalized = text.trim();
+  invariant(normalized.length > 0 || inputRefCount > 0, "消息不能为空。");
+  return normalized;
+}
 
 export function assertNoPendingRunForThread(thread: AgentThreadView) {
   invariant(!hasPendingRun(thread.id), "当前会话正在生成回复，请稍后再试。");
@@ -44,6 +51,7 @@ export function buildSendRun({
   projectId,
   threadId,
   text,
+  mentions,
   context,
   activeTools,
   readStoredSelection,
@@ -51,6 +59,7 @@ export function buildSendRun({
   projectId: string;
   threadId: string;
   text: string;
+  mentions?: readonly AssistantMentionInput[] | null;
   context?: ProjectAssistantContextSnapshot | null;
   activeTools?: readonly ProjectAssistantToolName[] | null;
   readStoredSelection: () => AiAssistantModelSelection | null;
@@ -67,12 +76,14 @@ export function buildSendRun({
   invariant(thread.projectId === projectId, "AI 会话不属于当前项目。");
   invariant(thread.archivedAt == null, "不能向已归档会话发送消息。");
   assertNoPendingRunForThread(thread);
+  const inputRefs = resolveAssistantInputRefs(mentions);
 
   const userNode = appendUserNode({
     threadId: thread.id,
     parentNodeId: thread.activeTipNodeId,
-    message: buildUserTextMessage(normalizeUserText(text)),
+    message: buildUserTextMessage(normalizeAssistantUserText(text, inputRefs.length)),
     sourceKind: "user_input",
+    extraParts: buildAssistantRefDisplayParts(inputRefs),
   });
   const run = createRun({
     threadId: thread.id,
@@ -82,6 +93,7 @@ export function buildSendRun({
     agentProfile: PROJECT_ASSISTANT_AGENT_PROFILE,
     selectionSnapshot: selection.snapshot,
     contextSnapshot: normalizedContext,
+    inputRefsSnapshot: inputRefs,
     activeTools: resolvedActiveTools,
   });
   appendRunEvent({
@@ -98,6 +110,7 @@ export function buildSendRun({
     system,
     selection,
     context: normalizedContext,
+    inputRefs,
   });
 
   return {
@@ -234,6 +247,7 @@ export function buildEditRun({
   threadId,
   nodeId,
   text,
+  mentions,
   context,
   activeTools,
   readStoredSelection,
@@ -242,6 +256,7 @@ export function buildEditRun({
   threadId: string;
   nodeId: string;
   text: string;
+  mentions?: readonly AssistantMentionInput[] | null;
   context?: ProjectAssistantContextSnapshot | null;
   activeTools?: readonly ProjectAssistantToolName[] | null;
   readStoredSelection: () => AiAssistantModelSelection | null;
@@ -258,11 +273,13 @@ export function buildEditRun({
   invariant(thread.projectId === projectId, "AI 会话不属于当前项目。");
   invariant(thread.archivedAt == null, "不能修改已归档会话。");
   assertNoPendingRunForThread(thread);
+  const inputRefs = resolveAssistantInputRefs(mentions);
 
   const replacementNode = createReplacementNode({
     threadId: thread.id,
     nodeId,
-    message: buildUserTextMessage(normalizeUserText(text)),
+    message: buildUserTextMessage(normalizeAssistantUserText(text, inputRefs.length)),
+    extraParts: buildAssistantRefDisplayParts(inputRefs),
   });
   const run = createRun({
     threadId: thread.id,
@@ -272,6 +289,7 @@ export function buildEditRun({
     agentProfile: PROJECT_ASSISTANT_AGENT_PROFILE,
     selectionSnapshot: selection.snapshot,
     contextSnapshot: normalizedContext,
+    inputRefsSnapshot: inputRefs,
     activeTools: resolvedActiveTools,
   });
   appendRunEvent({
@@ -288,6 +306,7 @@ export function buildEditRun({
     system,
     selection,
     context: normalizedContext,
+    inputRefs,
   });
 
   return {

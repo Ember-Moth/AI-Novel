@@ -31,6 +31,7 @@ export type AgentThreadNodeSourceKind =
   | "edit_rewrite";
 export type AgentThreadNodePartKind =
   | "text"
+  | "data-assistant-ref"
   | "reasoning"
   | "tool-call"
   | "tool-result"
@@ -125,6 +126,41 @@ export interface ProjectAssistantContextSnapshot {
   activeAuxPath: string | null;
   activeTimelinePointId: string | null;
   activeTimelineLabel: string | null;
+}
+
+export type AssistantMentionKind = "global-prompt" | "content-node" | "aux-path" | "timeline-point";
+
+export type AssistantMentionMode = "snapshot-ref" | "inline-link";
+
+export interface AssistantMentionInput {
+  kind: AssistantMentionKind;
+  mode: AssistantMentionMode;
+  targetId: string;
+  label: string;
+}
+
+export interface AssistantInputRefSnapshot {
+  refId: string;
+  kind: "global-prompt";
+  mode: "snapshot-ref";
+  label: string;
+  source: {
+    promptId: string;
+  };
+  snapshot: {
+    id: string;
+    name: string;
+    description: string | null;
+    content: string;
+    updatedAt: number;
+  };
+}
+
+export interface AssistantInputRefDisplay {
+  refId: string;
+  kind: AssistantInputRefSnapshot["kind"];
+  mode: AssistantInputRefSnapshot["mode"];
+  label: string;
 }
 
 export interface AgentToolSummaryEntry {
@@ -264,6 +300,7 @@ export interface AgentRunView {
   agentProfile: string;
   selectionSnapshot: unknown;
   contextSnapshot: ProjectAssistantContextSnapshot | null;
+  inputRefsSnapshot: AssistantInputRefSnapshot[] | null;
   activeTools?: ProjectAssistantToolName[] | null;
   errorArtifactId: string | null;
   startedAt: number;

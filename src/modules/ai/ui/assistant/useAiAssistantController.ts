@@ -649,6 +649,7 @@ export function useAiAssistantController(
             projectId,
             threadId,
             text,
+            mentions: payload.mentions,
             context,
             activeTools,
           },
