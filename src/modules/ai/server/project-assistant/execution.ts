@@ -114,6 +114,10 @@ const CONTENT_WRITE_TOOL_NAME_SET = new Set<string>([
   "move_manuscript_node",
   "delete_manuscript_node",
 ]);
+const CONTENT_AUTO_OPEN_TOOL_NAME_SET = new Set<string>([
+  "create_manuscript_node",
+  "update_manuscript_node",
+]);
 
 const AUX_WRITE_TOOL_NAME_SET = new Set<string>([
   "create_dir",
@@ -168,15 +172,26 @@ function extractWorkspaceRefreshRequestedEventFromToolResult({
   let areas: readonly WorkspaceRefreshArea[] | null = null;
   let contentNodeId: string | null | undefined;
   let auxNodeId: string | null | undefined;
-  let auxTimelinePointId: string | null | undefined;
+  let refreshTimelinePointId: string | null | undefined;
 
   if (CONTENT_WRITE_TOOL_NAME_SET.has(toolName as string)) {
     areas = ["content"];
-    contentNodeId = typeof nodeId === "string" && nodeId.trim().length > 0 ? nodeId : null;
+    contentNodeId =
+      CONTENT_AUTO_OPEN_TOOL_NAME_SET.has(toolName as string) &&
+      typeof nodeId === "string" &&
+      nodeId.trim().length > 0
+        ? nodeId
+        : null;
+    refreshTimelinePointId =
+      CONTENT_AUTO_OPEN_TOOL_NAME_SET.has(toolName as string) &&
+      typeof timelinePointId === "string" &&
+      timelinePointId.trim().length > 0
+        ? timelinePointId
+        : null;
   } else if (AUX_WRITE_TOOL_NAME_SET.has(toolName as string)) {
     areas = ["aux"];
     auxNodeId = typeof nodeId === "string" && nodeId.trim().length > 0 ? nodeId : null;
-    auxTimelinePointId =
+    refreshTimelinePointId =
       typeof timelinePointId === "string" && timelinePointId.trim().length > 0
         ? timelinePointId
         : null;
@@ -192,7 +207,7 @@ function extractWorkspaceRefreshRequestedEventFromToolResult({
     areas,
     ...(contentNodeId === undefined ? {} : { contentNodeId }),
     ...(auxNodeId === undefined ? {} : { auxNodeId }),
-    ...(auxTimelinePointId === undefined ? {} : { timelinePointId: auxTimelinePointId }),
+    ...(refreshTimelinePointId === undefined ? {} : { timelinePointId: refreshTimelinePointId }),
   };
 }
 

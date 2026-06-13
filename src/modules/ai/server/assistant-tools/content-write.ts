@@ -4,13 +4,14 @@ import {
   createContentNode,
   deleteContentNode,
   moveContentNode,
+  ORIGIN_TIMELINE_POINT_ID,
   readManuscriptNode,
   updateContentNode,
 } from "@/modules/workspace/domain";
 
 import type { ToolBuildContext } from "./context";
 import { failure, withEnvelope } from "./envelope";
-import { resolveCurrentTimelinePointId } from "./timeline-helpers";
+import { getTimelineLabelById, resolveCurrentTimelinePointId } from "./timeline-helpers";
 import type { ContentWriteToolName } from "./tool-names";
 import { getWorkspaceForProject } from "./workspace";
 
@@ -22,6 +23,28 @@ function createManuscriptInsertQueueKey(input: {
   afterSiblingId: string | null;
 }) {
   return `${input.workspaceId}:${input.parentId}:${input.afterSiblingId ?? "head"}`;
+}
+
+function buildContentAnchorTimelineWarnings(input: {
+  workspaceId: string;
+  currentTimelinePointId: string;
+  nodeTimelinePointId: string;
+}) {
+  if (input.currentTimelinePointId === input.nodeTimelinePointId) {
+    return [];
+  }
+
+  return [
+    {
+      code: "content_anchor_timeline_not_current" as const,
+      message:
+        "当前章节锚定的时间轴锚点未被选中，如果需要读取章节锚定的上下文，请执行 set_current_timeline。",
+      currentTimelinePointId: input.currentTimelinePointId,
+      currentTimelineLabel: getTimelineLabelById(input.workspaceId, input.currentTimelinePointId),
+      nodeTimelinePointId: input.nodeTimelinePointId,
+      nodeTimelineLabel: getTimelineLabelById(input.workspaceId, input.nodeTimelinePointId),
+    },
+  ];
 }
 
 export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildContext) {
@@ -163,6 +186,7 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
         }
 
         return withEnvelope(() => {
+          const currentTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
           const node = updateContentNode({
             workspaceId: workspace.id,
             nodeId,
@@ -170,6 +194,15 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
             body: body === undefined ? undefined : (body ?? null),
             anchorPointId: anchorPointId ?? undefined,
           });
+          const warnings =
+            body === undefined
+              ? []
+              : buildContentAnchorTimelineWarnings({
+                  workspaceId: workspace.id,
+                  currentTimelinePointId,
+                  nodeTimelinePointId: node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID,
+                });
+          const timelinePointId = node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID;
 
           return {
             ok: true,
@@ -178,6 +211,8 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
               action: "updated" as const,
               nodeId: node.id,
               title: node.title,
+              timelinePointId,
+              ...(warnings.length > 0 ? { warnings } : {}),
             },
           };
         });

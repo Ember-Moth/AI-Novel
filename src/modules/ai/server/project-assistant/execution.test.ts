@@ -487,6 +487,7 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for co
               data: {
                 action: "updated",
                 nodeId: "content_stream",
+                timelinePointId: "timeline_written",
               },
             },
           },
@@ -517,6 +518,7 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for co
                 data: {
                   action: "updated",
                   nodeId: "content_stream",
+                  timelinePointId: "timeline_written",
                 },
               },
             },
@@ -545,6 +547,7 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for co
     workspaceId: workspace.id,
     areas: ["content"],
     contentNodeId: "content_stream",
+    timelinePointId: "timeline_written",
   });
 });
 

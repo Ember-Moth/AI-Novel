@@ -142,6 +142,26 @@ export function getAuxRefreshTargetTimelinePointId(event: WorkspaceRefreshReques
     : null;
 }
 
+export function getContentRefreshTargetTimelinePointId(event: WorkspaceRefreshRequestedEvent) {
+  if (!event.areas.includes("content")) {
+    return null;
+  }
+
+  return typeof event.timelinePointId === "string" && event.timelinePointId.trim().length > 0
+    ? event.timelinePointId
+    : null;
+}
+
+export function getContentRefreshTargetNodeId(event: WorkspaceRefreshRequestedEvent) {
+  if (!event.areas.includes("content")) {
+    return null;
+  }
+
+  return typeof event.contentNodeId === "string" && event.contentNodeId.trim().length > 0
+    ? event.contentNodeId
+    : null;
+}
+
 export function shouldRefetchActiveAuxForRefresh({
   event,
   activeTimelinePointId,
@@ -276,6 +296,22 @@ function ProjectWorkspace({
       if (event.type === "timeline-selection-updated") {
         workspaceStore.getState().setActiveTimelinePointId(event.timelinePointId);
         return;
+      }
+
+      const contentTargetNodeId = getContentRefreshTargetNodeId(event);
+      const contentTargetTimelinePointId = getContentRefreshTargetTimelinePointId(event);
+      if (contentTargetNodeId) {
+        const state = workspaceStore.getState();
+        state.setShouldAutoSelectContent(true);
+        state.setActiveAuxNodeId(null);
+        state.setPendingContentNodeId(contentTargetNodeId);
+        state.setActiveContentNodeId(contentTargetNodeId);
+        if (
+          contentTargetTimelinePointId &&
+          contentTargetTimelinePointId !== activeTimelinePointId
+        ) {
+          state.setActiveTimelinePointId(contentTargetTimelinePointId);
+        }
       }
 
       const auxTargetTimelinePointId = getAuxRefreshTargetTimelinePointId(event);

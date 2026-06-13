@@ -5,6 +5,8 @@ import type { AuxTreeNodeVM } from "@/modules/workspace/ui/editor/model/types";
 
 import {
   getAuxRefreshTargetTimelinePointId,
+  getContentRefreshTargetNodeId,
+  getContentRefreshTargetTimelinePointId,
   shouldClearActiveAuxDraftForRefresh,
   shouldClearActiveContentDraftForRefresh,
   shouldHandleWorkspaceRefreshRequested,
@@ -189,6 +191,33 @@ test("getAuxRefreshTargetTimelinePointId returns the aux refresh target when pre
     getAuxRefreshTargetTimelinePointId(
       createWorkspaceRefreshRequestedEvent({
         areas: ["aux"],
+        timelinePointId: "",
+      }),
+    ),
+  ).toBeNull();
+});
+
+test("getContentRefreshTarget helpers return content auto-open targets when present", () => {
+  const event = createWorkspaceRefreshRequestedEvent({
+    areas: ["content"],
+    contentNodeId: "content_target",
+    timelinePointId: "point_target",
+  });
+
+  expect(getContentRefreshTargetNodeId(event)).toBe("content_target");
+  expect(getContentRefreshTargetTimelinePointId(event)).toBe("point_target");
+  expect(
+    getContentRefreshTargetNodeId(
+      createWorkspaceRefreshRequestedEvent({
+        areas: ["aux"],
+        contentNodeId: "content_target",
+      }),
+    ),
+  ).toBeNull();
+  expect(
+    getContentRefreshTargetTimelinePointId(
+      createWorkspaceRefreshRequestedEvent({
+        areas: ["content"],
         timelinePointId: "",
       }),
     ),

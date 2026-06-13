@@ -493,6 +493,62 @@ test("content write tools return manuscript titles for model and UI summaries", 
   });
 });
 
+test("update_manuscript_node warns when editing body outside the node anchor timeline", async () => {
+  const workspace = seedProject("assistant_tools_update_manuscript_anchor_warning");
+  const anchoredPoint = workspaceDomain.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    label: "锚定章节",
+  });
+  const currentPoint = workspaceDomain.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: anchoredPoint.id,
+    label: "当前上下文",
+  });
+  const chapter = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: workspace.contentRootId!,
+    anchorPointId: anchoredPoint.id,
+    title: "章节",
+    body: "旧正文",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_update_manuscript_anchor_warning",
+    runtimeContext: createRuntimeContext({
+      workspaceId: workspace.id,
+      activeContentNodeId: chapter.id,
+      activeContentTitle: chapter.title,
+      activeAuxNodeId: null,
+      activeAuxPath: null,
+      activeTimelinePointId: currentPoint.id,
+      activeTimelineLabel: currentPoint.label,
+    }),
+  });
+
+  const result = await executeTool(tools.update_manuscript_node!, {
+    nodeId: chapter.id,
+    body: "新正文",
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    data: {
+      action: "updated",
+      nodeId: chapter.id,
+      timelinePointId: anchoredPoint.id,
+      warnings: [
+        {
+          code: "content_anchor_timeline_not_current",
+          currentTimelinePointId: currentPoint.id,
+          currentTimelineLabel: "当前上下文",
+          nodeTimelinePointId: anchoredPoint.id,
+          nodeTimelineLabel: "锚定章节",
+        },
+      ],
+    },
+  });
+});
+
 test("list_files returns a recursive tree by default and does not recurse into symlinks", async () => {
   const workspace = seedProject("assistant_tools_list_tree_default");
   const settingsDir = workspaceDomain.mkdirAt({
