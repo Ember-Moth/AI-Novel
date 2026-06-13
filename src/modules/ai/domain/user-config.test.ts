@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
-import { getConfigFilePath } from "@/shared/lib/storage-paths";
+import { ensureConfigDir } from "@/shared/lib/storage-paths";
 import { setupMockDatabase } from "@/test/mock-db";
 
 setupMockDatabase();
@@ -18,6 +19,14 @@ function prompt(id: string, name = id) {
     createdAt: 1,
     updatedAt: 1,
   };
+}
+
+function getPromptsConfigDir() {
+  return join(ensureConfigDir(), "prompts");
+}
+
+function getPromptConfigFilePath(id: string) {
+  return join(getPromptsConfigDir(), `${encodeURIComponent(id)}.json`);
 }
 
 test("user config files default to empty lists when missing", () => {
@@ -43,10 +52,13 @@ test("prompt config persists create update and delete operations", () => {
   userConfig.deleteGlobalPromptFromConfig("prompt_b");
   expect(userConfig.listGlobalPromptsFromConfig().map((item) => item.id)).toEqual(["prompt_a"]);
 
-  const rawFile = JSON.parse(readFileSync(getConfigFilePath("prompts.json"), "utf8")) as {
-    prompts: unknown[];
+  const promptFiles = readdirSync(getPromptsConfigDir()).filter((name) => name.endsWith(".json"));
+  expect(promptFiles).toEqual(["prompt_a.json"]);
+  const rawPrompt = JSON.parse(readFileSync(getPromptConfigFilePath("prompt_a"), "utf8")) as {
+    content: string;
   };
-  expect(rawFile.prompts).toHaveLength(1);
+  expect(rawPrompt.content).toBe("Updated");
+  expect(existsSync(getPromptConfigFilePath("prompt_b"))).toBe(false);
 });
 
 test("ai connection config persists connections overrides and custom models", () => {
@@ -99,14 +111,18 @@ test("ai connection config persists connections overrides and custom models", ()
   expect(userConfig.listCatalogOverridesForConnectionFromConfig("conn_a")).toEqual([]);
 });
 
-test("invalid config JSON throws and is not overwritten", () => {
-  writeFileSync(getConfigFilePath("prompts.json"), "{not-json", "utf8");
+test("invalid prompt directory file throws and is not overwritten", () => {
+  userConfig.insertGlobalPromptToConfig(prompt("prompt_a", "Alpha"));
+  writeFileSync(getPromptConfigFilePath("prompt_a"), "{not-json", "utf8");
 
   expect(() => userConfig.listGlobalPromptsFromConfig()).toThrow("不是有效 JSON");
-  expect(() => userConfig.insertGlobalPromptToConfig(prompt("after_invalid"))).toThrow(
-    "不是有效 JSON",
-  );
-  expect(readFileSync(getConfigFilePath("prompts.json"), "utf8")).toBe("{not-json");
+  expect(() =>
+    userConfig.updateGlobalPromptInConfig("prompt_a", {
+      content: "Updated",
+      updatedAt: 2,
+    }),
+  ).toThrow("不是有效 JSON");
+  expect(readFileSync(getPromptConfigFilePath("prompt_a"), "utf8")).toBe("{not-json");
 });
 
 test("multiple file-backed writes keep all records", async () => {

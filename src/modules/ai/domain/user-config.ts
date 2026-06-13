@@ -1,5 +1,17 @@
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
+
+import { createId } from "@/shared/lib/domain";
 import { createJsonFileStore } from "@/shared/lib/json-file-store";
-import { getConfigFilePath } from "@/shared/lib/storage-paths";
+import { ensureConfigDir, getConfigFilePath } from "@/shared/lib/storage-paths";
 import type {
   AiConnectionCatalogOverrideRow,
   AiConnectionCustomModelRow,
@@ -7,25 +19,55 @@ import type {
   GlobalPromptRow,
 } from "./types";
 
-interface PromptConfigFile {
-  prompts: GlobalPromptRow[];
-}
-
 interface AiConnectionsConfigFile {
   connections: AiConnectionRow[];
   catalogOverrides: AiConnectionCatalogOverrideRow[];
   customModels: AiConnectionCustomModelRow[];
 }
 
-const promptStore = createJsonFileStore<PromptConfigFile>(
-  () => getConfigFilePath("prompts.json"),
-  () => ({ prompts: [] }),
-);
-
 const aiConnectionsStore = createJsonFileStore<AiConnectionsConfigFile>(
   () => getConfigFilePath("ai-connections.json"),
   () => ({ connections: [], catalogOverrides: [], customModels: [] }),
 );
+
+function getPromptsConfigDir() {
+  const dir = join(ensureConfigDir(), "prompts");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function getPromptConfigFilePath(id: string) {
+  return join(getPromptsConfigDir(), `${encodeURIComponent(id)}.json`);
+}
+
+function readJsonFile<T>(filepath: string): T {
+  try {
+    return JSON.parse(readFileSync(filepath, "utf8")) as T;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`配置文件 ${filepath} 不是有效 JSON：${message}`);
+  }
+}
+
+function writeJsonFile<T>(filepath: string, value: T): T {
+  const json = `${JSON.stringify(value, null, 2)}\n`;
+  const tempPath = `${filepath}.${createId("tmp")}.tmp`;
+  writeFileSync(tempPath, json, "utf8");
+  renameSync(tempPath, filepath);
+  return value;
+}
+
+function listPromptConfigFiles(dir: string) {
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => join(dir, entry.name))
+    .sort();
+}
+
+function readPromptConfigDirectory() {
+  const dir = getPromptsConfigDir();
+  return listPromptConfigFiles(dir).map((filepath) => readJsonFile<GlobalPromptRow>(filepath));
+}
 
 function normalizeAiConnectionsFile(file: AiConnectionsConfigFile): AiConnectionsConfigFile {
   return {
@@ -36,40 +78,36 @@ function normalizeAiConnectionsFile(file: AiConnectionsConfigFile): AiConnection
 }
 
 export function listGlobalPromptsFromConfig() {
-  return [...promptStore.read().prompts].sort((a, b) => a.name.localeCompare(b.name));
+  return readPromptConfigDirectory().sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function getGlobalPromptFromConfig(id: string) {
-  return promptStore.read().prompts.find((prompt) => prompt.id === id) ?? null;
+  return readPromptConfigDirectory().find((prompt) => prompt.id === id) ?? null;
 }
 
 export function findGlobalPromptByNameFromConfig(name: string) {
-  return promptStore.read().prompts.find((prompt) => prompt.name === name) ?? null;
+  return readPromptConfigDirectory().find((prompt) => prompt.name === name) ?? null;
 }
 
 export function insertGlobalPromptToConfig(prompt: GlobalPromptRow) {
-  promptStore.update((file) => ({
-    prompts: [...file.prompts, prompt],
-  }));
-  return prompt;
+  readPromptConfigDirectory();
+  return writeJsonFile(getPromptConfigFilePath(prompt.id), prompt);
 }
 
 export function updateGlobalPromptInConfig(id: string, updates: Partial<GlobalPromptRow>) {
-  let updated: GlobalPromptRow | null = null;
-  promptStore.update((file) => ({
-    prompts: file.prompts.map((prompt) => {
-      if (prompt.id !== id) return prompt;
-      updated = { ...prompt, ...updates };
-      return updated;
-    }),
-  }));
-  return updated;
+  const prompt = readPromptConfigDirectory().find((item) => item.id === id);
+  if (!prompt) return null;
+
+  const updated = { ...prompt, ...updates };
+  return writeJsonFile(getPromptConfigFilePath(id), updated);
 }
 
 export function deleteGlobalPromptFromConfig(id: string) {
-  promptStore.update((file) => ({
-    prompts: file.prompts.filter((prompt) => prompt.id !== id),
-  }));
+  readPromptConfigDirectory();
+  const filepath = getPromptConfigFilePath(id);
+  if (existsSync(filepath)) {
+    unlinkSync(filepath);
+  }
 }
 
 export function listAiConnectionsFromConfig() {
