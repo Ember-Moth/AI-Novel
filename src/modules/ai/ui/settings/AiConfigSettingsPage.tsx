@@ -106,11 +106,14 @@ export function AiConfigSettingsPage() {
     }
   };
 
-  const handleMaxStepsChange = async (value: string) => {
+  const handleMaxStepsInputChange = (value: string) => {
     setMaxStepsInput(value);
     setActionError(null);
+  };
 
-    if (!value.trim()) {
+  const commitMaxStepsInput = async (value = maxStepsInput) => {
+    const normalizedValue = value.trim();
+    if (!normalizedValue) {
       try {
         await saveMaxSteps.mutate(null);
       } catch (error) {
@@ -119,12 +122,15 @@ export function AiConfigSettingsPage() {
       return;
     }
 
-    const nextValue = Number(value);
+    const nextValue = Number(normalizedValue);
     if (
       !Number.isFinite(nextValue) ||
       nextValue < AI_ASSISTANT_MAX_STEPS_MIN ||
       nextValue > AI_ASSISTANT_MAX_STEPS_MAX
     ) {
+      setActionError(
+        `最大步数必须是 ${AI_ASSISTANT_MAX_STEPS_MIN}-${AI_ASSISTANT_MAX_STEPS_MAX} 之间的数字。`,
+      );
       return;
     }
 
@@ -206,8 +212,20 @@ export function AiConfigSettingsPage() {
                     max={AI_ASSISTANT_MAX_STEPS_MAX}
                     step={1}
                     value={maxStepsLoading ? "" : maxStepsInput}
-                    disabled={maxStepsLoading || saveMaxSteps.isPending}
-                    onChange={(event) => void handleMaxStepsChange(event.target.value)}
+                    disabled={maxStepsLoading}
+                    onChange={(event) => handleMaxStepsInputChange(event.target.value)}
+                    onBlur={() => void commitMaxStepsInput()}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.currentTarget.blur();
+                      }
+
+                      if (event.key === "Escape") {
+                        setActionError(null);
+                        setMaxStepsInput(String(maxSteps ?? AI_ASSISTANT_MAX_STEPS_DEFAULT));
+                        event.currentTarget.blur();
+                      }
+                    }}
                     className="h-8 w-28 rounded-md border border-border bg-sidebar-background px-2 text-sm text-foreground outline-none placeholder:text-foreground-muted/50 focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     placeholder={String(AI_ASSISTANT_MAX_STEPS_DEFAULT)}
                   />
