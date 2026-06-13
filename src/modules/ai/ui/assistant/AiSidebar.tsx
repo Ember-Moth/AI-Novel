@@ -280,7 +280,7 @@ export function AiSidebar({
                   }
                   onSubmit={controller.handleSubmit}
                 />
-                <div className="flex min-w-0 items-center gap-2 px-1.5 pb-1.5">
+                <div className="mt-1 flex min-w-0 items-center gap-2 px-1.5 pb-1.5">
                   <ModelPicker
                     selectedConnectionId={controller.selectedConnectionId}
                     selectedModelId={controller.selectedModelId}
