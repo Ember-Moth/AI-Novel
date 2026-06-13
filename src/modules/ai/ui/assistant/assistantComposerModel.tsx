@@ -104,7 +104,7 @@ export class AssistantMentionNode extends DecoratorNode<ReactNode> {
 
   override createDOM(): HTMLElement {
     const element = document.createElement("span");
-    element.className = "inline-block align-baseline";
+    element.className = "inline-flex align-middle leading-none";
     return element;
   }
 
@@ -115,12 +115,12 @@ export class AssistantMentionNode extends DecoratorNode<ReactNode> {
   override decorate(): ReactNode {
     return (
       <span
-        className="inline-flex max-w-44 items-center gap-1 rounded-sm border border-accent-foreground/45 bg-accent-background/35 px-1.5 py-0.5 text-[12px] leading-4 text-accent-foreground"
+        className="inline-flex h-5 max-w-44 items-center gap-1 rounded-sm border border-accent-foreground/45 bg-accent-background/35 px-1.5 text-[12px] leading-none text-accent-foreground"
         data-assistant-mention-kind={this.__kind}
         data-assistant-mention-target-id={this.__targetId}
       >
-        <span className="icon-[material-symbols--prompt-suggestion] shrink-0 text-sm" />
-        <span className="truncate">@{this.__label}</span>
+        <span className="icon-[material-symbols--prompt-suggestion] shrink-0 text-sm leading-none" />
+        <span className="truncate leading-none">@{this.__label}</span>
       </span>
     );
   }
