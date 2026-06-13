@@ -305,7 +305,7 @@ function AssistantComposerInner({
               </div>
             }
             spellCheck={false}
-            className="field-sizing-content max-h-48 min-h-5 w-full overflow-y-auto border-none bg-transparent px-2.5 pt-2 text-[13px] leading-5 break-words whitespace-pre-wrap text-editor-foreground outline-none"
+            className="field-sizing-content max-h-48 min-h-5 w-full overflow-y-auto border-none bg-transparent px-2.5 pt-2 text-[13px] leading-5 wrap-break-word whitespace-pre-wrap text-editor-foreground outline-none"
             onCompositionStart={() => {
               composingRef.current = true;
             }}
