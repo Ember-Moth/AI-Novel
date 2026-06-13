@@ -1,10 +1,15 @@
+import { useState } from "react";
+
 import { AuxNodeIcon, ContentNodeIcon } from "@/modules/workspace/ui/editor/components/icons";
 import { MainTextEditor } from "@/shared/ui/editor/MainTextEditor";
+import { cn } from "@/shared/lib/cn";
 import type {
   AuxTreeNodeVM,
   ContentTreeNodeVM,
   SaveState,
 } from "@/modules/workspace/ui/editor/model/types";
+
+import { WorkspaceMarkdownPreview } from "./WorkspaceMarkdownPreview";
 
 const EDITOR_HEADER_CLASS =
   "flex h-10 shrink-0 items-center gap-2 border-b border-border bg-title-bar-background px-4";
@@ -41,6 +46,40 @@ function PendingStatus({ isPending }: { isPending: boolean }) {
   return <span className={STATUS_LABEL_CLASS}>保存中</span>;
 }
 
+function PreviewToggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (_checked: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      title={checked ? "切回编辑" : "切换预览"}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "inline-flex h-6 shrink-0 items-center gap-1.5 rounded border px-2 text-[11px] leading-none transition",
+        checked
+          ? "border-accent-foreground/45 bg-accent-background/35 text-accent-foreground"
+          : "border-border bg-editor-background text-foreground-muted hover:text-foreground",
+      )}
+    >
+      <span
+        className={cn(
+          "text-sm leading-none",
+          checked
+            ? "icon-[material-symbols--visibility]"
+            : "icon-[material-symbols--visibility-off]",
+        )}
+      />
+      预览
+    </button>
+  );
+}
+
 export function EditorArea({
   target,
   contentNode,
@@ -68,6 +107,8 @@ export function EditorArea({
   onBodyChange: (_value: string) => void;
   onAuxContentChange: (_value: string) => void;
 }) {
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+
   if (!target) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
@@ -84,18 +125,23 @@ export function EditorArea({
             hasBody={contentNode.body.trim().length > 0}
             hasChildren={contentNode.children.length > 0}
           />
-          <span className="text-[14px] text-foreground">{contentNode.title}</span>
+          <span className="min-w-0 truncate text-[14px] text-foreground">{contentNode.title}</span>
           <SaveStatus saveState={contentSaveState} />
+          <PreviewToggle checked={isPreviewMode} onChange={setIsPreviewMode} />
           <span className="shrink-0 text-[11px] text-accent-foreground">
             时间锚点: {timelineLabel}
           </span>
         </div>
-        <MainTextEditor
-          value={body}
-          onChange={onBodyChange}
-          placeholder="开始写作..."
-          variant="content"
-        />
+        {isPreviewMode ? (
+          <WorkspaceMarkdownPreview content={body} emptyLabel="暂无正文可预览" />
+        ) : (
+          <MainTextEditor
+            value={body}
+            onChange={onBodyChange}
+            placeholder="开始写作..."
+            variant="content"
+          />
+        )}
       </div>
     );
   }
@@ -111,7 +157,7 @@ export function EditorArea({
         <div className="flex h-full flex-col">
           <div className={EDITOR_HEADER_CLASS}>
             <AuxNodeIcon nodeType={auxNode.nodeType} />
-            <span className="truncate text-[14px] text-red-300">{title}</span>
+            <span className="min-w-0 truncate text-[14px] text-red-300">{title}</span>
             <PendingStatus isPending={auxPending} />
             <span className={`${auxPending ? "" : "ml-auto"}${TIMELINE_LABEL_CLASS}`}>
               时间点: {timelineLabel}
@@ -129,18 +175,23 @@ export function EditorArea({
         <div className="flex h-full flex-col">
           <div className={EDITOR_HEADER_CLASS}>
             <AuxNodeIcon nodeType="file" />
-            <span className="truncate text-[14px] text-foreground">{auxNode.path}</span>
+            <span className="min-w-0 truncate text-[14px] text-foreground">{auxNode.path}</span>
             <SaveStatus saveState={auxSaveState} isPending={auxPending} />
+            <PreviewToggle checked={isPreviewMode} onChange={setIsPreviewMode} />
             <span className="shrink-0 text-[11px] text-accent-foreground">
               时间点: {timelineLabel}
             </span>
           </div>
-          <MainTextEditor
-            value={auxContent}
-            onChange={onAuxContentChange}
-            placeholder="编辑辅助信息..."
-            variant="aux"
-          />
+          {isPreviewMode ? (
+            <WorkspaceMarkdownPreview content={auxContent} emptyLabel="暂无辅助信息可预览" />
+          ) : (
+            <MainTextEditor
+              value={auxContent}
+              onChange={onAuxContentChange}
+              placeholder="编辑辅助信息..."
+              variant="aux"
+            />
+          )}
         </div>
       );
     }
@@ -154,7 +205,7 @@ export function EditorArea({
       <div className="flex h-full flex-col">
         <div className={EDITOR_HEADER_CLASS}>
           <AuxNodeIcon nodeType={auxNode.nodeType} />
-          <span className="truncate text-[14px] text-foreground">
+          <span className="min-w-0 truncate text-[14px] text-foreground">
             {auxNode.nodeType === "symlink" && auxNode.symlinkTargetPath
               ? `${auxNode.path} → ${auxNode.symlinkTargetPath}`
               : auxNode.path}

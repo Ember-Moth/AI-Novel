@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { AuxTreeNodeVM } from "@/modules/workspace/ui/editor/model/types";
+import type { AuxTreeNodeVM, ContentTreeNodeVM } from "@/modules/workspace/ui/editor/model/types";
 
 import { EditorArea } from "./EditorArea";
 
@@ -20,6 +20,39 @@ function createAuxNode(overrides: Partial<AuxTreeNodeVM> = {}): AuxTreeNodeVM {
     ...overrides,
   };
 }
+
+function createContentNode(overrides: Partial<ContentTreeNodeVM> = {}): ContentTreeNodeVM {
+  return {
+    id: "chapter_1",
+    title: "第一章",
+    body: "# 开场",
+    anchorTimelinePointId: "origin",
+    children: [],
+    ...overrides,
+  };
+}
+
+test("EditorArea shows preview toggle for content editing", () => {
+  const html = renderToStaticMarkup(
+    <EditorArea
+      target="content"
+      contentNode={createContentNode()}
+      auxNode={null}
+      body="# 开场"
+      auxContent=""
+      timelineLabel="原点"
+      contentSaveState={{ isSaving: false, isDirty: false, error: null }}
+      auxSaveState={{ isSaving: false, isDirty: false, error: null }}
+      auxPending={false}
+      isAuxSymlinkTargetPickerActive={false}
+      onBodyChange={() => {}}
+      onAuxContentChange={() => {}}
+    />,
+  );
+
+  expect(html).toContain('role="switch"');
+  expect(html).toContain("预览");
+});
 
 test("EditorArea keeps symlink placeholder text in normal mode", () => {
   const html = renderToStaticMarkup(
