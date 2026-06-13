@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 
 import { setupMockDatabase } from "@/test/mock-db";
 
@@ -167,6 +168,62 @@ test("run trace keeps steps, artifacts, and events", () => {
   expect(trace.steps).toHaveLength(1);
   expect(trace.events).toHaveLength(1);
   expect(trace.artifacts).toHaveLength(1);
+});
+
+test("run trace reads Git projection when SQLite trace cache is empty", () => {
+  seedProject("project_trace_git_authoritative");
+  const thread = logs.createThread({
+    projectId: "project_trace_git_authoritative",
+  });
+  const userNode = logs.appendUserNode({
+    threadId: thread.id,
+    parentNodeId: null,
+    message: {
+      role: "user",
+      content: [{ type: "text", text: "Hello Git trace" }],
+    },
+  });
+  const run = logs.createRun({
+    threadId: thread.id,
+    triggerNodeId: userNode.id,
+    baseTipNodeId: userNode.id,
+    runMode: "send",
+    agentProfile: "project-assistant",
+  });
+  const artifact = logs.createArtifact({
+    runId: run.id,
+    artifactKind: "request-body",
+    visibility: "internal",
+    content: { prompt: "Hello Git trace" },
+  });
+  const step = logs.createRunStep({
+    runId: run.id,
+    stepIndex: 0,
+    provider: "openai",
+    modelId: "gpt-test",
+    requestBodyArtifactId: artifact.id,
+  });
+  logs.appendRunEvent({
+    runId: run.id,
+    stepId: step.id,
+    eventKind: "provider-requested",
+    payloadArtifactId: artifact.id,
+  });
+
+  db.update(schema.agentRuns)
+    .set({
+      inputRefsJson: "[]",
+      stepsJson: "[]",
+      eventsJson: "[]",
+      artifactsJson: "[]",
+    })
+    .where(eq(schema.agentRuns.id, run.id))
+    .run();
+
+  const trace = logs.getRunTrace(run.id);
+  expect(trace.steps.map((entry) => entry.id)).toEqual([step.id]);
+  expect(trace.events.map((entry) => entry.eventKind)).toEqual(["provider-requested"]);
+  expect(trace.artifacts.map((entry) => entry.id)).toEqual([artifact.id]);
 });
 
 test("thread view builds run summaries for completed multi-step assistant runs", () => {

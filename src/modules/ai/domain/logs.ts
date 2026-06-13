@@ -5,8 +5,12 @@ import { type DatabaseExecutor, db, schema } from "@/db";
 import { createId, invariant, now } from "@/shared/lib/domain";
 
 import { PROJECT_ASSISTANT_MAX_STEPS, PROJECT_ASSISTANT_TOOL_NAMES } from "./types";
-import { aiRunsRef, commitCustomRef } from "@/modules/workspace/domain/git-storage/git-store";
-import { stringifyJsonl } from "@/modules/workspace/domain/git-storage/jsonl";
+import {
+  aiRunsRef,
+  commitCustomRefSync,
+  readFilesAtRefSync,
+} from "@/modules/workspace/domain/git-storage/git-store";
+import { parseJsonl, stringifyJsonl } from "@/modules/workspace/domain/git-storage/jsonl";
 import type {
   AiRunsMetaPayload,
   AgentArtifactKind,
@@ -1232,6 +1236,51 @@ function mapRunEventRow(row: AgentRunEventRow): AgentRunEventView {
   };
 }
 
+function normalizeGitStepRow(row: AgentRunStepRow | Record<string, unknown>): AgentRunStepRow {
+  if ("systemJson" in row) return row as AgentRunStepRow;
+  return {
+    id: String(row.id),
+    runId: String(row.runId),
+    stepIndex: Number(row.stepIndex),
+    provider: String(row.provider),
+    modelId: String(row.modelId),
+    finishReason: typeof row.finishReason === "string" ? row.finishReason : null,
+    rawFinishReason: typeof row.rawFinishReason === "string" ? row.rawFinishReason : null,
+    systemJson: serializeOptionalJson(Reflect.get(row, "system")),
+    preparedMessagesArtifactId:
+      typeof row.preparedMessagesArtifactId === "string" ? row.preparedMessagesArtifactId : null,
+    responseMessagesArtifactId:
+      typeof row.responseMessagesArtifactId === "string" ? row.responseMessagesArtifactId : null,
+    requestBodyArtifactId:
+      typeof row.requestBodyArtifactId === "string" ? row.requestBodyArtifactId : null,
+    responseBodyArtifactId:
+      typeof row.responseBodyArtifactId === "string" ? row.responseBodyArtifactId : null,
+    providerMetadataArtifactId:
+      typeof row.providerMetadataArtifactId === "string" ? row.providerMetadataArtifactId : null,
+    usageJson: serializeOptionalJson(Reflect.get(row, "usage")),
+    startedAt: Number(row.startedAt),
+    completedAt: Number(row.completedAt),
+    createdAt: Number(row.createdAt),
+  };
+}
+
+function normalizeGitArtifactRow(
+  row: AgentArtifactRow | AgentArtifactView | Record<string, unknown>,
+): AgentArtifactRow {
+  if ("contentJson" in row) return row as AgentArtifactRow;
+  return {
+    id: String(row.id),
+    runId: typeof row.runId === "string" ? row.runId : null,
+    stepId: typeof row.stepId === "string" ? row.stepId : null,
+    artifactKind: String(row.artifactKind) as AgentArtifactKind,
+    visibility: String(row.visibility) as AgentVisibility,
+    mimeType: typeof row.mimeType === "string" ? row.mimeType : null,
+    contentJson: serializeRequiredJson(Reflect.get(row, "content") ?? null, "artifact 内容"),
+    summaryText: typeof row.summaryText === "string" ? row.summaryText : null,
+    createdAt: Number(row.createdAt),
+  };
+}
+
 function buildAiRunsIndexPayload(projectId: string): AiRunsMetaPayload {
   const threads = db
     .select()
@@ -1259,9 +1308,9 @@ function buildAiRunsIndexPayload(projectId: string): AiRunsMetaPayload {
   return { threads, projectState, nodes };
 }
 
-async function persistAiRunsIndexToGit(projectId: string) {
+function persistAiRunsIndexToGit(projectId: string) {
   const payload = buildAiRunsIndexPayload(projectId);
-  await commitCustomRef({
+  commitCustomRefSync({
     projectId,
     ref: aiRunsRef(projectId),
     message: "Update AI run index",
@@ -1274,9 +1323,11 @@ async function persistAiRunsIndexToGit(projectId: string) {
 }
 
 function scheduleAiRunsIndexPersist(projectId: string) {
-  void persistAiRunsIndexToGit(projectId).catch((error) => {
+  try {
+    persistAiRunsIndexToGit(projectId);
+  } catch (error) {
     logAiGitPersistError("Failed to persist AI run index to Git:", error);
-  });
+  }
 }
 
 function scheduleAiRunsIndexPersistForThread(threadId: string) {
@@ -1295,6 +1346,113 @@ function scheduleAiRunsIndexPersistForRun(runId: string) {
   } catch (error) {
     logAiGitPersistError("Failed to schedule AI run index persistence:", error);
   }
+}
+
+function buildRunTraceFromDb(runId: string): AgentRunTraceView {
+  const run = getRunOrThrow(db, runId);
+  const steps = parseStoredArray<AgentRunStepRow>(run.stepsJson)
+    .sort((left, right) => left.stepIndex - right.stepIndex)
+    .map(mapRunStepRow);
+  const events = parseStoredArray<AgentRunEventRow>(run.eventsJson)
+    .sort((left, right) => left.seq - right.seq)
+    .map(mapRunEventRow);
+  const artifacts = parseStoredArray<AgentArtifactRow>(run.artifactsJson)
+    .sort((left, right) => left.createdAt - right.createdAt)
+    .map(mapArtifactRow);
+  const childRuns = db
+    .select()
+    .from(schema.agentRuns)
+    .where(eq(schema.agentRuns.parentRunId, run.id))
+    .orderBy(schema.agentRuns.createdAt)
+    .all()
+    .map((row) => mapRunRow(db, row));
+
+  return {
+    run: mapRunRow(db, run),
+    steps,
+    events,
+    artifacts,
+    childRuns,
+  };
+}
+
+function discoverGitRunIds(files: Record<string, string>) {
+  const runIds = new Set<string>();
+  for (const filepath of Object.keys(files)) {
+    const match = /^runs\/([^/]+)\/run\.json$/.exec(filepath);
+    if (match?.[1]) runIds.add(match[1]);
+  }
+  return [...runIds].sort((left, right) => left.localeCompare(right));
+}
+
+function readRunTraceFromGit(run: AgentRunRow): AgentRunTraceView | null {
+  const thread = getThreadOrThrow(db, run.threadId);
+  let files: Record<string, string>;
+  try {
+    files = readFilesAtRefSync({ projectId: thread.projectId, ref: aiRunsRef(thread.projectId) });
+  } catch {
+    return null;
+  }
+
+  const runJson = files[`runs/${run.id}/run.json`];
+  if (!runJson) return null;
+
+  const runView = JSON.parse(runJson) as AgentRunView;
+  const steps = parseJsonl<AgentRunStepRow | Record<string, unknown>>(
+    files[`runs/${run.id}/steps.jsonl`],
+  )
+    .map(normalizeGitStepRow)
+    .sort((left, right) => left.stepIndex - right.stepIndex)
+    .map(mapRunStepRow);
+  const events = parseJsonl<AgentRunEventRow>(files[`runs/${run.id}/events.jsonl`])
+    .sort((left, right) => left.seq - right.seq)
+    .map(mapRunEventRow);
+  const artifacts = parseJsonl<AgentArtifactRow | AgentArtifactView | Record<string, unknown>>(
+    files[`runs/${run.id}/artifacts.jsonl`],
+  )
+    .map(normalizeGitArtifactRow)
+    .sort((left, right) => left.createdAt - right.createdAt)
+    .map(mapArtifactRow);
+  const childRuns = discoverGitRunIds(files)
+    .flatMap((childRunId) => {
+      if (childRunId === run.id) return [];
+      const childRunJson = files[`runs/${childRunId}/run.json`];
+      if (!childRunJson) return [];
+      const childRun = JSON.parse(childRunJson) as AgentRunView;
+      return childRun.parentRunId === run.id ? [childRun] : [];
+    })
+    .sort((left, right) => left.createdAt - right.createdAt);
+
+  return {
+    run: runView,
+    steps,
+    events,
+    artifacts,
+    childRuns,
+  };
+}
+
+function persistRunTraceToGit(runId: string, message: string) {
+  const run = getRunOrThrow(db, runId);
+  const thread = getThreadOrThrow(db, run.threadId);
+  const trace = buildRunTraceFromDb(runId);
+  const inputRefs = parseStoredArray<AgentRunInputRefRow>(run.inputRefsJson);
+  const steps = parseStoredArray<AgentRunStepRow>(run.stepsJson);
+  const events = parseStoredArray<AgentRunEventRow>(run.eventsJson);
+  const artifacts = parseStoredArray<AgentArtifactRow>(run.artifactsJson);
+  commitCustomRefSync({
+    projectId: thread.projectId,
+    ref: aiRunsRef(thread.projectId),
+    message,
+    files: {
+      [`runs/${runId}/run.json`]: `${JSON.stringify(trace.run, null, 2)}\n`,
+      [`runs/${runId}/input-refs.jsonl`]: stringifyJsonl(inputRefs),
+      [`runs/${runId}/steps.jsonl`]: stringifyJsonl(steps),
+      [`runs/${runId}/events.jsonl`]: stringifyJsonl(events),
+      [`runs/${runId}/artifacts.jsonl`]: stringifyJsonl(artifacts),
+      [`runs/${runId}/child-runs.jsonl`]: stringifyJsonl(trace.childRuns),
+    },
+  });
 }
 
 function upsertProjectState(
@@ -2078,6 +2236,7 @@ export function createRun(input: CreateRunInput) {
     touchProject(tx, thread.projectId);
     return mapRunRow(tx, getRunOrThrow(tx, id));
   });
+  persistRunTraceToGit(result.id, `Update AI run ${result.id}`);
   scheduleAiRunsIndexPersistForThread(result.threadId);
   return result;
 }
@@ -2114,6 +2273,7 @@ export function createArtifact(input: CreateArtifactInput) {
     return mapArtifactRow(artifact);
   });
   if (result.runId) {
+    persistRunTraceToGit(result.runId, `Update AI run ${result.runId}`);
     scheduleAiRunsIndexPersistForRun(result.runId);
   }
   return result;
@@ -2154,6 +2314,7 @@ export function createRunStep(input: CreateRunStepInput) {
       .run();
     return mapRunStepRow(step);
   });
+  persistRunTraceToGit(result.runId, `Update AI run ${result.runId}`);
   scheduleAiRunsIndexPersistForRun(result.runId);
   return result;
 }
@@ -2205,33 +2366,8 @@ export function appendRunEvent(input: CreateRunEventInput) {
       .run();
     return mapRunEventRow(event);
   });
-  void persistRunTraceEventToGit(input.runId).catch((error) => {
-    logAiGitPersistError("Failed to persist AI run event to Git:", error);
-  });
+  persistRunTraceToGit(input.runId, `Append AI run event ${input.runId}`);
   return result;
-}
-
-async function persistRunTraceEventToGit(runId: string) {
-  const run = getRunOrThrow(db, runId);
-  const thread = getThreadOrThrow(db, run.threadId);
-  const trace = getRunTrace(runId);
-  const inputRefs = parseStoredArray<AgentRunInputRefRow>(run.inputRefsJson);
-  const steps = parseStoredArray<AgentRunStepRow>(run.stepsJson);
-  const events = parseStoredArray<AgentRunEventRow>(run.eventsJson);
-  const artifacts = parseStoredArray<AgentArtifactRow>(run.artifactsJson);
-  await commitCustomRef({
-    projectId: thread.projectId,
-    ref: aiRunsRef(thread.projectId),
-    message: `Append AI run event ${runId}`,
-    files: {
-      [`runs/${runId}/run.json`]: `${JSON.stringify(trace.run, null, 2)}\n`,
-      [`runs/${runId}/input-refs.jsonl`]: stringifyJsonl(inputRefs),
-      [`runs/${runId}/steps.jsonl`]: stringifyJsonl(steps),
-      [`runs/${runId}/events.jsonl`]: stringifyJsonl(events),
-      [`runs/${runId}/artifacts.jsonl`]: stringifyJsonl(artifacts),
-      [`runs/${runId}/child-runs.jsonl`]: stringifyJsonl(trace.childRuns),
-    },
-  });
 }
 
 export function materializeResponseMessages(input: MaterializeResponseMessagesInput) {
@@ -2575,6 +2711,7 @@ export function updateRunStep(input: {
       .run();
     return mapRunStepRow(nextStep);
   });
+  persistRunTraceToGit(result.runId, `Update AI run ${result.runId}`);
   scheduleAiRunsIndexPersistForRun(result.runId);
   return result;
 }
@@ -2592,6 +2729,7 @@ export function markRunSucceeded(runId: string) {
       .run();
     return mapRunRow(tx, getRunOrThrow(tx, run.id));
   });
+  persistRunTraceToGit(result.id, `Update AI run ${result.id}`);
   scheduleAiRunsIndexPersistForRun(result.id);
   return result;
 }
@@ -2613,6 +2751,7 @@ export function markRunFailed(runId: string, errorArtifactId?: string | null) {
       .run();
     return mapRunRow(tx, getRunOrThrow(tx, run.id));
   });
+  persistRunTraceToGit(result.id, `Update AI run ${result.id}`);
   scheduleAiRunsIndexPersistForRun(result.id);
   return result;
 }
@@ -2630,6 +2769,7 @@ export function markRunCancelled(runId: string) {
       .run();
     return mapRunRow(tx, getRunOrThrow(tx, run.id));
   });
+  persistRunTraceToGit(result.id, `Update AI run ${result.id}`);
   scheduleAiRunsIndexPersistForRun(result.id);
   return result;
 }
@@ -2649,36 +2789,14 @@ export function updateRunContextSnapshot(
       .run();
     return mapRunRow(tx, getRunOrThrow(tx, run.id));
   });
+  persistRunTraceToGit(result.id, `Update AI run ${result.id}`);
   scheduleAiRunsIndexPersistForRun(result.id);
   return result;
 }
 
 export function getRunTrace(runId: string): AgentRunTraceView {
   const run = getRunOrThrow(db, runId);
-  const steps = parseStoredArray<AgentRunStepRow>(run.stepsJson)
-    .sort((left, right) => left.stepIndex - right.stepIndex)
-    .map(mapRunStepRow);
-  const events = parseStoredArray<AgentRunEventRow>(run.eventsJson)
-    .sort((left, right) => left.seq - right.seq)
-    .map(mapRunEventRow);
-  const artifacts = parseStoredArray<AgentArtifactRow>(run.artifactsJson)
-    .sort((left, right) => left.createdAt - right.createdAt)
-    .map(mapArtifactRow);
-  const childRuns = db
-    .select()
-    .from(schema.agentRuns)
-    .where(eq(schema.agentRuns.parentRunId, run.id))
-    .orderBy(schema.agentRuns.createdAt)
-    .all()
-    .map((row) => mapRunRow(db, row));
-
-  return {
-    run: mapRunRow(db, run),
-    steps,
-    events,
-    artifacts,
-    childRuns,
-  };
+  return readRunTraceFromGit(run) ?? buildRunTraceFromDb(runId);
 }
 
 export function getRunStepResponseBody(stepId: string): unknown | null {
