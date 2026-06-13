@@ -1,6 +1,7 @@
 import { Activity } from "react";
 
 import { useCachedProjectRoute } from "@/app/routing/useCachedProjectRoute";
+import { AiConfigSettingsPage } from "@/modules/ai/ui/settings/AiConfigSettingsPage";
 import { AiSettingsPage } from "@/modules/ai/ui/settings/AiSettingsPage";
 import { PromptLibrarySettingsPage } from "@/modules/ai/ui/settings/PromptLibrarySettingsPage";
 import { ProjectsPage } from "@/modules/projects/ui/ProjectsPage";
@@ -34,11 +35,7 @@ export function App() {
       </Activity>
 
       <Activity mode={isSettings ? "visible" : "hidden"}>
-        {route.kind === "settings" && route.section === "prompts" ? (
-          <PromptLibrarySettingsPage />
-        ) : (
-          <AiSettingsPage />
-        )}
+        {route.kind === "settings" ? <SettingsPage section={route.section} /> : null}
       </Activity>
 
       {cachedWorkspaceRoute ? (
@@ -52,4 +49,16 @@ export function App() {
       ) : null}
     </>
   );
+}
+
+function SettingsPage({ section }: { section: "ai-connections" | "ai" | "prompts" }) {
+  if (section === "prompts") {
+    return <PromptLibrarySettingsPage />;
+  }
+
+  if (section === "ai") {
+    return <AiConfigSettingsPage />;
+  }
+
+  return <AiSettingsPage />;
 }

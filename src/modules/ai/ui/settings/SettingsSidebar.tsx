@@ -23,6 +23,12 @@ export function SettingsSidebar() {
         onClick={() => navigate("/settings/ai-connections")}
       />
       <SidebarListRow
+        isActive={activeSection === "ai"}
+        icon={<span className="icon-[material-symbols--tune] text-base text-foreground-muted" />}
+        label="AI 配置"
+        onClick={() => navigate("/settings/ai")}
+      />
+      <SidebarListRow
         isActive={activeSection === "prompts"}
         icon={<span className="icon-[material-symbols--article] text-base text-foreground-muted" />}
         label="Prompt 库"

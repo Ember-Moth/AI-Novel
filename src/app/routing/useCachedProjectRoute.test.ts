@@ -13,6 +13,7 @@ test("parseAppRoute recognizes home, project, workspace, settings, and unknown r
     kind: "settings",
     section: "ai-connections",
   });
+  expect(parseAppRoute("/settings/ai")).toEqual({ kind: "settings", section: "ai" });
   expect(parseAppRoute("/settings/prompts")).toEqual({ kind: "settings", section: "prompts" });
   expect(parseAppRoute("/project/project_1")).toEqual({
     kind: "project",
@@ -137,7 +138,7 @@ test("resolveProjectRouteTarget reopens the current or last project detail route
     resolveProjectRouteTarget(
       {
         kind: "settings",
-        section: "prompts",
+        section: "ai",
       },
       null,
     ),

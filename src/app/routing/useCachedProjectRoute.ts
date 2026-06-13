@@ -5,7 +5,7 @@ import { useLastProjectStore } from "@/app/state/lastProject";
 
 export type AppRoute =
   | { kind: "home" }
-  | { kind: "settings"; section: "ai-connections" | "prompts" }
+  | { kind: "settings"; section: "ai-connections" | "ai" | "prompts" }
   | { kind: "project"; projectId: string }
   | { kind: "workspace"; projectId: string; workspaceId: string }
   | { kind: "unknown" };
@@ -27,6 +27,10 @@ export function parseAppRoute(location: string): AppRoute {
 
   if (normalizedLocation === "/settings/ai-connections") {
     return { kind: "settings", section: "ai-connections" };
+  }
+
+  if (normalizedLocation === "/settings/ai") {
+    return { kind: "settings", section: "ai" };
   }
 
   if (normalizedLocation === "/settings/prompts") {
