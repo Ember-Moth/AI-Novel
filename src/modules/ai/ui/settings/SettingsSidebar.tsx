@@ -7,7 +7,7 @@ import { SidebarListRow } from "@/shared/ui/tree/SidebarListRow";
 export function SettingsSidebar() {
   const [location, navigate] = useLocation();
   const route = parseAppRoute(location);
-  const activeSection = route.kind === "settings" ? route.section : "ai";
+  const activeSection = route.kind === "settings" ? route.section : "ai-connections";
 
   return (
     <AppSidebar>
@@ -15,12 +15,12 @@ export function SettingsSidebar() {
         设置
       </div>
       <SidebarListRow
-        isActive={activeSection === "ai"}
+        isActive={activeSection === "ai-connections"}
         icon={
           <span className="icon-[material-symbols--smart-toy] text-base text-foreground-muted" />
         }
-        label="AI"
-        onClick={() => navigate("/settings/ai")}
+        label="AI 连接"
+        onClick={() => navigate("/settings/ai-connections")}
       />
       <SidebarListRow
         isActive={activeSection === "prompts"}

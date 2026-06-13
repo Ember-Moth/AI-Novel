@@ -86,7 +86,7 @@ export function ActivityBar({ active }: { active: ActivityBarItem }) {
           icon="icon-[material-symbols--settings]"
           label="设置"
           active={active === "settings"}
-          onClick={() => navigate("/settings/ai")}
+          onClick={() => navigate("/settings/ai-connections")}
         />
       </div>
     </div>
