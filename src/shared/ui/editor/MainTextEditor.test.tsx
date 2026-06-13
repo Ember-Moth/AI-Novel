@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
+import { LanguageSupport } from "@codemirror/language";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   MAIN_TEXT_EDITOR_BASIC_SETUP,
+  MAIN_TEXT_EDITOR_EXTENSIONS,
   MainTextEditor,
   getMainTextEditorAriaLabel,
 } from "./MainTextEditor";
@@ -33,8 +35,12 @@ test("MainTextEditor basic setup enables line numbers and search without code-ce
     highlightActiveLine: true,
     foldGutter: false,
     autocompletion: false,
-    syntaxHighlighting: false,
+    syntaxHighlighting: true,
   });
+});
+
+test("MainTextEditor includes markdown highlighting", () => {
+  expect(MAIN_TEXT_EDITOR_EXTENSIONS[0]).toBeInstanceOf(LanguageSupport);
 });
 
 test("getMainTextEditorAriaLabel maps variants to localized labels", () => {

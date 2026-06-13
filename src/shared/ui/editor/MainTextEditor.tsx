@@ -1,3 +1,4 @@
+import { markdown } from "@codemirror/lang-markdown";
 import CodeMirror, { type ReactCodeMirrorProps } from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 
@@ -15,7 +16,7 @@ export const MAIN_TEXT_EDITOR_BASIC_SETUP: NonNullable<ReactCodeMirrorProps["bas
   dropCursor: true,
   allowMultipleSelections: true,
   indentOnInput: false,
-  syntaxHighlighting: false,
+  syntaxHighlighting: true,
   bracketMatching: false,
   closeBrackets: false,
   autocompletion: false,
@@ -32,6 +33,7 @@ export const MAIN_TEXT_EDITOR_BASIC_SETUP: NonNullable<ReactCodeMirrorProps["bas
 };
 
 export const MAIN_TEXT_EDITOR_EXTENSIONS = [
+  markdown(),
   EditorView.lineWrapping,
   EditorView.theme(
     {
