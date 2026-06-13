@@ -10,6 +10,7 @@ import {
 import { rpc } from "@/rpc/client";
 import { cn } from "@/shared/lib/cn";
 import { LoadingBlock } from "@/shared/ui/Loading";
+import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
 
 import { SettingsSidebar } from "./SettingsSidebar";
 
@@ -319,56 +320,58 @@ function AiDefaultModelSelect({
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="max-h-[22rem] overflow-y-auto rounded-md border border-border bg-editor-background">
-        {groups.map((group) =>
-          group.models.length > 0 ? (
-            <div key={group.connection.id}>
-              <div className="sticky top-0 z-10 border-b border-border bg-sidebar-background px-3 py-1.5 text-xs font-medium text-foreground-muted">
-                {group.connection.name}
-              </div>
-              <div className="divide-y divide-border">
-                {group.models.map((model) => {
-                  const selected =
-                    group.connection.id === selectedConnectionId && model.id === selectedModelId;
-                  const capabilities = getModelCapabilities(model);
+      <div className="h-[min(22rem,55vh)] overflow-hidden rounded-md border border-border bg-editor-background">
+        <OverlayScrollbar variant="card">
+          {groups.map((group) =>
+            group.models.length > 0 ? (
+              <div key={group.connection.id}>
+                <div className="sticky top-0 z-10 border-b border-border bg-sidebar-background px-3 py-1.5 text-xs font-medium text-foreground-muted">
+                  {group.connection.name}
+                </div>
+                <div className="divide-y divide-border">
+                  {group.models.map((model) => {
+                    const selected =
+                      group.connection.id === selectedConnectionId && model.id === selectedModelId;
+                    const capabilities = getModelCapabilities(model);
 
-                  return (
-                    <button
-                      key={`${group.connection.id}:${model.id}`}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => onSelect(group.connection.id, model.id)}
-                      className={cn(
-                        "flex w-full items-start gap-3 px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
-                        selected
-                          ? "bg-list-active-background text-foreground"
-                          : "text-foreground-muted hover:bg-list-hover-background hover:text-foreground",
-                      )}
-                    >
-                      <span
+                    return (
+                      <button
+                        key={`${group.connection.id}:${model.id}`}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onSelect(group.connection.id, model.id)}
                         className={cn(
-                          "mt-0.5 shrink-0 text-[18px]",
+                          "flex w-full items-start gap-3 px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
                           selected
-                            ? "icon-[material-symbols--radio-button-checked] text-accent-foreground"
-                            : "icon-[material-symbols--radio-button-unchecked] text-foreground-muted",
+                            ? "bg-list-active-background text-foreground"
+                            : "text-foreground-muted hover:bg-list-hover-background hover:text-foreground",
                         )}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-foreground">
-                          {model.displayName}
+                      >
+                        <span
+                          className={cn(
+                            "mt-0.5 shrink-0 text-[18px]",
+                            selected
+                              ? "icon-[material-symbols--radio-button-checked] text-accent-foreground"
+                              : "icon-[material-symbols--radio-button-unchecked] text-foreground-muted",
+                          )}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-foreground">
+                            {model.displayName}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs">{model.modelId}</span>
+                          {capabilities ? (
+                            <span className="mt-1 block text-[11px] leading-4">{capabilities}</span>
+                          ) : null}
                         </span>
-                        <span className="mt-0.5 block truncate text-xs">{model.modelId}</span>
-                        {capabilities ? (
-                          <span className="mt-1 block text-[11px] leading-4">{capabilities}</span>
-                        ) : null}
-                      </span>
-                    </button>
-                  );
-                })}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ) : null,
-        )}
+            ) : null,
+          )}
+        </OverlayScrollbar>
       </div>
 
       <button
