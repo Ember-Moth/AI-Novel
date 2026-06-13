@@ -5,7 +5,7 @@ import { useLastProjectStore } from "@/app/state/lastProject";
 
 export type AppRoute =
   | { kind: "home" }
-  | { kind: "settings" }
+  | { kind: "settings"; section: "ai" | "prompts" }
   | { kind: "project"; projectId: string }
   | { kind: "workspace"; projectId: string; workspaceId: string }
   | { kind: "unknown" };
@@ -26,7 +26,11 @@ export function parseAppRoute(location: string): AppRoute {
   }
 
   if (normalizedLocation === "/settings/ai") {
-    return { kind: "settings" };
+    return { kind: "settings", section: "ai" };
+  }
+
+  if (normalizedLocation === "/settings/prompts") {
+    return { kind: "settings", section: "prompts" };
   }
 
   const workspaceMatch = normalizedLocation.match(/^\/project\/([^/]+)\/workspace\/([^/]+)$/);

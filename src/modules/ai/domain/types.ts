@@ -12,6 +12,7 @@ export type AiConnectionCatalogOverrideRow = InferSelectModel<
 >;
 export type AiConnectionCustomModelRow = InferSelectModel<typeof schema.aiConnectionCustomModels>;
 export type AiRegistryStateRow = InferSelectModel<typeof schema.aiRegistryState>;
+export type GlobalPromptRow = InferSelectModel<typeof schema.globalPrompts>;
 export type AgentThreadRow = InferSelectModel<typeof schema.agentThreads>;
 export type AgentProjectStateRow = InferSelectModel<typeof schema.agentProjectState>;
 export type AgentThreadNodeRow = InferSelectModel<typeof schema.agentThreadNodes>;

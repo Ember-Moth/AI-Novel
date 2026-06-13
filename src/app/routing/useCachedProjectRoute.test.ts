@@ -9,7 +9,8 @@ import {
 
 test("parseAppRoute recognizes home, project, workspace, settings, and unknown routes", () => {
   expect(parseAppRoute("/")).toEqual({ kind: "home" });
-  expect(parseAppRoute("/settings/ai")).toEqual({ kind: "settings" });
+  expect(parseAppRoute("/settings/ai")).toEqual({ kind: "settings", section: "ai" });
+  expect(parseAppRoute("/settings/prompts")).toEqual({ kind: "settings", section: "prompts" });
   expect(parseAppRoute("/project/project_1")).toEqual({
     kind: "project",
     projectId: "project_1",
@@ -123,6 +124,7 @@ test("resolveProjectRouteTarget reopens the current or last project detail route
     resolveProjectRouteTarget(
       {
         kind: "settings",
+        section: "ai",
       },
       "project_2",
     ),
@@ -132,6 +134,7 @@ test("resolveProjectRouteTarget reopens the current or last project detail route
     resolveProjectRouteTarget(
       {
         kind: "settings",
+        section: "prompts",
       },
       null,
     ),

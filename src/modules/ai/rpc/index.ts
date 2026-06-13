@@ -42,6 +42,7 @@ import type {
   AiCatalogStatusView,
   AiConnectionRow,
   AiResolvedModelView,
+  GlobalPromptRow,
   ProjectAssistantStreamEvent,
   ProjectAssistantContextSnapshot,
   ProjectAssistantToolName,
@@ -54,6 +55,7 @@ import { getDefaultWorkspace } from "@/modules/workspace/domain";
 type ConnectionInsert = InferInsertModel<typeof schema.aiConnections>;
 type CustomModelInsert = InferInsertModel<typeof schema.aiConnectionCustomModels>;
 type CustomModelRow = typeof schema.aiConnectionCustomModels.$inferSelect;
+type GlobalPromptInsert = InferInsertModel<typeof schema.globalPrompts>;
 
 interface CreateRegistryConnectionInput {
   kind: "registry";
@@ -102,6 +104,21 @@ type CustomModelMutationInput = Pick<
   | "outputPricePer1m"
   | "isEnabled"
 >;
+
+interface CreateGlobalPromptInput {
+  name: string;
+  description?: string | null;
+  content: string;
+  isEnabled?: boolean;
+}
+
+interface UpdateGlobalPromptInput {
+  id: string;
+  name?: string;
+  description?: string | null;
+  content?: string;
+  isEnabled?: boolean;
+}
 
 interface ProjectAssistantStateInput {
   projectId: string;
@@ -241,6 +258,28 @@ function sanitizeName(name: string): string {
   const trimmed = name.trim();
   invariant(trimmed.length > 0, "名称不能为空。");
   return trimmed;
+}
+
+function sanitizePromptContent(content: string): string {
+  const trimmed = content.trim();
+  invariant(trimmed.length > 0, "Prompt 正文不能为空。");
+  return trimmed;
+}
+
+function sanitizeDescription(description: string | null | undefined): string | null {
+  const trimmed = description?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function assertGlobalPromptNameAvailable(name: string, excludeId?: string) {
+  const existing = db.query.globalPrompts
+    .findFirst({ where: eq(schema.globalPrompts.name, name) })
+    .sync();
+  invariant(!existing || existing.id === excludeId, "Prompt 名称已存在。");
+}
+
+function isGlobalPromptNameConflict(error: unknown) {
+  return error instanceof Error && error.message.includes("global_prompts.name");
 }
 
 function sanitizeBaseUrl(baseUrl: string | null | undefined): string | null {
@@ -434,6 +473,93 @@ export const listCatalogModels = query<
       activeOnly: activeOnly ?? true,
       query: search,
     }),
+});
+
+export const listGlobalPrompts = query<void, GlobalPromptRow[], RpcTagList>({
+  watch: () => [rpcTags.aiGlobalPrompts()],
+  handler: () => db.select().from(schema.globalPrompts).orderBy(schema.globalPrompts.name).all(),
+});
+
+export const createGlobalPrompt = mutation<CreateGlobalPromptInput, GlobalPromptRow, RpcTagList>({
+  invalidate: () => [rpcTags.aiGlobalPrompts()],
+  handler: (input) => {
+    const timestamp = now();
+    const name = sanitizeName(input.name);
+    assertGlobalPromptNameAvailable(name);
+
+    const values: GlobalPromptInsert = {
+      id: createId("prompt"),
+      name,
+      description: sanitizeDescription(input.description),
+      content: sanitizePromptContent(input.content),
+      isEnabled: input.isEnabled ?? true,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    try {
+      db.insert(schema.globalPrompts).values(values).run();
+    } catch (error) {
+      if (isGlobalPromptNameConflict(error)) {
+        throw new Error("Prompt 名称已存在。");
+      }
+      throw error;
+    }
+    return db.query.globalPrompts
+      .findFirst({ where: eq(schema.globalPrompts.id, values.id) })
+      .sync()!;
+  },
+});
+
+export const updateGlobalPrompt = mutation<UpdateGlobalPromptInput, GlobalPromptRow, RpcTagList>({
+  invalidate: () => [rpcTags.aiGlobalPrompts()],
+  handler: (input) => {
+    const existing = db.query.globalPrompts
+      .findFirst({ where: eq(schema.globalPrompts.id, input.id) })
+      .sync();
+    assertRpcFound(existing, "未找到 Prompt。");
+
+    const name = input.name != null ? sanitizeName(input.name) : existing.name;
+    assertGlobalPromptNameAvailable(name, input.id);
+
+    const nextValues: Partial<GlobalPromptInsert> = {
+      name,
+      description:
+        input.description !== undefined
+          ? sanitizeDescription(input.description)
+          : existing.description,
+      content: input.content != null ? sanitizePromptContent(input.content) : existing.content,
+      isEnabled: input.isEnabled ?? existing.isEnabled,
+      updatedAt: now(),
+    };
+
+    try {
+      db.update(schema.globalPrompts)
+        .set(nextValues)
+        .where(eq(schema.globalPrompts.id, input.id))
+        .run();
+    } catch (error) {
+      if (isGlobalPromptNameConflict(error)) {
+        throw new Error("Prompt 名称已存在。");
+      }
+      throw error;
+    }
+    return db.query.globalPrompts
+      .findFirst({ where: eq(schema.globalPrompts.id, input.id) })
+      .sync()!;
+  },
+});
+
+export const deleteGlobalPrompt = mutation<{ id: string }, { id: string }, RpcTagList>({
+  invalidate: () => [rpcTags.aiGlobalPrompts()],
+  handler: ({ id }) => {
+    const existing = db.query.globalPrompts
+      .findFirst({ where: eq(schema.globalPrompts.id, id) })
+      .sync();
+    assertRpcFound(existing, "未找到 Prompt。");
+    db.delete(schema.globalPrompts).where(eq(schema.globalPrompts.id, id)).run();
+    return { id };
+  },
 });
 
 export const listConnections = query<void, AiConnectionRow[], RpcTagList>({

@@ -30,6 +30,23 @@ export const globalConfigOptions = sqliteTable(
   (table) => [check("global_config_options_key_nonempty", sql`length(${table.key}) > 0`)],
 );
 
+export const globalPrompts = sqliteTable(
+  "global_prompts",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    description: text("description"),
+    content: text("content").notNull(),
+    isEnabled: integer("is_enabled", { mode: "boolean" }).notNull().default(true),
+    ...timestampColumns,
+  },
+  (table) => [
+    check("global_prompts_name_nonempty", sql`length(${table.name}) > 0`),
+    check("global_prompts_content_nonempty", sql`length(${table.content}) > 0`),
+    uniqueIndex("global_prompts_name_idx").on(table.name),
+  ],
+);
+
 export const projects = sqliteTable(
   "projects",
   {

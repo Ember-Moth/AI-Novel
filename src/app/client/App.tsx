@@ -2,6 +2,7 @@ import { Activity } from "react";
 
 import { useCachedProjectRoute } from "@/app/routing/useCachedProjectRoute";
 import { AiSettingsPage } from "@/modules/ai/ui/settings/AiSettingsPage";
+import { PromptLibrarySettingsPage } from "@/modules/ai/ui/settings/PromptLibrarySettingsPage";
 import { ProjectsPage } from "@/modules/projects/ui/ProjectsPage";
 import { WorkspaceEditorPage } from "@/modules/workspace/ui/editor/WorkspaceEditorPage";
 
@@ -9,6 +10,7 @@ import "./styles.css";
 
 export function App() {
   const {
+    route,
     isProjectsPage,
     isSettings,
     isWorkspaceRoute,
@@ -32,7 +34,11 @@ export function App() {
       </Activity>
 
       <Activity mode={isSettings ? "visible" : "hidden"}>
-        <AiSettingsPage />
+        {route.kind === "settings" && route.section === "prompts" ? (
+          <PromptLibrarySettingsPage />
+        ) : (
+          <AiSettingsPage />
+        )}
       </Activity>
 
       {cachedWorkspaceRoute ? (
