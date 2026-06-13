@@ -1,12 +1,7 @@
-import type { InferSelectModel } from "drizzle-orm";
-
-import type { schema } from "@/db";
 import type { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
 
-type AuxNodeRow = InferSelectModel<typeof schema.auxNodes>;
-
 export type TimelinePointRef = string | null | undefined | typeof ORIGIN_TIMELINE_POINT_ID;
-export type AuxNodeType = AuxNodeRow["nodeType"];
+export type AuxNodeType = "root" | "dir" | "file" | "symlink";
 
 export interface TimelinePointView {
   id: string | typeof ORIGIN_TIMELINE_POINT_ID;

@@ -2106,6 +2106,7 @@ export function appendRunEvent(input: CreateRunEventInput) {
     );
   });
   void persistRunTraceEventToGit(input.runId).catch((error) => {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return;
     console.error("Failed to persist AI run event to Git:", error);
   });
   return result;

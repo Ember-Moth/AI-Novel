@@ -12,5 +12,5 @@ export {
   listAffectedTimelinePointIdsForDelete,
   listAffectedTimelinePointIdsForInsert,
   listAffectedTimelinePointIdsForMove,
-} from "./internal/timeline-chain";
-export { normalizeTimelinePointId } from "./internal/timeline-point";
+  normalizeTimelinePointId,
+} from "./timeline";

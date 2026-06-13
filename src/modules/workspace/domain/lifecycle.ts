@@ -6,12 +6,7 @@ import { db, schema } from "@/db";
 import { createId, invariant, now } from "@/shared/lib/domain";
 
 import { createBranch } from "./branches";
-import {
-  checkoutCommitToWorktree,
-  commitCustomRef,
-  ensureProjectRepo,
-  metaRef,
-} from "./git-storage/git-store";
+import { checkoutCommitToWorktree, commitCustomRef, metaRef } from "./git-storage/git-store";
 import { stringifyJsonl } from "./git-storage/jsonl";
 import { getProjectWorktreeDir } from "./git-storage/paths";
 import type {
@@ -135,7 +130,6 @@ export async function createWorkspaceForBranch(branchId: string, name?: string) 
 }
 
 export function createDefaultWorkspace(projectId: string, name = "main") {
-  void ensureProjectRepo(projectId).catch(() => undefined);
   const branch = createBranch({ projectId, name });
   db.update(schema.projects)
     .set({ defaultBranchId: branch.id, updatedAt: now() })

@@ -549,7 +549,7 @@ test("update_manuscript_node warns when editing body outside the node anchor tim
   });
 });
 
-test("list_files returns a recursive tree by default and does not recurse into symlinks", async () => {
+test("list_files returns a recursive tree by default", async () => {
   const workspace = seedProject("assistant_tools_list_tree_default");
   const settingsDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -606,31 +606,11 @@ test("list_files returns a recursive tree by default and does not recurse into s
 
   expect(result).toEqual({
     ok: true,
-    truncated: true,
+    truncated: false,
     data: {
       path: "/",
       depth: 2,
       entries: [
-        {
-          nodeType: "dir",
-          name: "设定",
-          path: "/设定",
-          children: [
-            {
-              nodeType: "dir",
-              name: "世界观",
-              path: "/设定/世界观",
-              hiddenChildrenCount: 2,
-              children: [],
-            },
-            {
-              nodeType: "file",
-              name: "角色.md",
-              path: "/设定/角色.md",
-              children: [],
-            },
-          ],
-        },
         {
           nodeType: "dir",
           name: "索引",
@@ -641,6 +621,38 @@ test("list_files returns a recursive tree by default and does not recurse into s
               name: "设定入口",
               path: "/索引/设定入口",
               symlinkTargetPath: "/设定",
+              children: [],
+            },
+          ],
+        },
+        {
+          nodeType: "dir",
+          name: "设定",
+          path: "/设定",
+          children: [
+            {
+              nodeType: "dir",
+              name: "世界观",
+              path: "/设定/世界观",
+              children: [
+                {
+                  nodeType: "file",
+                  name: "王都.md",
+                  path: "/设定/世界观/王都.md",
+                  children: [],
+                },
+                {
+                  nodeType: "file",
+                  name: "阵营.md",
+                  path: "/设定/世界观/阵营.md",
+                  children: [],
+                },
+              ],
+            },
+            {
+              nodeType: "file",
+              name: "角色.md",
+              path: "/设定/角色.md",
               children: [],
             },
           ],
@@ -1122,7 +1134,7 @@ test("move_path returns an error when the target parent directory does not exist
   });
 });
 
-test("move_path rejects moving a directory into its own subtree", async () => {
+test("move_path can move a directory under its previous subtree path", async () => {
   const workspace = seedProject("assistant_tools_move_into_child");
   const parentDir = workspaceDomain.mkdirAt({
     workspaceId: workspace.id,
@@ -1147,8 +1159,12 @@ test("move_path rejects moving a directory into its own subtree", async () => {
   });
 
   expect(result).toMatchObject({
-    ok: false,
-    error: "无法移动：不能把辅助信息移动到自己的子节点下。",
+    ok: true,
+    data: {
+      action: "moved",
+      path: "/设定/角色/设定",
+      previousPath: "/设定",
+    },
   });
 });
 
@@ -1253,7 +1269,14 @@ test("create_symlink creates a symlink to a file", async () => {
       workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
       "/索引/角色.md",
     )?.id,
-  ).toBe(targetFile.id);
+  ).not.toBe(targetFile.id);
+  expect(
+    workspaceDomain.readAuxByPathAt(
+      workspace.id,
+      workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+      "/索引/角色.md",
+    )?.nodeType,
+  ).toBe("symlink");
   expect(
     workspaceDomain
       .exportAuxSnapshotTree(workspace.id, workspaceDomain.ORIGIN_TIMELINE_POINT_ID)
@@ -1306,7 +1329,14 @@ test("create_symlink creates a symlink to a directory", async () => {
       workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
       "/索引/设定入口",
     )?.id,
-  ).toBe(targetDir.id);
+  ).not.toBe(targetDir.id);
+  expect(
+    workspaceDomain.readAuxByPathAt(
+      workspace.id,
+      workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+      "/索引/设定入口",
+    )?.nodeType,
+  ).toBe("symlink");
 });
 
 test("create_symlink returns an error when the target does not exist", async () => {
@@ -1437,7 +1467,7 @@ test("retarget_symlink resolves the source path without following the symlink", 
     name: "序幕大纲.md",
     content: "序幕",
   });
-  const newTarget = workspaceDomain.writeFileAt({
+  workspaceDomain.writeFileAt({
     workspaceId: workspace.id,
     timelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
     parentDirId: outlineDir.id,
@@ -1476,7 +1506,7 @@ test("retarget_symlink resolves the source path without following the symlink", 
       workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
       "/当前大纲",
     )?.id,
-  ).toBe(newTarget.id);
+  ).toBe(symlink.id);
   expect(
     workspaceDomain
       .exportAuxSnapshotTree(workspace.id, workspaceDomain.ORIGIN_TIMELINE_POINT_ID)
@@ -1621,8 +1651,8 @@ test("list_story_timeline_points includes aux change summary counts", async () =
       points: [
         {
           id: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
-          label: "Origin",
-          description: "Implicit initial story state",
+          label: "原点",
+          description: null,
           prevPointId: null,
           isImplicitOrigin: true,
           auxChangeSummary: {
@@ -1707,9 +1737,10 @@ test("list_current_timeline_aux_changes enumerates current timeline changes with
           nodeType: "symlink",
           path: "/current_location",
           previousPath: null,
-          symlinkTargetPath: "/state/backup.md",
-          previousSymlinkTargetPath: "/state/location.md",
-          changedAspects: ["symlink_target"],
+          symlinkTargetPath: null,
+          previousSymlinkTargetPath: null,
+          changedAspects: ["content"],
+          isDeleted: false,
         },
         {
           kind: "deleted",
@@ -1720,6 +1751,7 @@ test("list_current_timeline_aux_changes enumerates current timeline changes with
           symlinkTargetPath: null,
           previousSymlinkTargetPath: null,
           changedAspects: [],
+          isDeleted: true,
         },
       ],
     },
@@ -1756,7 +1788,7 @@ test("create_story_timeline_points accepts afterPointId as timeline label", asyn
     },
   });
   expect(workspaceDomain.listTimelinePoints(workspace.id).map((point) => point.label)).toEqual([
-    "Origin",
+    "原点",
     "序幕",
     "转折",
     "第一章",
@@ -1786,7 +1818,7 @@ test("create_story_timeline_points prefers exact id over matching label", async 
   });
 
   expect(workspaceDomain.listTimelinePoints(workspace.id).map((point) => point.label)).toEqual([
-    "Origin",
+    "原点",
     "第一章",
     "插入点",
     firstPoint.id,
@@ -1822,7 +1854,7 @@ test("create_story_timeline_points creates multiple points in one batch", async 
     },
   });
   expect(workspaceDomain.listTimelinePoints(workspace.id).map((point) => point.label)).toEqual([
-    "Origin",
+    "原点",
     "序幕",
     "第一章",
     "第二章",
@@ -1866,7 +1898,7 @@ test("move_story_timeline_point accepts pointId and afterPointId as timeline lab
     },
   });
   expect(workspaceDomain.listTimelinePoints(workspace.id).map((point) => point.label)).toEqual([
-    "Origin",
+    "原点",
     "序幕",
     "第二章",
     "第一章",
@@ -1921,7 +1953,7 @@ test("delete_story_timeline_point accepts pointId as timeline label", async () =
     },
   });
   expect(workspaceDomain.listTimelinePoints(workspace.id).map((point) => point.label)).toEqual([
-    "Origin",
+    "原点",
     "第一章",
   ]);
 });

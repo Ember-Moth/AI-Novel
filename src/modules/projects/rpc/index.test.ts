@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { AnySQLiteTable } from "drizzle-orm/sqlite-core";
+import { existsSync } from "node:fs";
 
 import { setupMockDatabase } from "@/test/mock-db";
 
@@ -8,6 +8,8 @@ setupMockDatabase();
 const { db, schema } = await import("@/db");
 const workspaceService = await import("@/modules/workspace/domain");
 const auxService = await import("@/modules/workspace/domain/aux");
+const { getProjectRepoGitDir, getProjectWorktreeRoot } =
+  await import("@/modules/workspace/domain/git-storage/paths");
 const projectHandlers = await import("./index");
 const { rpcTags } = await import("@/rpc/tags");
 const requestCtx = { req: new Request("http://localhost/api/rpc") } as unknown as Parameters<
@@ -25,12 +27,16 @@ function seedProject(projectId: string) {
   return workspaceService.createDefaultWorkspace(projectId);
 }
 
-function countRows(table: AnySQLiteTable) {
-  return db.select().from(table).all().length;
-}
-
 async function deleteProject(projectId: string) {
   return projectHandlers.deleteMutation.handler({ id: projectId }, requestCtx);
+}
+
+function projectIndexCounts() {
+  return {
+    projects: db.select().from(schema.projects).all().length,
+    branches: db.select().from(schema.branches).all().length,
+    workspaces: db.select().from(schema.workspaces).all().length,
+  };
 }
 
 test("project get watches the project tag and returns the project", async () => {
@@ -107,10 +113,9 @@ test("delete project cascades default workspace roots", async () => {
     rpcTags.projectsList(),
     rpcTags.project("project_delete_default"),
   ]);
-  expect(countRows(schema.projects)).toBe(0);
-  expect(countRows(schema.workspaces)).toBe(0);
-  expect(countRows(schema.contentNodes)).toBe(0);
-  expect(countRows(schema.auxNodes)).toBe(0);
+  expect(projectIndexCounts()).toEqual({ projects: 0, branches: 0, workspaces: 0 });
+  expect(existsSync(getProjectRepoGitDir("project_delete_default"))).toBe(false);
+  expect(existsSync(getProjectWorktreeRoot("project_delete_default"))).toBe(false);
 });
 
 test("delete project cascades content anchored to timeline points", async () => {
@@ -127,10 +132,9 @@ test("delete project cascades content anchored to timeline points", async () => 
   });
 
   await expect(deleteProject("project_delete_content_anchor")).resolves.toBeDefined();
-  expect(countRows(schema.projects)).toBe(0);
-  expect(countRows(schema.workspaces)).toBe(0);
-  expect(countRows(schema.timelinePoints)).toBe(0);
-  expect(countRows(schema.contentNodes)).toBe(0);
+  expect(projectIndexCounts()).toEqual({ projects: 0, branches: 0, workspaces: 0 });
+  expect(existsSync(getProjectRepoGitDir("project_delete_content_anchor"))).toBe(false);
+  expect(existsSync(getProjectWorktreeRoot("project_delete_content_anchor"))).toBe(false);
 });
 
 test("delete project cascades aux layers", async () => {
@@ -148,9 +152,7 @@ test("delete project cascades aux layers", async () => {
   });
 
   await expect(deleteProject("project_delete_aux_layers")).resolves.toBeDefined();
-  expect(countRows(schema.projects)).toBe(0);
-  expect(countRows(schema.workspaces)).toBe(0);
-  expect(countRows(schema.timelinePoints)).toBe(0);
-  expect(countRows(schema.auxNodes)).toBe(0);
-  expect(countRows(schema.auxNodeLayers)).toBe(0);
+  expect(projectIndexCounts()).toEqual({ projects: 0, branches: 0, workspaces: 0 });
+  expect(existsSync(getProjectRepoGitDir("project_delete_aux_layers"))).toBe(false);
+  expect(existsSync(getProjectWorktreeRoot("project_delete_aux_layers"))).toBe(false);
 });

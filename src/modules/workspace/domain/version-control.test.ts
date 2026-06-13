@@ -92,7 +92,7 @@ test("commit then checkout round-trips content, timeline and aux state", async (
   expect(service.listTimelinePoints(workspace.id)).toEqual(timelineBefore);
 });
 
-test("identical content across commits shares blobs and tree objects", async () => {
+test("identical content across commits shares the same git tree", async () => {
   const workspace = seedProject("proj_dedup");
   service.createContentNode({
     workspaceId: workspace.id,
@@ -101,14 +101,12 @@ test("identical content across commits shares blobs and tree objects", async () 
     body: "shared body text",
   });
 
-  await service.createCommit({ branchId: workspace.branchId, message: "c1" });
-  const blobCountAfterFirst = db.select().from(schema.blobs).all().length;
-  const treeCountAfterFirst = db.select().from(schema.treeObjects).all().length;
+  const first = await service.createCommit({ branchId: workspace.branchId, message: "c1" });
 
-  // Commit again without changes: should not create new blobs or tree objects.
-  await service.createCommit({ branchId: workspace.branchId, message: "c2" });
-  expect(db.select().from(schema.blobs).all().length).toBe(blobCountAfterFirst);
-  expect(db.select().from(schema.treeObjects).all().length).toBe(treeCountAfterFirst);
+  // Commit again without changes: Git may create a new commit, but it should point at the same tree.
+  const second = await service.createCommit({ branchId: workspace.branchId, message: "c2" });
+  expect(second.id).toMatch(/^[0-9a-f]{40}$/);
+  expect(second.treeId).toBe(first.treeId);
 });
 
 test("branch off a commit shares the same head and forked metadata", async () => {

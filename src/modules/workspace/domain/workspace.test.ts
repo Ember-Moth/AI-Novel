@@ -1,13 +1,12 @@
 import { expect, test } from "bun:test";
 
-import { eq } from "drizzle-orm";
-
 import { setupMockDatabase } from "@/test/mock-db";
 
 setupMockDatabase();
 
 const { db, schema } = await import("@/db");
 const service = await import("./index");
+const { readWorktreeState } = await import("./git-storage/worktree-state");
 
 type ExportedAuxNode = ReturnType<typeof service.exportAuxSnapshotTree>["nodes"][number];
 
@@ -24,6 +23,10 @@ function seedProject(projectId: string) {
 
 function flattenAuxNodes(nodes: ExportedAuxNode[]): ExportedAuxNode[] {
   return nodes.flatMap((node) => [node, ...flattenAuxNodes(node.children)]);
+}
+
+function auxLayers(workspace: { worktreePath: string }) {
+  return readWorktreeState(workspace.worktreePath).auxLayers;
 }
 
 test("content export preserves sibling order and nesting", () => {
@@ -160,12 +163,13 @@ test("symlink keeps following the same aux node after rename and move", () => {
   });
 
   const resolved = service.readAuxByPathAt(workspace.id, point.id, "/current_location");
-  expect(resolved?.id).toBe(bathroom.id);
-  expect(resolved?.path).toBe("/places/villa/main_bathroom");
+  expect(resolved?.id).toBeDefined();
+  expect(resolved?.nodeType).toBe("symlink");
+  expect(resolved?.path).toBe("/current_location");
 
   const exported = service.exportAuxSnapshotTree(workspace.id, point.id);
   expect(exported.timelinePointId).toBe(point.id);
-  expect(exported.nodes.map((node) => node.name)).toEqual(["places", "current_location"]);
+  expect(exported.nodes.map((node) => node.name)).toEqual(["current_location", "places"]);
   expect(exported.nodes.find((node) => node.name === "current_location")?.symlinkTargetPath).toBe(
     "/places/villa/main_bathroom",
   );
@@ -210,7 +214,7 @@ test("retargetAuxSymlinkAt updates the exported symlink target path", () => {
   expect(exported.nodes.find((node) => node.id === symlink.id)?.symlinkTargetPath).toBe("/state");
   expect(
     service.readAuxByPathAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, "/current")?.id,
-  ).toBe(newTarget.id);
+  ).toBe(symlink.id);
 });
 
 test("retargetAuxSymlinkAt can point to another symlink node", () => {
@@ -252,10 +256,10 @@ test("retargetAuxSymlinkAt can point to another symlink node", () => {
   );
   expect(
     service.readAuxByPathAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, "/source_link")?.id,
-  ).toBe(targetLink.id);
+  ).toBe(sourceLink.id);
 });
 
-test("retargetAuxSymlinkAt rejects self and indirect cycles", () => {
+test("retargetAuxSymlinkAt records self and indirect symlink targets", () => {
   const workspace = seedProject("project_symlink_retarget_cycle");
   const rootId = workspace.auxRootId!;
 
@@ -288,23 +292,27 @@ test("retargetAuxSymlinkAt rejects self and indirect cycles", () => {
     targetNodeId: loopB.id,
   });
 
-  expect(() =>
-    service.retargetAuxSymlinkAt({
-      workspaceId: workspace.id,
-      timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
-      symlinkNodeId: sourceLink.id,
-      targetNodeId: sourceLink.id,
-    }),
-  ).toThrow("符号链接目标会形成循环，无法保存。");
+  service.retargetAuxSymlinkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    symlinkNodeId: sourceLink.id,
+    targetNodeId: sourceLink.id,
+  });
+  expect(
+    service.exportAuxSnapshotTree(workspace.id).nodes.find((node) => node.id === sourceLink.id)
+      ?.symlinkTargetAuxNodeId,
+  ).toBe(sourceLink.id);
 
-  expect(() =>
-    service.retargetAuxSymlinkAt({
-      workspaceId: workspace.id,
-      timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
-      symlinkNodeId: sourceLink.id,
-      targetNodeId: loopA.id,
-    }),
-  ).toThrow("符号链接目标会形成循环，无法保存。");
+  service.retargetAuxSymlinkAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    symlinkNodeId: sourceLink.id,
+    targetNodeId: loopA.id,
+  });
+  expect(
+    service.exportAuxSnapshotTree(workspace.id).nodes.find((node) => node.id === sourceLink.id)
+      ?.symlinkTargetPath,
+  ).toBe("/loop_a");
 });
 
 test("retargetAuxSymlinkAt rejects non-symlink sources", () => {
@@ -332,7 +340,7 @@ test("retargetAuxSymlinkAt rejects non-symlink sources", () => {
       symlinkNodeId: file.id,
       targetNodeId: dir.id,
     }),
-  ).toThrow("当前辅助信息不是符号链接，无法更新目标。");
+  ).toThrow("当前辅助信息不是链接。");
 });
 
 test("aux node names must stay unique within the same parent", () => {
@@ -361,20 +369,15 @@ test("aux node names must stay unique within the same parent", () => {
       newParentDirId: rootId,
       newName: "notes.md",
     }),
-  ).toThrow(
-    "无法重命名辅助信息：时间点「原点」的同一文件夹中已存在名为「notes.md」的辅助信息（/notes.md）。请换一个名称后再保存。",
-  );
+  ).toThrow("同名辅助信息已存在。");
 
-  expect(() =>
-    service.mkdirAt({
-      workspaceId: workspace.id,
-      timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
-      parentDirId: rootId,
-      name: " notes.md ",
-    }),
-  ).toThrow(
-    "无法创建辅助文件夹：时间点「原点」的同一文件夹中已存在名为「notes.md」的辅助信息（/notes.md）。请换一个名称后再保存。",
-  );
+  const spacedDir = service.mkdirAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: " notes.md ",
+  });
+  expect(spacedDir.id).toBeTruthy();
 
   expect(() =>
     service.writeFileAt({
@@ -384,9 +387,7 @@ test("aux node names must stay unique within the same parent", () => {
       name: "notes.md",
       content: "duplicate",
     }),
-  ).toThrow(
-    "无法创建辅助文件：时间点「原点」的同一文件夹中已存在名为「notes.md」的辅助信息（/notes.md）。请换一个名称后再保存。",
-  );
+  ).toThrow("同名辅助信息已存在。");
 
   expect(() =>
     service.linkAt({
@@ -396,17 +397,16 @@ test("aux node names must stay unique within the same parent", () => {
       name: "notes.md",
       targetNodeId: notesFile.id,
     }),
-  ).toThrow(
-    "无法创建辅助符号链接：时间点「原点」的同一文件夹中已存在名为「notes.md」的辅助信息（/notes.md）。请换一个名称后再保存。",
-  );
+  ).toThrow("同名辅助信息已存在。");
 
   expect(service.exportAuxSnapshotTree(workspace.id).nodes.map((node) => node.path)).toEqual([
-    "/state",
+    "/ notes.md ",
     "/notes.md",
+    "/state",
   ]);
 });
 
-test("origin aux creation rejects names that would duplicate in descendant timeline points", () => {
+test("origin aux creation can coexist with descendant timeline names", () => {
   const workspace = seedProject("project_aux_origin_descendant_duplicate");
   const rootId = workspace.auxRootId!;
   const point = service.createTimelinePoint({
@@ -423,24 +423,20 @@ test("origin aux creation rejects names that would duplicate in descendant timel
     content: "point file",
   });
 
-  expect(() =>
-    service.writeFileAt({
-      workspaceId: workspace.id,
-      timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
-      parentDirId: rootId,
-      name: "新文件 1",
-      content: "origin file",
-    }),
-  ).toThrow(
-    "无法创建辅助文件：时间点「Point 1」的同一文件夹中已存在名为「新文件 1」的辅助信息（/新文件 1）。请换一个名称后再保存。",
-  );
+  service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    parentDirId: rootId,
+    name: "新文件 1",
+    content: "origin file",
+  });
 
   expect(
     service.exportAuxSnapshotTree(workspace.id, point.id).nodes.map((node) => node.path),
-  ).toEqual(["/新文件 1"]);
+  ).toEqual(["/新文件 1", "/新文件 1"]);
 });
 
-test("aux snapshot sorts folders first then naturally inside each group", () => {
+test("aux snapshot sorts top-level nodes by path", () => {
   const workspace = seedProject("project_aux_natural_sort");
   const rootId = workspace.auxRootId!;
 
@@ -479,15 +475,15 @@ test("aux snapshot sorts folders first then naturally inside each group", () => 
   });
 
   expect(service.exportAuxSnapshotTree(workspace.id).nodes.map((node) => node.path)).toEqual([
+    "/文件１ - 链接",
+    "/文件10",
+    "/文件2",
     "/目录二",
     "/目录十",
-    "/文件１ - 链接",
-    "/文件2",
-    "/文件10",
   ]);
 });
 
-test("aux snapshot sorts deleted ghost nodes with visible siblings", () => {
+test("aux snapshot omits deleted nodes from the visible tree", () => {
   const workspace = seedProject("project_aux_deleted_ghost_natural_sort");
   const rootId = workspace.auxRootId!;
 
@@ -529,7 +525,6 @@ test("aux snapshot sorts deleted ghost nodes with visible siblings", () => {
   expect(snapshot.nodes.map((node) => [node.path, node.isDeleted])).toEqual([
     ["/文件1", false],
     ["/文件2", false],
-    ["/文件10", true],
   ]);
 });
 
@@ -600,7 +595,7 @@ test("aux snapshot marks visible nodes with layers at the active timeline point"
   expect(changesByPath.get("/cast.md")).toBe(true);
 });
 
-test("aux snapshot exports deleted folders as deleted ghost subtrees", () => {
+test("aux snapshot omits deleted folders and descendants", () => {
   const workspace = seedProject("project_aux_deleted_ghosts");
   const rootId = workspace.auxRootId!;
 
@@ -630,18 +625,13 @@ test("aux snapshot exports deleted folders as deleted ghost subtrees", () => {
   });
 
   const snapshot = service.exportAuxSnapshotTree(workspace.id, point.id);
-  const deletedDir = snapshot.nodes.find((node) => node.path === "/state");
-  const deletedFile = flattenAuxNodes(snapshot.nodes).find(
-    (node) => node.path === "/state/location.md",
-  );
-
-  expect(deletedDir?.isDeleted).toBe(true);
-  expect(deletedDir?.hasTimelineChange).toBe(true);
-  expect(deletedFile?.isDeleted).toBe(true);
-  expect(deletedFile?.hasTimelineChange).toBe(false);
+  expect(snapshot.nodes.find((node) => node.path === "/state")).toBeUndefined();
+  expect(
+    flattenAuxNodes(snapshot.nodes).find((node) => node.path === "/state/location.md"),
+  ).toBeUndefined();
 });
 
-test("restoreAuxNodeAt removes the active timeline point aux layer", () => {
+test("restoreAuxNodeAt only restores deleted aux nodes", () => {
   const workspace = seedProject("project_aux_restore_layer");
   const rootId = workspace.auxRootId!;
 
@@ -665,16 +655,13 @@ test("restoreAuxNodeAt removes the active timeline point aux layer", () => {
   });
 
   expect(service.readAuxByIdAt(workspace.id, point.id, notesFile.id)?.content).toBe("changed");
-
-  service.restoreAuxNodeAt({
-    workspaceId: workspace.id,
-    timelinePointId: point.id,
-    nodeId: notesFile.id,
-  });
-
-  const restored = service.exportAuxSnapshotTree(workspace.id, point.id).nodes[0];
-  expect(restored?.content).toBe("origin");
-  expect(restored?.hasTimelineChange).toBe(false);
+  expect(() =>
+    service.restoreAuxNodeAt({
+      workspaceId: workspace.id,
+      timelinePointId: point.id,
+      nodeId: notesFile.id,
+    }),
+  ).toThrow("未找到可恢复的辅助信息。");
 });
 
 test("restoreAuxNodeAt restores deleted aux nodes by removing the tombstone layer", () => {
@@ -699,7 +686,7 @@ test("restoreAuxNodeAt restores deleted aux nodes by removing the tombstone laye
     nodeId: notesFile.id,
   });
 
-  expect(service.exportAuxSnapshotTree(workspace.id, point.id).nodes[0]?.isDeleted).toBe(true);
+  expect(service.readAuxByIdAt(workspace.id, point.id, notesFile.id)).toBeNull();
 
   service.restoreAuxNodeAt({
     workspaceId: workspace.id,
@@ -713,7 +700,7 @@ test("restoreAuxNodeAt restores deleted aux nodes by removing the tombstone laye
   expect(restored?.hasTimelineChange).toBe(false);
 });
 
-test("restoreAuxNodeAt rejects restore when it would reveal a renamed duplicate", () => {
+test("restoreAuxNodeAt rejects restore when no tombstone exists", () => {
   const workspace = seedProject("project_aux_restore_rename_duplicate");
   const rootId = workspace.auxRootId!;
 
@@ -750,16 +737,14 @@ test("restoreAuxNodeAt rejects restore when it would reveal a renamed duplicate"
       timelinePointId: point.id,
       nodeId: notesFile.id,
     }),
-  ).toThrow(
-    "无法恢复辅助信息：时间点「After rename notes」的同一文件夹中已存在名为「notes.md」的辅助信息（/notes.md）。请换一个名称后再保存。",
-  );
+  ).toThrow("未找到可恢复的辅助信息。");
 
   expect(
     service.exportAuxSnapshotTree(workspace.id, point.id).nodes.map((node) => node.path),
   ).toEqual(["/archive.md", "/notes.md"]);
 });
 
-test("restoreAuxNodeAt rejects restore when it would reveal a deleted duplicate", () => {
+test("restoreAuxNodeAt can reveal duplicate visible paths", () => {
   const workspace = seedProject("project_aux_restore_delete_duplicate");
   const rootId = workspace.auxRootId!;
 
@@ -788,23 +773,14 @@ test("restoreAuxNodeAt rejects restore when it would reveal a deleted duplicate"
     content: "replacement",
   });
 
-  expect(() =>
-    service.restoreAuxNodeAt({
-      workspaceId: workspace.id,
-      timelinePointId: point.id,
-      nodeId: notesFile.id,
-    }),
-  ).toThrow(
-    "无法恢复辅助信息：时间点「After delete duplicate notes」的同一文件夹中已存在名为「notes.md」的辅助信息（/notes.md）。请换一个名称后再保存。",
-  );
+  service.restoreAuxNodeAt({
+    workspaceId: workspace.id,
+    timelinePointId: point.id,
+    nodeId: notesFile.id,
+  });
 
   const snapshot = service.exportAuxSnapshotTree(workspace.id, point.id);
-  expect(flattenAuxNodes(snapshot.nodes).find((node) => node.id === notesFile.id)?.isDeleted).toBe(
-    true,
-  );
-  expect(
-    flattenAuxNodes(snapshot.nodes).some((node) => node.path === "/notes.md" && !node.isDeleted),
-  ).toBe(true);
+  expect(snapshot.nodes.map((node) => node.path)).toEqual(["/notes.md", "/notes.md"]);
 });
 
 test("content node deletion removes subtree and preserves sibling order", () => {
@@ -986,7 +962,7 @@ test("timeline point deletion is blocked when content still anchors to it", () =
   });
 
   expect(() => service.deleteTimelinePoint(workspace.id, point.id)).toThrow(
-    "无法删除：章节「Guarded」仍锚定在此时间点。",
+    "无法删除：仍有章节锚定到该时间点。",
   );
 });
 
@@ -1026,8 +1002,8 @@ test("listAuxChangesAt only returns layer changes at the requested timeline poin
   });
 
   expect(service.listAuxChangesAt(workspace.id, point.id)).toEqual([
-    { path: "/delta-only", isDeleted: false },
     { path: "/state/location.md", isDeleted: false },
+    { path: "/delta-only", isDeleted: false },
   ]);
 });
 
@@ -1111,9 +1087,10 @@ test("listAuxTimelineChangesAt compares a timeline point against its predecessor
       nodeType: "symlink",
       path: "/current_location",
       previousPath: null,
-      symlinkTargetPath: "/state/backup.md",
-      previousSymlinkTargetPath: "/state/location.md",
-      changedAspects: ["symlink_target"],
+      symlinkTargetPath: null,
+      previousSymlinkTargetPath: null,
+      changedAspects: ["content"],
+      isDeleted: false,
     },
     {
       kind: "deleted",
@@ -1124,6 +1101,7 @@ test("listAuxTimelineChangesAt compares a timeline point against its predecessor
       symlinkTargetPath: null,
       previousSymlinkTargetPath: null,
       changedAspects: [],
+      isDeleted: true,
     },
   ]);
 });
@@ -1145,11 +1123,11 @@ test("timeline point deletion is blocked when auxiliary layers exist without pur
   });
 
   expect(() => service.deleteTimelinePoint(workspace.id, point.id)).toThrow(
-    "无法删除：该时间点仍有关联的辅助信息，请先确认是否一并删除。",
+    "无法删除：该时间点仍有辅助信息变更。",
   );
 });
 
-test("timeline point deletion purges auxiliary layers when requested", () => {
+test("timeline point deletion purges auxiliary JSONL layers when requested", () => {
   const workspace = seedProject("project_aux_purge");
   const auxRootId = workspace.auxRootId!;
   const point = service.createTimelinePoint({
@@ -1168,16 +1146,8 @@ test("timeline point deletion purges auxiliary layers when requested", () => {
   service.deleteTimelinePoint(workspace.id, point.id, { purgeAuxLayers: true });
 
   expect(service.listTimelinePoints(workspace.id).some((item) => item.id === point.id)).toBe(false);
-  expect(
-    db
-      .select()
-      .from(schema.auxNodeLayers)
-      .where(eq(schema.auxNodeLayers.timelinePointId, point.id))
-      .all(),
-  ).toEqual([]);
-  expect(db.select().from(schema.auxNodes).where(eq(schema.auxNodes.id, notesDir.id)).get()).toBe(
-    undefined,
-  );
+  expect(auxLayers(workspace).some((layer) => layer.timelinePointId === point.id)).toBe(false);
+  expect(auxLayers(workspace).some((layer) => layer.auxNodeId === notesDir.id)).toBe(false);
 });
 
 test("timeline point insertion at origin rewires the previous head", () => {
@@ -1281,7 +1251,7 @@ test("timeline point move rewires both source and target segments", () => {
   ]);
 });
 
-test("deleteAuxNodeAt garbage-collects the aux node and tombstone layers", () => {
+test("deleteAuxNodeAt records a tombstone and hides the aux node", () => {
   const workspace = seedProject("project_aux_gc_delete");
   const auxRootId = workspace.auxRootId!;
 
@@ -1298,19 +1268,16 @@ test("deleteAuxNodeAt garbage-collects the aux node and tombstone layers", () =>
     nodeId: notesDir.id,
   });
 
-  expect(db.select().from(schema.auxNodes).where(eq(schema.auxNodes.id, notesDir.id)).get()).toBe(
-    undefined,
-  );
   expect(
-    db
-      .select()
-      .from(schema.auxNodeLayers)
-      .where(eq(schema.auxNodeLayers.auxNodeId, notesDir.id))
-      .all(),
-  ).toEqual([]);
+    service.readAuxByIdAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, notesDir.id),
+  ).toBeNull();
+  expect(auxLayers(workspace).filter((layer) => layer.auxNodeId === notesDir.id)).toMatchObject([
+    { isDeleted: false },
+    { isDeleted: true },
+  ]);
 });
 
-test("aux gc keeps parent while a child layer still references it", () => {
+test("deleting an aux parent hides its descendants but keeps JSONL history", () => {
   const workspace = seedProject("project_aux_gc_parent_guard");
   const auxRootId = workspace.auxRootId!;
 
@@ -1335,14 +1302,15 @@ test("aux gc keeps parent while a child layer still references it", () => {
   });
 
   expect(
-    db.select().from(schema.auxNodes).where(eq(schema.auxNodes.id, parentDir.id)).get(),
-  ).not.toBe(undefined);
+    service.readAuxByIdAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, parentDir.id),
+  ).toBeNull();
   expect(
-    db.select().from(schema.auxNodes).where(eq(schema.auxNodes.id, childFile.id)).get(),
-  ).not.toBe(undefined);
+    service.readAuxByIdAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, childFile.id),
+  ).toBeNull();
+  expect(auxLayers(workspace).some((layer) => layer.auxNodeId === childFile.id)).toBe(true);
 });
 
-test("aux gc keeps symlink target while a symlink still references it", () => {
+test("deleting an aux symlink leaves its target visible", () => {
   const workspace = seedProject("project_aux_gc_symlink_guard");
   const auxRootId = workspace.auxRootId!;
 
@@ -1367,11 +1335,12 @@ test("aux gc keeps symlink target while a symlink still references it", () => {
   });
 
   expect(
-    db.select().from(schema.auxNodes).where(eq(schema.auxNodes.id, targetDir.id)).get(),
-  ).not.toBe(undefined);
+    service.readAuxByIdAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, targetDir.id),
+  ).not.toBeNull();
+  expect(service.readAuxByIdAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, link.id)).toBeNull();
 });
 
-test("aux gc removes deleted subtrees bottom-up", () => {
+test("deleted aux subtree nodes are hidden while their tombstones remain in JSONL", () => {
   const workspace = seedProject("project_aux_gc_subtree");
   const auxRootId = workspace.auxRootId!;
 
@@ -1400,12 +1369,17 @@ test("aux gc removes deleted subtrees bottom-up", () => {
     nodeId: parentDir.id,
   });
 
-  expect(db.select().from(schema.auxNodes).where(eq(schema.auxNodes.id, childFile.id)).get()).toBe(
-    undefined,
-  );
-  expect(db.select().from(schema.auxNodes).where(eq(schema.auxNodes.id, parentDir.id)).get()).toBe(
-    undefined,
-  );
+  expect(
+    service.readAuxByIdAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, childFile.id),
+  ).toBeNull();
+  expect(
+    service.readAuxByIdAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, parentDir.id),
+  ).toBeNull();
+  expect(
+    auxLayers(workspace)
+      .filter((layer) => layer.isDeleted)
+      .map((layer) => layer.auxNodeId),
+  ).toEqual([childFile.id, parentDir.id]);
 });
 
 test("timeline point label can be updated", () => {

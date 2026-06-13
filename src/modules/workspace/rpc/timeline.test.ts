@@ -66,7 +66,7 @@ test("timeline label updates do not invalidate aux snapshots", async () => {
   expect(result.invalidate).toEqual([rpcTags.timelineList(workspace.id)]);
 });
 
-test("deleting an unrelated later point only invalidates that point snapshot", async () => {
+test("deleting a point invalidates the aux workspace cache", async () => {
   const workspace = seedProject("rpc_timeline_delete");
   const pointA = service.createTimelinePoint({
     workspaceId: workspace.id,
@@ -89,11 +89,11 @@ test("deleting an unrelated later point only invalidates that point snapshot", a
 
   expect(result.invalidate).toEqual([
     rpcTags.timelineList(workspace.id),
-    rpcTags.auxSnapshot(workspace.id, pointB.id),
+    rpcTags.auxWorkspace(workspace.id),
   ]);
 });
 
-test("creating a later point only invalidates the new snapshot chain", async () => {
+test("creating a point invalidates the aux workspace cache", async () => {
   const workspace = seedProject("rpc_timeline_create");
   const pointA = service.createTimelinePoint({
     workspaceId: workspace.id,
@@ -117,6 +117,6 @@ test("creating a later point only invalidates the new snapshot chain", async () 
 
   expect(result.invalidate).toEqual([
     rpcTags.timelineList(workspace.id),
-    rpcTags.auxSnapshot(workspace.id, result.data.id),
+    rpcTags.auxWorkspace(workspace.id),
   ]);
 });

@@ -1,8 +1,14 @@
 import { mutation, query } from "@codehz/rpc/core";
 import { and, eq, type InferInsertModel, type InferSelectModel } from "drizzle-orm";
+import { rmSync } from "node:fs";
 
 import { db, schema } from "@/db";
 import { createDefaultWorkspace } from "@/modules/workspace/domain";
+import { withProjectLock } from "@/modules/workspace/domain/git-storage/lock";
+import {
+  getProjectRepoGitDir,
+  getProjectWorktreeRoot,
+} from "@/modules/workspace/domain/git-storage/paths";
 import { invariant } from "@/shared/lib/domain";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
 
@@ -84,7 +90,14 @@ export const setDefaultBranch = mutation<{ projectId: string; branchId: string }
 
 export const deleteMutation = mutation<{ id: string }, void, RpcTagList>({
   invalidate: ({ id }) => [rpcTags.projectsList(), rpcTags.project(id)],
-  handler: ({ id }) => {
+  handler: async ({ id }) => {
+    const cleanup = () => {
+      rmSync(getProjectRepoGitDir(id), { recursive: true, force: true });
+      rmSync(getProjectWorktreeRoot(id), { recursive: true, force: true });
+    };
     db.delete(schema.projects).where(eq(schema.projects.id, id)).run();
+    await withProjectLock(id, async () => {
+      cleanup();
+    });
   },
 });

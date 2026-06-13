@@ -1,16 +1,15 @@
 import { mutation, query } from "@codehz/rpc/core";
 
-import { db } from "@/db";
 import {
   checkoutCommit,
   createCommit,
   getBranch,
   getCommit,
   getWorkspace,
+  getWorkspaceForBranchId,
   getWorkingTreeStatus,
   listCommits,
 } from "@/modules/workspace/domain";
-import { getWorkspaceForBranch } from "@/modules/workspace/domain/internal/access";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
 
 export const history = query<
@@ -28,7 +27,7 @@ export const workingTreeStatus = query<
   RpcTagList
 >({
   watch: ({ branchId }) => {
-    const workspace = getWorkspaceForBranch(db, branchId);
+    const workspace = getWorkspaceForBranchId(branchId);
     return workspace
       ? [
           rpcTags.branch(branchId),
