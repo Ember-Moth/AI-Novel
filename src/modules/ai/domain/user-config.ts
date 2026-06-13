@@ -5,12 +5,12 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
-import { createId } from "@/shared/lib/domain";
 import { createJsonFileStore } from "@/shared/lib/json-file-store";
 import { ensureConfigDir, getConfigFilePath } from "@/shared/lib/storage-paths";
 import type {
@@ -37,11 +37,12 @@ function getPromptsConfigDir() {
   return dir;
 }
 
-function getPromptConfigFilePath(id: string) {
-  return join(getPromptsConfigDir(), `${encodeURIComponent(id)}.md`);
+function getPromptConfigFilePath(id: string, isEnabled = true) {
+  const suffix = isEnabled ? ".md" : ".disabled.md";
+  return join(getPromptsConfigDir(), `${encodeURIComponent(id)}${suffix}`);
 }
 
-type PromptFrontMatter = Omit<GlobalPromptRow, "content">;
+type PromptFrontMatter = Pick<GlobalPromptRow, "name" | "description">;
 type PromptFrontMatterValues = Record<string, unknown>;
 
 function readPromptFile(filepath: string): GlobalPromptRow {
@@ -53,9 +54,13 @@ function readPromptFile(filepath: string): GlobalPromptRow {
     }
 
     const frontMatter = parsePromptFrontMatter(match[1] ?? "");
+    const timestamps = getPromptFileTimestamps(filepath);
     return {
+      id: inferPromptIdFromFilePath(filepath),
       ...frontMatter,
       content: stripTrailingNewline(match[2] ?? ""),
+      isEnabled: inferPromptEnabledFromFilePath(filepath),
+      ...timestamps,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -63,13 +68,29 @@ function readPromptFile(filepath: string): GlobalPromptRow {
   }
 }
 
-function writePromptFile(filepath: string, prompt: GlobalPromptRow): GlobalPromptRow {
-  const { content, ...frontMatter } = prompt;
+function writePromptFile(prompt: GlobalPromptRow): GlobalPromptRow {
+  const { content } = prompt;
+  const frontMatter: PromptFrontMatter = {
+    name: prompt.name,
+    description: prompt.description,
+  };
   const markdown = `---\n${stringifyPromptFrontMatter(frontMatter)}---\n${content.trim()}\n`;
-  const tempPath = `${filepath}.${createId("tmp")}.tmp`;
-  writeFileSync(tempPath, markdown, "utf8");
-  renameSync(tempPath, filepath);
-  return prompt;
+  const targetPath = getPromptConfigFilePath(prompt.id, prompt.isEnabled);
+  const alternatePath = getPromptConfigFilePath(prompt.id, !prompt.isEnabled);
+  const writePath = existsSync(targetPath)
+    ? targetPath
+    : existsSync(alternatePath)
+      ? alternatePath
+      : targetPath;
+
+  writeFileSync(writePath, markdown, "utf8");
+  if (writePath !== targetPath) {
+    if (existsSync(targetPath)) {
+      unlinkSync(targetPath);
+    }
+    renameSync(writePath, targetPath);
+  }
+  return readPromptFile(targetPath);
 }
 
 function listPromptConfigFiles(dir: string) {
@@ -92,12 +113,28 @@ function parsePromptFrontMatter(raw: string): PromptFrontMatter {
   const values = parsed as PromptFrontMatterValues;
 
   return {
-    id: requireFrontMatterString(values, "id"),
     name: requireFrontMatterString(values, "name"),
     description: requireNullableFrontMatterString(values, "description"),
-    isEnabled: requireFrontMatterBoolean(values, "isEnabled"),
-    createdAt: requireFrontMatterNumber(values, "createdAt"),
-    updatedAt: requireFrontMatterNumber(values, "updatedAt"),
+  };
+}
+
+function inferPromptIdFromFilePath(filepath: string) {
+  const filename = basename(filepath);
+  const encodedId = filename.endsWith(".disabled.md")
+    ? filename.slice(0, -".disabled.md".length)
+    : filename.slice(0, -".md".length);
+  return decodeURIComponent(encodedId);
+}
+
+function inferPromptEnabledFromFilePath(filepath: string) {
+  return !basename(filepath).endsWith(".disabled.md");
+}
+
+function getPromptFileTimestamps(filepath: string) {
+  const stats = statSync(filepath);
+  return {
+    createdAt: Math.trunc(stats.birthtimeMs),
+    updatedAt: Math.trunc(stats.mtimeMs),
   };
 }
 
@@ -106,7 +143,11 @@ function stripTrailingNewline(value: string) {
 }
 
 function stringifyPromptFrontMatter(frontMatter: PromptFrontMatter) {
-  return `${YAML.stringify(frontMatter, null, 2).trimEnd()}\n`;
+  const values = {
+    name: frontMatter.name,
+    ...(frontMatter.description != null ? { description: frontMatter.description } : {}),
+  };
+  return `${YAML.stringify(values, null, 2).trimEnd()}\n`;
 }
 
 function requireFrontMatterString(values: PromptFrontMatterValues, key: string) {
@@ -119,6 +160,9 @@ function requireFrontMatterString(values: PromptFrontMatterValues, key: string) 
 
 function requireNullableFrontMatterString(values: PromptFrontMatterValues, key: string) {
   const value = values[key];
+  if (value === undefined) {
+    return null;
+  }
   if (value === null) {
     return null;
   }
@@ -126,22 +170,6 @@ function requireNullableFrontMatterString(values: PromptFrontMatterValues, key: 
     throw new Error(`Front Matter 字段 ${key} 必须是字符串或 null。`);
   }
   return value.trim().length > 0 ? value : null;
-}
-
-function requireFrontMatterBoolean(values: PromptFrontMatterValues, key: string) {
-  const value = values[key];
-  if (typeof value !== "boolean") {
-    throw new Error(`Front Matter 字段 ${key} 必须是布尔值。`);
-  }
-  return value;
-}
-
-function requireFrontMatterNumber(values: PromptFrontMatterValues, key: string) {
-  const value = values[key];
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`Front Matter 字段 ${key} 必须是数字。`);
-  }
-  return value;
 }
 
 function normalizeAiConnectionsFile(file: AiConnectionsConfigFile): AiConnectionsConfigFile {
@@ -166,7 +194,7 @@ export function findGlobalPromptByNameFromConfig(name: string) {
 
 export function insertGlobalPromptToConfig(prompt: GlobalPromptRow) {
   readPromptConfigDirectory();
-  return writePromptFile(getPromptConfigFilePath(prompt.id), prompt);
+  return writePromptFile(prompt);
 }
 
 export function updateGlobalPromptInConfig(id: string, updates: Partial<GlobalPromptRow>) {
@@ -174,14 +202,15 @@ export function updateGlobalPromptInConfig(id: string, updates: Partial<GlobalPr
   if (!prompt) return null;
 
   const updated = { ...prompt, ...updates };
-  return writePromptFile(getPromptConfigFilePath(id), updated);
+  return writePromptFile(updated);
 }
 
 export function deleteGlobalPromptFromConfig(id: string) {
   readPromptConfigDirectory();
-  const filepath = getPromptConfigFilePath(id);
-  if (existsSync(filepath)) {
-    unlinkSync(filepath);
+  for (const filepath of [getPromptConfigFilePath(id, true), getPromptConfigFilePath(id, false)]) {
+    if (existsSync(filepath)) {
+      unlinkSync(filepath);
+    }
   }
 }
 

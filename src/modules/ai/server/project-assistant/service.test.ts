@@ -213,7 +213,7 @@ test("sendProjectAssistantMessage resolves global prompt mentions into run refs 
         name: "章节扩写",
         description: "扩写当前章节",
         content: "请扩写正文，但不要改变视角。",
-        updatedAt: 200,
+        updatedAt: expect.any(Number),
       }),
     }),
   ]);

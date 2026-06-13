@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { YAML } from "bun";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ensureConfigDir } from "@/shared/lib/storage-paths";
@@ -30,6 +30,10 @@ function getPromptConfigFilePath(id: string) {
   return join(getPromptsConfigDir(), `${encodeURIComponent(id)}.md`);
 }
 
+function getDisabledPromptConfigFilePath(id: string) {
+  return join(getPromptsConfigDir(), `${encodeURIComponent(id)}.disabled.md`);
+}
+
 test("user config files default to empty lists when missing", () => {
   expect(userConfig.listGlobalPromptsFromConfig()).toEqual([]);
   expect(userConfig.listAiConnectionsFromConfig()).toEqual([]);
@@ -48,7 +52,8 @@ test("prompt config persists create update and delete operations", () => {
     content: "Updated",
     updatedAt: 2,
   });
-  expect(userConfig.getGlobalPromptFromConfig("prompt_a")?.content).toBe("Updated");
+  const updatedPrompt = userConfig.getGlobalPromptFromConfig("prompt_a");
+  expect(updatedPrompt?.content).toBe("Updated");
 
   userConfig.deleteGlobalPromptFromConfig("prompt_b");
   expect(userConfig.listGlobalPromptsFromConfig().map((item) => item.id)).toEqual(["prompt_a"]);
@@ -58,15 +63,39 @@ test("prompt config persists create update and delete operations", () => {
   const rawPrompt = readFileSync(getPromptConfigFilePath("prompt_a"), "utf8");
   const frontMatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(rawPrompt)?.[1] ?? "";
   expect(YAML.parse(frontMatter)).toEqual({
-    id: "prompt_a",
     name: "Alpha",
-    description: null,
-    isEnabled: true,
-    createdAt: 1,
-    updatedAt: 2,
+  });
+  const stats = statSync(getPromptConfigFilePath("prompt_a"));
+  expect(updatedPrompt).toMatchObject({
+    id: "prompt_a",
+    createdAt: Math.trunc(stats.birthtimeMs),
+    updatedAt: Math.trunc(stats.mtimeMs),
   });
   expect(rawPrompt).toContain("---\nUpdated\n");
   expect(existsSync(getPromptConfigFilePath("prompt_b"))).toBe(false);
+});
+
+test("prompt enabled state is stored in the filename suffix", () => {
+  userConfig.insertGlobalPromptToConfig({ ...prompt("prompt_a", "Alpha"), isEnabled: false });
+
+  expect(existsSync(getPromptConfigFilePath("prompt_a"))).toBe(false);
+  expect(existsSync(getDisabledPromptConfigFilePath("prompt_a"))).toBe(true);
+  expect(userConfig.getGlobalPromptFromConfig("prompt_a")?.isEnabled).toBe(false);
+
+  userConfig.updateGlobalPromptInConfig("prompt_a", { isEnabled: true });
+  expect(existsSync(getPromptConfigFilePath("prompt_a"))).toBe(true);
+  expect(existsSync(getDisabledPromptConfigFilePath("prompt_a"))).toBe(false);
+  expect(userConfig.getGlobalPromptFromConfig("prompt_a")?.isEnabled).toBe(true);
+
+  userConfig.updateGlobalPromptInConfig("prompt_a", { isEnabled: false });
+  expect(existsSync(getPromptConfigFilePath("prompt_a"))).toBe(false);
+  expect(existsSync(getDisabledPromptConfigFilePath("prompt_a"))).toBe(true);
+
+  const rawPrompt = readFileSync(getDisabledPromptConfigFilePath("prompt_a"), "utf8");
+  const frontMatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(rawPrompt)?.[1] ?? "";
+  expect(YAML.parse(frontMatter)).toEqual({
+    name: "Alpha",
+  });
 });
 
 test("ai connection config persists connections overrides and custom models", () => {
