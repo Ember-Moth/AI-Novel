@@ -265,9 +265,7 @@ export const agentThreads = sqliteTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     agentProfile: text("agent_profile").notNull(),
     title: text("title").notNull(),
-    activeTipNodeId: text("active_tip_node_id").references((): any => agentThreadNodes.id, {
-      onDelete: "set null",
-    }),
+    activeTipNodeId: text("active_tip_node_id"),
     archivedAt: integer("archived_at", { mode: "number" }),
     ...timestampColumns,
   },
@@ -308,24 +306,21 @@ export const agentRuns = sqliteTable(
     threadId: text("thread_id")
       .notNull()
       .references(() => agentThreads.id, { onDelete: "cascade" }),
-    parentRunId: text("parent_run_id").references((): any => agentRuns.id, {
-      onDelete: "set null",
-    }),
-    parentEventId: text("parent_event_id").references((): any => agentRunEvents.id, {
-      onDelete: "set null",
-    }),
-    triggerNodeId: text("trigger_node_id").references((): any => agentThreadNodes.id, {
-      onDelete: "set null",
-    }),
-    baseTipNodeId: text("base_tip_node_id").references((): any => agentThreadNodes.id, {
-      onDelete: "set null",
-    }),
+    parentRunId: text("parent_run_id"),
+    parentEventId: text("parent_event_id"),
+    triggerNodeId: text("trigger_node_id"),
+    baseTipNodeId: text("base_tip_node_id"),
     runMode: text("run_mode").notNull(),
     status: text("status").notNull(),
     agentProfile: text("agent_profile").notNull(),
-    errorArtifactId: text("error_artifact_id").references((): any => agentArtifacts.id, {
-      onDelete: "set null",
-    }),
+    errorArtifactId: text("error_artifact_id"),
+    selectionSnapshotJson: text("selection_snapshot_json").notNull().default("{}"),
+    contextSnapshotJson: text("context_snapshot_json"),
+    activeToolsJson: text("active_tools_json"),
+    inputRefsJson: text("input_refs_json").notNull().default("[]"),
+    stepsJson: text("steps_json").notNull().default("[]"),
+    eventsJson: text("events_json").notNull().default("[]"),
+    artifactsJson: text("artifacts_json").notNull().default("[]"),
     startedAt: integer("started_at", { mode: "number" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -349,133 +344,6 @@ export const agentRuns = sqliteTable(
   ],
 );
 
-export const agentRunInputs = sqliteTable(
-  "agent_run_inputs",
-  {
-    id: text("id").primaryKey(),
-    runId: text("run_id")
-      .notNull()
-      .references(() => agentRuns.id, { onDelete: "cascade" }),
-    selectionSnapshotJson: text("selection_snapshot_json").notNull().default("{}"),
-    contextSnapshotJson: text("context_snapshot_json"),
-    activeToolsJson: text("active_tools_json"),
-    ...timestampColumns,
-  },
-  (table) => [
-    uniqueIndex("agent_run_inputs_run_idx").on(table.runId),
-    index("agent_run_inputs_run_lookup_idx").on(table.runId),
-  ],
-);
-
-export const agentRunInputRefs = sqliteTable(
-  "agent_run_input_refs",
-  {
-    id: text("id").primaryKey(),
-    runId: text("run_id")
-      .notNull()
-      .references(() => agentRuns.id, { onDelete: "cascade" }),
-    refIndex: integer("ref_index").notNull(),
-    kind: text("kind").notNull(),
-    mode: text("mode").notNull(),
-    label: text("label").notNull(),
-    sourceJson: text("source_json").notNull(),
-    snapshotJson: text("snapshot_json").notNull(),
-    displayJson: text("display_json").notNull(),
-    ...timestampColumns,
-  },
-  (table) => [
-    check("agent_run_input_refs_label_nonempty", sql`length(${table.label}) > 0`),
-    check("agent_run_input_refs_kind_valid", sql`${table.kind} IN ('global-prompt')`),
-    check("agent_run_input_refs_mode_valid", sql`${table.mode} IN ('snapshot-ref')`),
-    uniqueIndex("agent_run_input_refs_run_index_idx").on(table.runId, table.refIndex),
-    index("agent_run_input_refs_run_idx").on(table.runId),
-  ],
-);
-
-export const agentArtifacts = sqliteTable(
-  "agent_artifacts",
-  {
-    id: text("id").primaryKey(),
-    runId: text("run_id").references(() => agentRuns.id, {
-      onDelete: "cascade",
-    }),
-    stepId: text("step_id").references((): any => agentRunSteps.id, {
-      onDelete: "set null",
-    }),
-    artifactKind: text("artifact_kind").notNull(),
-    visibility: text("visibility").notNull(),
-    mimeType: text("mime_type"),
-    contentJson: text("content_json").notNull(),
-    summaryText: text("summary_text"),
-    createdAt: integer("created_at", { mode: "number" })
-      .notNull()
-      .default(sql`(unixepoch() * 1000)`),
-  },
-  (table) => [
-    check(
-      "agent_artifacts_kind_valid",
-      sql`${table.artifactKind} IN ('prepared-model-messages', 'response-messages', 'request-body', 'response-body', 'provider-metadata', 'tool-input', 'tool-output', 'reasoning-raw', 'ui-projection', 'error')`,
-    ),
-    check(
-      "agent_artifacts_visibility_valid",
-      sql`${table.visibility} IN ('public', 'hidden', 'internal')`,
-    ),
-    index("agent_artifacts_run_idx").on(table.runId),
-    index("agent_artifacts_step_idx").on(table.stepId),
-    index("agent_artifacts_kind_idx").on(table.artifactKind),
-  ],
-);
-
-export const agentRunSteps = sqliteTable(
-  "agent_run_steps",
-  {
-    id: text("id").primaryKey(),
-    runId: text("run_id")
-      .notNull()
-      .references(() => agentRuns.id, { onDelete: "cascade" }),
-    stepIndex: integer("step_index").notNull(),
-    provider: text("provider").notNull(),
-    modelId: text("model_id").notNull(),
-    finishReason: text("finish_reason"),
-    rawFinishReason: text("raw_finish_reason"),
-    systemJson: text("system_json"),
-    preparedMessagesArtifactId: text("prepared_messages_artifact_id").references(
-      () => agentArtifacts.id,
-      { onDelete: "set null" },
-    ),
-    responseMessagesArtifactId: text("response_messages_artifact_id").references(
-      () => agentArtifacts.id,
-      { onDelete: "set null" },
-    ),
-    requestBodyArtifactId: text("request_body_artifact_id").references(() => agentArtifacts.id, {
-      onDelete: "set null",
-    }),
-    responseBodyArtifactId: text("response_body_artifact_id").references(() => agentArtifacts.id, {
-      onDelete: "set null",
-    }),
-    providerMetadataArtifactId: text("provider_metadata_artifact_id").references(
-      () => agentArtifacts.id,
-      { onDelete: "set null" },
-    ),
-    usageJson: text("usage_json"),
-    startedAt: integer("started_at", { mode: "number" })
-      .notNull()
-      .default(sql`(unixepoch() * 1000)`),
-    completedAt: integer("completed_at", { mode: "number" })
-      .notNull()
-      .default(sql`(unixepoch() * 1000)`),
-    createdAt: integer("created_at", { mode: "number" })
-      .notNull()
-      .default(sql`(unixepoch() * 1000)`),
-  },
-  (table) => [
-    check("agent_run_steps_provider_nonempty", sql`length(${table.provider}) > 0`),
-    check("agent_run_steps_model_nonempty", sql`length(${table.modelId}) > 0`),
-    uniqueIndex("agent_run_steps_run_step_idx").on(table.runId, table.stepIndex),
-    index("agent_run_steps_run_idx").on(table.runId),
-  ],
-);
-
 export const agentThreadNodes = sqliteTable(
   "agent_thread_nodes",
   {
@@ -487,14 +355,11 @@ export const agentThreadNodes = sqliteTable(
       onDelete: "cascade",
     }),
     role: text("role").notNull(),
-    createdByRunId: text("created_by_run_id").references(() => agentRuns.id, {
-      onDelete: "set null",
-    }),
-    sourceStepId: text("source_step_id").references(() => agentRunSteps.id, {
-      onDelete: "set null",
-    }),
+    createdByRunId: text("created_by_run_id"),
+    sourceStepId: text("source_step_id"),
     sourceKind: text("source_kind").notNull(),
     summaryText: text("summary_text"),
+    partsJson: text("parts_json").notNull().default("[]"),
     createdAt: integer("created_at", { mode: "number" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -516,77 +381,5 @@ export const agentThreadNodes = sqliteTable(
     index("agent_thread_nodes_parent_idx").on(table.parentNodeId),
     index("agent_thread_nodes_run_idx").on(table.createdByRunId),
     index("agent_thread_nodes_step_idx").on(table.sourceStepId),
-  ],
-);
-
-export const agentMessageParts = sqliteTable(
-  "agent_message_parts",
-  {
-    id: text("id").primaryKey(),
-    nodeId: text("node_id")
-      .notNull()
-      .references(() => agentThreadNodes.id, { onDelete: "cascade" }),
-    partIndex: integer("part_index").notNull(),
-    partKind: text("part_kind").notNull(),
-    visibility: text("visibility").notNull().default("public"),
-    state: text("state").notNull().default("done"),
-    providerOptionsJson: text("provider_options_json"),
-    providerMetadataJson: text("provider_metadata_json"),
-    payloadJson: text("payload_json").notNull(),
-    createdAt: integer("created_at", { mode: "number" })
-      .notNull()
-      .default(sql`(unixepoch() * 1000)`),
-  },
-  (table) => [
-    check(
-      "agent_message_parts_kind_valid",
-      sql`${table.partKind} IN ('text', 'data-assistant-ref', 'reasoning', 'tool-call', 'tool-result', 'tool-error', 'file', 'source-url', 'source-document', 'data', 'step-start')`,
-    ),
-    check(
-      "agent_message_parts_visibility_valid",
-      sql`${table.visibility} IN ('public', 'hidden', 'internal')`,
-    ),
-    check("agent_message_parts_state_valid", sql`${table.state} IN ('streaming', 'done')`),
-    uniqueIndex("agent_message_parts_node_idx").on(table.nodeId, table.partIndex),
-    index("agent_message_parts_kind_idx").on(table.partKind),
-  ],
-);
-
-export const agentRunEvents = sqliteTable(
-  "agent_run_events",
-  {
-    id: text("id").primaryKey(),
-    runId: text("run_id")
-      .notNull()
-      .references(() => agentRuns.id, { onDelete: "cascade" }),
-    stepId: text("step_id").references(() => agentRunSteps.id, {
-      onDelete: "set null",
-    }),
-    seq: integer("seq").notNull(),
-    eventKind: text("event_kind").notNull(),
-    nodeId: text("node_id").references(() => agentThreadNodes.id, {
-      onDelete: "set null",
-    }),
-    relatedToolCallId: text("related_tool_call_id"),
-    relatedRunId: text("related_run_id").references(() => agentRuns.id, {
-      onDelete: "set null",
-    }),
-    summaryText: text("summary_text"),
-    payloadArtifactId: text("payload_artifact_id").references(() => agentArtifacts.id, {
-      onDelete: "set null",
-    }),
-    createdAt: integer("created_at", { mode: "number" })
-      .notNull()
-      .default(sql`(unixepoch() * 1000)`),
-  },
-  (table) => [
-    check(
-      "agent_run_events_kind_valid",
-      sql`${table.eventKind} IN ('run-started', 'step-started', 'provider-requested', 'provider-responded', 'tool-call-started', 'tool-call-finished', 'tool-call-failed', 'node-materialized', 'active-tip-moved', 'child-run-started', 'run-failed', 'run-succeeded')`,
-    ),
-    uniqueIndex("agent_run_events_run_seq_idx").on(table.runId, table.seq),
-    index("agent_run_events_step_idx").on(table.stepId),
-    index("agent_run_events_node_idx").on(table.nodeId),
-    index("agent_run_events_related_run_idx").on(table.relatedRunId),
   ],
 );

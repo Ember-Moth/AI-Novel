@@ -16,13 +16,90 @@ export type GlobalPromptRow = InferSelectModel<typeof schema.globalPrompts>;
 export type AgentThreadRow = InferSelectModel<typeof schema.agentThreads>;
 export type AgentProjectStateRow = InferSelectModel<typeof schema.agentProjectState>;
 export type AgentThreadNodeRow = InferSelectModel<typeof schema.agentThreadNodes>;
-export type AgentMessagePartRow = InferSelectModel<typeof schema.agentMessageParts>;
 export type AgentRunRow = InferSelectModel<typeof schema.agentRuns>;
-export type AgentRunInputRow = InferSelectModel<typeof schema.agentRunInputs>;
-export type AgentRunInputRefRow = InferSelectModel<typeof schema.agentRunInputRefs>;
-export type AgentRunStepRow = InferSelectModel<typeof schema.agentRunSteps>;
-export type AgentRunEventRow = InferSelectModel<typeof schema.agentRunEvents>;
-export type AgentArtifactRow = InferSelectModel<typeof schema.agentArtifacts>;
+
+export interface AgentRunInputRow {
+  id: string;
+  runId: string;
+  selectionSnapshotJson: string;
+  contextSnapshotJson: string | null;
+  activeToolsJson: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AgentRunInputRefRow {
+  id: string;
+  runId: string;
+  refIndex: number;
+  kind: "global-prompt";
+  mode: "snapshot-ref";
+  label: string;
+  sourceJson: string;
+  snapshotJson: string;
+  displayJson: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AgentMessagePartRow {
+  id: string;
+  nodeId: string;
+  partIndex: number;
+  partKind: AgentThreadNodePartKind;
+  visibility: AgentVisibility;
+  state: AgentPartState;
+  providerOptionsJson: string | null;
+  providerMetadataJson: string | null;
+  payloadJson: string;
+  createdAt: number;
+}
+
+export interface AgentArtifactRow {
+  id: string;
+  runId: string | null;
+  stepId: string | null;
+  artifactKind: AgentArtifactKind;
+  visibility: AgentVisibility;
+  mimeType: string | null;
+  contentJson: string;
+  summaryText: string | null;
+  createdAt: number;
+}
+
+export interface AgentRunStepRow {
+  id: string;
+  runId: string;
+  stepIndex: number;
+  provider: string;
+  modelId: string;
+  finishReason: string | null;
+  rawFinishReason: string | null;
+  systemJson: string | null;
+  preparedMessagesArtifactId: string | null;
+  responseMessagesArtifactId: string | null;
+  requestBodyArtifactId: string | null;
+  responseBodyArtifactId: string | null;
+  providerMetadataArtifactId: string | null;
+  usageJson: string | null;
+  startedAt: number;
+  completedAt: number;
+  createdAt: number;
+}
+
+export interface AgentRunEventRow {
+  id: string;
+  runId: string;
+  stepId: string | null;
+  seq: number;
+  eventKind: AgentRunEventKind;
+  nodeId: string | null;
+  relatedToolCallId: string | null;
+  relatedRunId: string | null;
+  summaryText: string | null;
+  payloadArtifactId: string | null;
+  createdAt: number;
+}
 
 export type AgentThreadRole = "system" | "user" | "assistant" | "tool";
 export type AgentThreadNodeSourceKind =

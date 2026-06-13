@@ -1,244 +1,9 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "693b4f0d-ea84-47e2-ab2f-d22513f3076f",
+  "id": "f18e03cd-6479-4752-bbd1-42fa22271ada",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
-    "agent_artifacts": {
-      "name": "agent_artifacts",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "step_id": {
-          "name": "step_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "artifact_kind": {
-          "name": "artifact_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "mime_type": {
-          "name": "mime_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "content_json": {
-          "name": "content_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "summary_text": {
-          "name": "summary_text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch() * 1000)"
-        }
-      },
-      "indexes": {
-        "agent_artifacts_run_idx": {
-          "name": "agent_artifacts_run_idx",
-          "columns": ["run_id"],
-          "isUnique": false
-        },
-        "agent_artifacts_step_idx": {
-          "name": "agent_artifacts_step_idx",
-          "columns": ["step_id"],
-          "isUnique": false
-        },
-        "agent_artifacts_kind_idx": {
-          "name": "agent_artifacts_kind_idx",
-          "columns": ["artifact_kind"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "agent_artifacts_run_id_agent_runs_id_fk": {
-          "name": "agent_artifacts_run_id_agent_runs_id_fk",
-          "tableFrom": "agent_artifacts",
-          "tableTo": "agent_runs",
-          "columnsFrom": ["run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_artifacts_step_id_agent_run_steps_id_fk": {
-          "name": "agent_artifacts_step_id_agent_run_steps_id_fk",
-          "tableFrom": "agent_artifacts",
-          "tableTo": "agent_run_steps",
-          "columnsFrom": ["step_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "agent_artifacts_kind_valid": {
-          "name": "agent_artifacts_kind_valid",
-          "value": "\"agent_artifacts\".\"artifact_kind\" IN ('prepared-model-messages', 'response-messages', 'request-body', 'response-body', 'provider-metadata', 'tool-input', 'tool-output', 'reasoning-raw', 'ui-projection', 'error')"
-        },
-        "agent_artifacts_visibility_valid": {
-          "name": "agent_artifacts_visibility_valid",
-          "value": "\"agent_artifacts\".\"visibility\" IN ('public', 'hidden', 'internal')"
-        }
-      }
-    },
-    "agent_message_parts": {
-      "name": "agent_message_parts",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "node_id": {
-          "name": "node_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "part_index": {
-          "name": "part_index",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "part_kind": {
-          "name": "part_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'public'"
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'done'"
-        },
-        "provider_options_json": {
-          "name": "provider_options_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "provider_metadata_json": {
-          "name": "provider_metadata_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "payload_json": {
-          "name": "payload_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch() * 1000)"
-        }
-      },
-      "indexes": {
-        "agent_message_parts_node_idx": {
-          "name": "agent_message_parts_node_idx",
-          "columns": ["node_id", "part_index"],
-          "isUnique": true
-        },
-        "agent_message_parts_kind_idx": {
-          "name": "agent_message_parts_kind_idx",
-          "columns": ["part_kind"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "agent_message_parts_node_id_agent_thread_nodes_id_fk": {
-          "name": "agent_message_parts_node_id_agent_thread_nodes_id_fk",
-          "tableFrom": "agent_message_parts",
-          "tableTo": "agent_thread_nodes",
-          "columnsFrom": ["node_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "agent_message_parts_kind_valid": {
-          "name": "agent_message_parts_kind_valid",
-          "value": "\"agent_message_parts\".\"part_kind\" IN ('text', 'data-assistant-ref', 'reasoning', 'tool-call', 'tool-result', 'tool-error', 'file', 'source-url', 'source-document', 'data', 'step-start')"
-        },
-        "agent_message_parts_visibility_valid": {
-          "name": "agent_message_parts_visibility_valid",
-          "value": "\"agent_message_parts\".\"visibility\" IN ('public', 'hidden', 'internal')"
-        },
-        "agent_message_parts_state_valid": {
-          "name": "agent_message_parts_state_valid",
-          "value": "\"agent_message_parts\".\"state\" IN ('streaming', 'done')"
-        }
-      }
-    },
     "agent_project_state": {
       "name": "agent_project_state",
       "columns": {
@@ -328,579 +93,6 @@
         }
       }
     },
-    "agent_run_events": {
-      "name": "agent_run_events",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "step_id": {
-          "name": "step_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "seq": {
-          "name": "seq",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "event_kind": {
-          "name": "event_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "node_id": {
-          "name": "node_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "related_tool_call_id": {
-          "name": "related_tool_call_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "related_run_id": {
-          "name": "related_run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "summary_text": {
-          "name": "summary_text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "payload_artifact_id": {
-          "name": "payload_artifact_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch() * 1000)"
-        }
-      },
-      "indexes": {
-        "agent_run_events_run_seq_idx": {
-          "name": "agent_run_events_run_seq_idx",
-          "columns": ["run_id", "seq"],
-          "isUnique": true
-        },
-        "agent_run_events_step_idx": {
-          "name": "agent_run_events_step_idx",
-          "columns": ["step_id"],
-          "isUnique": false
-        },
-        "agent_run_events_node_idx": {
-          "name": "agent_run_events_node_idx",
-          "columns": ["node_id"],
-          "isUnique": false
-        },
-        "agent_run_events_related_run_idx": {
-          "name": "agent_run_events_related_run_idx",
-          "columns": ["related_run_id"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "agent_run_events_run_id_agent_runs_id_fk": {
-          "name": "agent_run_events_run_id_agent_runs_id_fk",
-          "tableFrom": "agent_run_events",
-          "tableTo": "agent_runs",
-          "columnsFrom": ["run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_run_events_step_id_agent_run_steps_id_fk": {
-          "name": "agent_run_events_step_id_agent_run_steps_id_fk",
-          "tableFrom": "agent_run_events",
-          "tableTo": "agent_run_steps",
-          "columnsFrom": ["step_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_run_events_node_id_agent_thread_nodes_id_fk": {
-          "name": "agent_run_events_node_id_agent_thread_nodes_id_fk",
-          "tableFrom": "agent_run_events",
-          "tableTo": "agent_thread_nodes",
-          "columnsFrom": ["node_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_run_events_related_run_id_agent_runs_id_fk": {
-          "name": "agent_run_events_related_run_id_agent_runs_id_fk",
-          "tableFrom": "agent_run_events",
-          "tableTo": "agent_runs",
-          "columnsFrom": ["related_run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_run_events_payload_artifact_id_agent_artifacts_id_fk": {
-          "name": "agent_run_events_payload_artifact_id_agent_artifacts_id_fk",
-          "tableFrom": "agent_run_events",
-          "tableTo": "agent_artifacts",
-          "columnsFrom": ["payload_artifact_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "agent_run_events_kind_valid": {
-          "name": "agent_run_events_kind_valid",
-          "value": "\"agent_run_events\".\"event_kind\" IN ('run-started', 'step-started', 'provider-requested', 'provider-responded', 'tool-call-started', 'tool-call-finished', 'tool-call-failed', 'node-materialized', 'active-tip-moved', 'child-run-started', 'run-failed', 'run-succeeded')"
-        }
-      }
-    },
-    "agent_run_input_refs": {
-      "name": "agent_run_input_refs",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "ref_index": {
-          "name": "ref_index",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "mode": {
-          "name": "mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "source_json": {
-          "name": "source_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "snapshot_json": {
-          "name": "snapshot_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "display_json": {
-          "name": "display_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch() * 1000)"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch() * 1000)"
-        }
-      },
-      "indexes": {
-        "agent_run_input_refs_run_index_idx": {
-          "name": "agent_run_input_refs_run_index_idx",
-          "columns": ["run_id", "ref_index"],
-          "isUnique": true
-        },
-        "agent_run_input_refs_run_idx": {
-          "name": "agent_run_input_refs_run_idx",
-          "columns": ["run_id"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "agent_run_input_refs_run_id_agent_runs_id_fk": {
-          "name": "agent_run_input_refs_run_id_agent_runs_id_fk",
-          "tableFrom": "agent_run_input_refs",
-          "tableTo": "agent_runs",
-          "columnsFrom": ["run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "agent_run_input_refs_label_nonempty": {
-          "name": "agent_run_input_refs_label_nonempty",
-          "value": "length(\"agent_run_input_refs\".\"label\") > 0"
-        },
-        "agent_run_input_refs_kind_valid": {
-          "name": "agent_run_input_refs_kind_valid",
-          "value": "\"agent_run_input_refs\".\"kind\" IN ('global-prompt')"
-        },
-        "agent_run_input_refs_mode_valid": {
-          "name": "agent_run_input_refs_mode_valid",
-          "value": "\"agent_run_input_refs\".\"mode\" IN ('snapshot-ref')"
-        }
-      }
-    },
-    "agent_run_inputs": {
-      "name": "agent_run_inputs",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "selection_snapshot_json": {
-          "name": "selection_snapshot_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'{}'"
-        },
-        "context_snapshot_json": {
-          "name": "context_snapshot_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "active_tools_json": {
-          "name": "active_tools_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch() * 1000)"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch() * 1000)"
-        }
-      },
-      "indexes": {
-        "agent_run_inputs_run_idx": {
-          "name": "agent_run_inputs_run_idx",
-          "columns": ["run_id"],
-          "isUnique": true
-        },
-        "agent_run_inputs_run_lookup_idx": {
-          "name": "agent_run_inputs_run_lookup_idx",
-          "columns": ["run_id"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "agent_run_inputs_run_id_agent_runs_id_fk": {
-          "name": "agent_run_inputs_run_id_agent_runs_id_fk",
-          "tableFrom": "agent_run_inputs",
-          "tableTo": "agent_runs",
-          "columnsFrom": ["run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "agent_run_steps": {
-      "name": "agent_run_steps",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "step_index": {
-          "name": "step_index",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "provider": {
-          "name": "provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "model_id": {
-          "name": "model_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "finish_reason": {
-          "name": "finish_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "raw_finish_reason": {
-          "name": "raw_finish_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "system_json": {
-          "name": "system_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "prepared_messages_artifact_id": {
-          "name": "prepared_messages_artifact_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "response_messages_artifact_id": {
-          "name": "response_messages_artifact_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "request_body_artifact_id": {
-          "name": "request_body_artifact_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "response_body_artifact_id": {
-          "name": "response_body_artifact_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "provider_metadata_artifact_id": {
-          "name": "provider_metadata_artifact_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "usage_json": {
-          "name": "usage_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch() * 1000)"
-        },
-        "completed_at": {
-          "name": "completed_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch() * 1000)"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch() * 1000)"
-        }
-      },
-      "indexes": {
-        "agent_run_steps_run_step_idx": {
-          "name": "agent_run_steps_run_step_idx",
-          "columns": ["run_id", "step_index"],
-          "isUnique": true
-        },
-        "agent_run_steps_run_idx": {
-          "name": "agent_run_steps_run_idx",
-          "columns": ["run_id"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "agent_run_steps_run_id_agent_runs_id_fk": {
-          "name": "agent_run_steps_run_id_agent_runs_id_fk",
-          "tableFrom": "agent_run_steps",
-          "tableTo": "agent_runs",
-          "columnsFrom": ["run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_run_steps_prepared_messages_artifact_id_agent_artifacts_id_fk": {
-          "name": "agent_run_steps_prepared_messages_artifact_id_agent_artifacts_id_fk",
-          "tableFrom": "agent_run_steps",
-          "tableTo": "agent_artifacts",
-          "columnsFrom": ["prepared_messages_artifact_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_run_steps_response_messages_artifact_id_agent_artifacts_id_fk": {
-          "name": "agent_run_steps_response_messages_artifact_id_agent_artifacts_id_fk",
-          "tableFrom": "agent_run_steps",
-          "tableTo": "agent_artifacts",
-          "columnsFrom": ["response_messages_artifact_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_run_steps_request_body_artifact_id_agent_artifacts_id_fk": {
-          "name": "agent_run_steps_request_body_artifact_id_agent_artifacts_id_fk",
-          "tableFrom": "agent_run_steps",
-          "tableTo": "agent_artifacts",
-          "columnsFrom": ["request_body_artifact_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_run_steps_response_body_artifact_id_agent_artifacts_id_fk": {
-          "name": "agent_run_steps_response_body_artifact_id_agent_artifacts_id_fk",
-          "tableFrom": "agent_run_steps",
-          "tableTo": "agent_artifacts",
-          "columnsFrom": ["response_body_artifact_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_run_steps_provider_metadata_artifact_id_agent_artifacts_id_fk": {
-          "name": "agent_run_steps_provider_metadata_artifact_id_agent_artifacts_id_fk",
-          "tableFrom": "agent_run_steps",
-          "tableTo": "agent_artifacts",
-          "columnsFrom": ["provider_metadata_artifact_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "agent_run_steps_provider_nonempty": {
-          "name": "agent_run_steps_provider_nonempty",
-          "value": "length(\"agent_run_steps\".\"provider\") > 0"
-        },
-        "agent_run_steps_model_nonempty": {
-          "name": "agent_run_steps_model_nonempty",
-          "value": "length(\"agent_run_steps\".\"model_id\") > 0"
-        }
-      }
-    },
     "agent_runs": {
       "name": "agent_runs",
       "columns": {
@@ -974,6 +166,60 @@
           "notNull": false,
           "autoincrement": false
         },
+        "selection_snapshot_json": {
+          "name": "selection_snapshot_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "context_snapshot_json": {
+          "name": "context_snapshot_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "active_tools_json": {
+          "name": "active_tools_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "input_refs_json": {
+          "name": "input_refs_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "steps_json": {
+          "name": "steps_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "events_json": {
+          "name": "events_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "artifacts_json": {
+          "name": "artifacts_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
         "started_at": {
           "name": "started_at",
           "type": "integer",
@@ -1036,51 +282,6 @@
           "columnsFrom": ["thread_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_runs_parent_run_id_agent_runs_id_fk": {
-          "name": "agent_runs_parent_run_id_agent_runs_id_fk",
-          "tableFrom": "agent_runs",
-          "tableTo": "agent_runs",
-          "columnsFrom": ["parent_run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_runs_parent_event_id_agent_run_events_id_fk": {
-          "name": "agent_runs_parent_event_id_agent_run_events_id_fk",
-          "tableFrom": "agent_runs",
-          "tableTo": "agent_run_events",
-          "columnsFrom": ["parent_event_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_runs_trigger_node_id_agent_thread_nodes_id_fk": {
-          "name": "agent_runs_trigger_node_id_agent_thread_nodes_id_fk",
-          "tableFrom": "agent_runs",
-          "tableTo": "agent_thread_nodes",
-          "columnsFrom": ["trigger_node_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_runs_base_tip_node_id_agent_thread_nodes_id_fk": {
-          "name": "agent_runs_base_tip_node_id_agent_thread_nodes_id_fk",
-          "tableFrom": "agent_runs",
-          "tableTo": "agent_thread_nodes",
-          "columnsFrom": ["base_tip_node_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_runs_error_artifact_id_agent_artifacts_id_fk": {
-          "name": "agent_runs_error_artifact_id_agent_artifacts_id_fk",
-          "tableFrom": "agent_runs",
-          "tableTo": "agent_artifacts",
-          "columnsFrom": ["error_artifact_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -1160,6 +361,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "parts_json": {
+          "name": "parts_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -1208,24 +417,6 @@
           "columnsFrom": ["parent_node_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_thread_nodes_created_by_run_id_agent_runs_id_fk": {
-          "name": "agent_thread_nodes_created_by_run_id_agent_runs_id_fk",
-          "tableFrom": "agent_thread_nodes",
-          "tableTo": "agent_runs",
-          "columnsFrom": ["created_by_run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_thread_nodes_source_step_id_agent_run_steps_id_fk": {
-          "name": "agent_thread_nodes_source_step_id_agent_run_steps_id_fk",
-          "tableFrom": "agent_thread_nodes",
-          "tableTo": "agent_run_steps",
-          "columnsFrom": ["source_step_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -1338,15 +529,6 @@
           "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_threads_active_tip_node_id_agent_thread_nodes_id_fk": {
-          "name": "agent_threads_active_tip_node_id_agent_thread_nodes_id_fk",
-          "tableFrom": "agent_threads",
-          "tableTo": "agent_thread_nodes",
-          "columnsFrom": ["active_tip_node_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

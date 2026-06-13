@@ -168,6 +168,18 @@ function parseStoredJson<T>(raw: string | null): T | null {
   return JSON.parse(raw) as T;
 }
 
+function parseStoredArray<T>(raw: string | null | undefined): T[] {
+  if (!raw) {
+    return [];
+  }
+  const parsed = JSON.parse(raw) as unknown;
+  return Array.isArray(parsed) ? (parsed as T[]) : [];
+}
+
+function stringifyStoredArray<T>(items: readonly T[]) {
+  return serializeRequiredJson(items, "缓存数组");
+}
+
 function assertThreadRole(role: string): asserts role is AgentThreadRole {
   invariant(
     role === "system" || role === "user" || role === "assistant" || role === "tool",
@@ -316,23 +328,29 @@ function getRunOrThrow(executor: DatabaseExecutor, runId: string) {
 }
 
 function getStepOrThrow(executor: DatabaseExecutor, stepId: string) {
-  const step = executor
-    .select()
-    .from(schema.agentRunSteps)
-    .where(eq(schema.agentRunSteps.id, stepId))
-    .get();
-  invariant(step, "未找到 run step。");
-  return step;
+  const runRows = executor.select().from(schema.agentRuns).all();
+  for (const run of runRows) {
+    const step = parseStoredArray<AgentRunStepRow>(run.stepsJson).find(
+      (entry) => entry.id === stepId,
+    );
+    if (step) {
+      return step;
+    }
+  }
+  invariant(false, "未找到 run step。");
 }
 
 function getArtifactOrThrow(executor: DatabaseExecutor, artifactId: string) {
-  const artifact = executor
-    .select()
-    .from(schema.agentArtifacts)
-    .where(eq(schema.agentArtifacts.id, artifactId))
-    .get();
-  invariant(artifact, "未找到 artifact。");
-  return artifact;
+  const runRows = executor.select().from(schema.agentRuns).all();
+  for (const run of runRows) {
+    const artifact = parseStoredArray<AgentArtifactRow>(run.artifactsJson).find(
+      (entry) => entry.id === artifactId,
+    );
+    if (artifact) {
+      return artifact;
+    }
+  }
+  invariant(false, "未找到 artifact。");
 }
 
 function getProjectStateRow(executor: DatabaseExecutor, projectId: string, agentProfile: string) {
@@ -1016,12 +1034,9 @@ function mapNodePartRow(row: AgentMessagePartRow): AgentThreadNodePartView {
 }
 
 function listNodePartViews(executor: DatabaseExecutor, nodeId: string) {
-  return executor
-    .select()
-    .from(schema.agentMessageParts)
-    .where(eq(schema.agentMessageParts.nodeId, nodeId))
-    .orderBy(schema.agentMessageParts.partIndex)
-    .all()
+  const node = getNodeOrThrow(executor, nodeId);
+  return parseStoredArray<AgentMessagePartRow>(node.partsJson)
+    .sort((left, right) => left.partIndex - right.partIndex)
     .map(mapNodePartRow);
 }
 
@@ -1061,13 +1076,16 @@ function mapArtifactRow(row: AgentArtifactRow): AgentArtifactView {
 }
 
 function getRunInputRow(executor: DatabaseExecutor, runId: string): AgentRunInputRow | null {
-  return (
-    executor
-      .select()
-      .from(schema.agentRunInputs)
-      .where(eq(schema.agentRunInputs.runId, runId))
-      .get() ?? null
-  );
+  const run = getRunOrThrow(executor, runId);
+  return {
+    id: `${run.id}:input`,
+    runId: run.id,
+    selectionSnapshotJson: run.selectionSnapshotJson,
+    contextSnapshotJson: run.contextSnapshotJson,
+    activeToolsJson: run.activeToolsJson,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+  };
 }
 
 function mapRunInputRefRow(row: AgentRunInputRefRow): AssistantInputRefSnapshot {
@@ -1086,12 +1104,9 @@ function mapRunInputRefRow(row: AgentRunInputRefRow): AssistantInputRefSnapshot 
 }
 
 function listRunInputRefs(executor: DatabaseExecutor, runId: string) {
-  return executor
-    .select()
-    .from(schema.agentRunInputRefs)
-    .where(eq(schema.agentRunInputRefs.runId, runId))
-    .orderBy(schema.agentRunInputRefs.refIndex)
-    .all()
+  const run = getRunOrThrow(executor, runId);
+  return parseStoredArray<AgentRunInputRefRow>(run.inputRefsJson)
+    .sort((left, right) => left.refIndex - right.refIndex)
     .map(mapRunInputRefRow);
 }
 
@@ -1293,23 +1308,26 @@ function insertNode(executor: DatabaseExecutor, input: CreateNodeInput) {
   const messageParts = normalizeMessageParts(storedMessage);
   const extraParts = normalizeExtraNodeParts(input.extraParts ?? [], messageParts.length);
   const parts = [...messageParts, ...extraParts];
-  parts.forEach((part) => {
-    executor
-      .insert(schema.agentMessageParts)
-      .values({
-        id: createId("agent_part"),
-        nodeId: id,
-        partIndex: part.partIndex,
-        partKind: part.partKind,
-        visibility: part.visibility,
-        state: part.state,
-        providerOptionsJson: serializeOptionalJson(part.providerOptions),
-        providerMetadataJson: serializeOptionalJson(part.providerMetadata),
-        payloadJson: serializeRequiredJson(part.payload, "节点 part"),
-        createdAt,
-      })
-      .run();
-  });
+  executor
+    .update(schema.agentThreadNodes)
+    .set({
+      partsJson: stringifyStoredArray(
+        parts.map((part) => ({
+          id: createId("agent_part"),
+          nodeId: id,
+          partIndex: part.partIndex,
+          partKind: part.partKind,
+          visibility: part.visibility,
+          state: part.state,
+          providerOptionsJson: serializeOptionalJson(part.providerOptions),
+          providerMetadataJson: serializeOptionalJson(part.providerMetadata),
+          payloadJson: serializeRequiredJson(part.payload, "节点 part"),
+          createdAt,
+        })),
+      ),
+    })
+    .where(eq(schema.agentThreadNodes.id, id))
+    .run();
 
   touchThread(executor, thread.id);
   touchProject(executor, thread.projectId);
@@ -1333,26 +1351,23 @@ function updateNodePart(
   },
 ) {
   const node = getNodeOrThrow(executor, nodeId);
-  const row = executor
-    .select()
-    .from(schema.agentMessageParts)
-    .where(
-      and(
-        eq(schema.agentMessageParts.nodeId, nodeId),
-        eq(schema.agentMessageParts.partIndex, partIndex),
-      ),
-    )
-    .get();
-  invariant(row, "未找到节点 part。");
+  const rows = parseStoredArray<AgentMessagePartRow>(node.partsJson);
+  const index = rows.findIndex((row) => row.partIndex === partIndex);
+  invariant(index >= 0, "未找到节点 part。");
+  const row = rows[index]!;
+  rows[index] = {
+    ...row,
+    state,
+    providerOptionsJson: serializeOptionalJson(providerOptions),
+    providerMetadataJson: serializeOptionalJson(providerMetadata),
+    payloadJson: serializeRequiredJson(payload, "节点 part"),
+  };
   executor
-    .update(schema.agentMessageParts)
+    .update(schema.agentThreadNodes)
     .set({
-      state,
-      providerOptionsJson: serializeOptionalJson(providerOptions),
-      providerMetadataJson: serializeOptionalJson(providerMetadata),
-      payloadJson: serializeRequiredJson(payload, "节点 part"),
+      partsJson: stringifyStoredArray(rows),
     })
-    .where(eq(schema.agentMessageParts.id, row.id))
+    .where(eq(schema.agentThreadNodes.id, node.id))
     .run();
   touchThread(executor, node.threadId);
 }
@@ -1370,27 +1385,29 @@ function appendNodePart(
   },
 ) {
   const node = getNodeOrThrow(executor, nodeId);
-  const latest = executor
-    .select({ partIndex: schema.agentMessageParts.partIndex })
-    .from(schema.agentMessageParts)
-    .where(eq(schema.agentMessageParts.nodeId, nodeId))
-    .orderBy(desc(schema.agentMessageParts.partIndex))
-    .get();
-  const partIndex = (latest?.partIndex ?? -1) + 1;
+  const rows = parseStoredArray<AgentMessagePartRow>(node.partsJson);
+  const latestPartIndex = Math.max(-1, ...rows.map((row) => row.partIndex));
+  const partIndex = latestPartIndex + 1;
   executor
-    .insert(schema.agentMessageParts)
-    .values({
-      id: createId("agent_part"),
-      nodeId,
-      partIndex,
-      partKind: part.partKind,
-      visibility: part.visibility,
-      state: part.state,
-      providerOptionsJson: serializeOptionalJson(part.providerOptions),
-      providerMetadataJson: serializeOptionalJson(part.providerMetadata),
-      payloadJson: serializeRequiredJson(part.payload, "节点 part"),
-      createdAt: now(),
+    .update(schema.agentThreadNodes)
+    .set({
+      partsJson: stringifyStoredArray([
+        ...rows,
+        {
+          id: createId("agent_part"),
+          nodeId,
+          partIndex,
+          partKind: part.partKind,
+          visibility: part.visibility,
+          state: part.state,
+          providerOptionsJson: serializeOptionalJson(part.providerOptions),
+          providerMetadataJson: serializeOptionalJson(part.providerMetadata),
+          payloadJson: serializeRequiredJson(part.payload, "节点 part"),
+          createdAt: now(),
+        },
+      ]),
     })
+    .where(eq(schema.agentThreadNodes.id, node.id))
     .run();
   touchThread(executor, node.threadId);
 }
@@ -1695,34 +1712,22 @@ function buildRunSummaries(threadId: string, activePath: AgentThreadNodeView[]) 
   }
 
   const runIds = relevantRuns.map((run) => run.id);
-  const stepRows =
+  const runCacheRows =
     runIds.length > 0
-      ? db
-          .select()
-          .from(schema.agentRunSteps)
-          .where(inArray(schema.agentRunSteps.runId, runIds))
-          .orderBy(schema.agentRunSteps.runId, schema.agentRunSteps.stepIndex)
-          .all()
-      : [];
-  const errorArtifactIds = relevantRuns.flatMap((row) =>
-    row.errorArtifactId ? [row.errorArtifactId] : [],
-  );
-  const errorArtifacts =
-    errorArtifactIds.length > 0
-      ? db
-          .select()
-          .from(schema.agentArtifacts)
-          .where(inArray(schema.agentArtifacts.id, errorArtifactIds))
-          .all()
+      ? db.select().from(schema.agentRuns).where(inArray(schema.agentRuns.id, runIds)).all()
       : [];
   const stepsByRunId = new Map<string, AgentRunStepRow[]>();
-  const errorArtifactById = new Map(errorArtifacts.map((artifact) => [artifact.id, artifact]));
+  const errorArtifactById = new Map<string, AgentArtifactRow>();
   const continuedByRunId = new Map<string, string>();
 
-  stepRows.forEach((row) => {
-    const entries = stepsByRunId.get(row.runId) ?? [];
-    entries.push(row);
-    stepsByRunId.set(row.runId, entries);
+  runCacheRows.forEach((row) => {
+    const steps = parseStoredArray<AgentRunStepRow>(row.stepsJson).sort(
+      (left, right) => left.stepIndex - right.stepIndex,
+    );
+    stepsByRunId.set(row.id, steps);
+    parseStoredArray<AgentArtifactRow>(row.artifactsJson).forEach((artifact) => {
+      errorArtifactById.set(artifact.id, artifact);
+    });
   });
   relevantRuns.forEach((row) => {
     if (row.parentRunId && row.runMode === "continue") {
@@ -1949,48 +1954,41 @@ export function createRun(input: CreateRunInput) {
         status,
         agentProfile: input.agentProfile,
         errorArtifactId: null,
+        selectionSnapshotJson: serializeRequiredJson(input.selectionSnapshot ?? {}, "run 选择快照"),
+        contextSnapshotJson: serializeOptionalJson(input.contextSnapshot),
+        activeToolsJson: serializeOptionalJson(input.activeTools),
+        inputRefsJson: stringifyStoredArray(
+          (input.inputRefsSnapshot ?? []).map((ref, refIndex) => ({
+            id: createId("agent_run_ref"),
+            runId: id,
+            refIndex,
+            kind: ref.kind,
+            mode: ref.mode,
+            label: ref.label,
+            sourceJson: serializeRequiredJson(ref.source, "run ref source"),
+            snapshotJson: serializeRequiredJson(ref.snapshot, "run ref snapshot"),
+            displayJson: serializeRequiredJson(
+              {
+                refId: ref.refId,
+                kind: ref.kind,
+                mode: ref.mode,
+                label: ref.label,
+              },
+              "run ref display",
+            ),
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          })),
+        ),
+        stepsJson: "[]",
+        eventsJson: "[]",
+        artifactsJson: "[]",
         startedAt: timestamp,
         completedAt: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       })
       .run();
-    tx.insert(schema.agentRunInputs)
-      .values({
-        id: createId("agent_run_input"),
-        runId: id,
-        selectionSnapshotJson: serializeRequiredJson(input.selectionSnapshot ?? {}, "run 选择快照"),
-        contextSnapshotJson: serializeOptionalJson(input.contextSnapshot),
-        activeToolsJson: serializeOptionalJson(input.activeTools),
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      })
-      .run();
-    (input.inputRefsSnapshot ?? []).forEach((ref, refIndex) => {
-      tx.insert(schema.agentRunInputRefs)
-        .values({
-          id: createId("agent_run_ref"),
-          runId: id,
-          refIndex,
-          kind: ref.kind,
-          mode: ref.mode,
-          label: ref.label,
-          sourceJson: serializeRequiredJson(ref.source, "run ref source"),
-          snapshotJson: serializeRequiredJson(ref.snapshot, "run ref snapshot"),
-          displayJson: serializeRequiredJson(
-            {
-              refId: ref.refId,
-              kind: ref.kind,
-              mode: ref.mode,
-              label: ref.label,
-            },
-            "run ref display",
-          ),
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        })
-        .run();
-    });
     touchThread(tx, thread.id);
     touchProject(tx, thread.projectId);
     return mapRunRow(tx, getRunOrThrow(tx, id));
@@ -1999,27 +1997,34 @@ export function createRun(input: CreateRunInput) {
 
 export function createArtifact(input: CreateArtifactInput) {
   return db.transaction((tx) => {
-    if (input.runId) {
-      getRunOrThrow(tx, input.runId);
-    }
+    invariant(input.runId || input.stepId, "artifact 必须关联 run 或 step。");
+    const runId = trimOptionalString(input.runId) ?? getStepOrThrow(tx, input.stepId!).runId;
+    const run = getRunOrThrow(tx, runId);
     if (input.stepId) {
-      getStepOrThrow(tx, input.stepId);
+      const step = getStepOrThrow(tx, input.stepId);
+      invariant(step.runId === run.id, "artifact step 不属于当前 run。");
     }
     const id = createId("agent_artifact");
-    tx.insert(schema.agentArtifacts)
-      .values({
-        id,
-        runId: trimOptionalString(input.runId),
-        stepId: trimOptionalString(input.stepId),
-        artifactKind: input.artifactKind,
-        visibility: input.visibility,
-        mimeType: trimOptionalString(input.mimeType),
-        contentJson: serializeRequiredJson(input.content, "artifact 内容"),
-        summaryText: normalizeSummaryText(input.summaryText),
-        createdAt: now(),
+    const artifact: AgentArtifactRow = {
+      id,
+      runId: run.id,
+      stepId: trimOptionalString(input.stepId),
+      artifactKind: input.artifactKind,
+      visibility: input.visibility,
+      mimeType: trimOptionalString(input.mimeType),
+      contentJson: serializeRequiredJson(input.content, "artifact 内容"),
+      summaryText: normalizeSummaryText(input.summaryText),
+      createdAt: now(),
+    };
+    const artifacts = parseStoredArray<AgentArtifactRow>(run.artifactsJson);
+    tx.update(schema.agentRuns)
+      .set({
+        artifactsJson: stringifyStoredArray([...artifacts, artifact]),
+        updatedAt: now(),
       })
+      .where(eq(schema.agentRuns.id, run.id))
       .run();
-    return mapArtifactRow(getArtifactOrThrow(tx, id));
+    return mapArtifactRow(artifact);
   });
 }
 
@@ -2028,43 +2033,45 @@ export function createRunStep(input: CreateRunStepInput) {
     const run = getRunOrThrow(tx, input.runId);
     const id = createId("agent_step");
     const timestamp = now();
-    tx.insert(schema.agentRunSteps)
-      .values({
-        id,
-        runId: run.id,
-        stepIndex: input.stepIndex,
-        provider: input.provider,
-        modelId: input.modelId,
-        finishReason: trimOptionalString(input.finishReason),
-        rawFinishReason: trimOptionalString(input.rawFinishReason),
-        systemJson: serializeOptionalJson(input.system),
-        preparedMessagesArtifactId: trimOptionalString(input.preparedMessagesArtifactId),
-        responseMessagesArtifactId: trimOptionalString(input.responseMessagesArtifactId),
-        requestBodyArtifactId: trimOptionalString(input.requestBodyArtifactId),
-        responseBodyArtifactId: trimOptionalString(input.responseBodyArtifactId),
-        providerMetadataArtifactId: trimOptionalString(input.providerMetadataArtifactId),
-        usageJson: serializeOptionalJson(input.usage),
-        startedAt: timestamp,
-        completedAt: timestamp,
-        createdAt: timestamp,
-      })
-      .run();
+    const steps = parseStoredArray<AgentRunStepRow>(run.stepsJson);
+    invariant(!steps.some((step) => step.stepIndex === input.stepIndex), "run step 序号已存在。");
+    const step: AgentRunStepRow = {
+      id,
+      runId: run.id,
+      stepIndex: input.stepIndex,
+      provider: input.provider,
+      modelId: input.modelId,
+      finishReason: trimOptionalString(input.finishReason),
+      rawFinishReason: trimOptionalString(input.rawFinishReason),
+      systemJson: serializeOptionalJson(input.system),
+      preparedMessagesArtifactId: trimOptionalString(input.preparedMessagesArtifactId),
+      responseMessagesArtifactId: trimOptionalString(input.responseMessagesArtifactId),
+      requestBodyArtifactId: trimOptionalString(input.requestBodyArtifactId),
+      responseBodyArtifactId: trimOptionalString(input.responseBodyArtifactId),
+      providerMetadataArtifactId: trimOptionalString(input.providerMetadataArtifactId),
+      usageJson: serializeOptionalJson(input.usage),
+      startedAt: timestamp,
+      completedAt: timestamp,
+      createdAt: timestamp,
+    };
     tx.update(schema.agentRuns)
-      .set({ updatedAt: timestamp })
+      .set({
+        stepsJson: stringifyStoredArray([...steps, step]),
+        updatedAt: timestamp,
+      })
       .where(eq(schema.agentRuns.id, run.id))
       .run();
-    return mapRunStepRow(getStepOrThrow(tx, id));
+    return mapRunStepRow(step);
   });
 }
 
 function nextRunEventSeq(executor: DatabaseExecutor, runId: string) {
-  const latest = executor
-    .select({ seq: schema.agentRunEvents.seq })
-    .from(schema.agentRunEvents)
-    .where(eq(schema.agentRunEvents.runId, runId))
-    .orderBy(desc(schema.agentRunEvents.seq))
-    .get();
-  return (latest?.seq ?? 0) + 1;
+  const run = getRunOrThrow(executor, runId);
+  const latestSeq = Math.max(
+    0,
+    ...parseStoredArray<AgentRunEventRow>(run.eventsJson).map((event) => event.seq),
+  );
+  return latestSeq + 1;
 }
 
 export function appendRunEvent(input: CreateRunEventInput) {
@@ -2082,28 +2089,28 @@ export function appendRunEvent(input: CreateRunEventInput) {
       getRunOrThrow(tx, input.relatedRunId);
     }
     const id = createId("agent_event");
-    tx.insert(schema.agentRunEvents)
-      .values({
-        id,
-        runId: run.id,
-        stepId: trimOptionalString(input.stepId),
-        seq: nextRunEventSeq(tx, run.id),
-        eventKind: input.eventKind,
-        nodeId: trimOptionalString(input.nodeId),
-        relatedToolCallId: trimOptionalString(input.relatedToolCallId),
-        relatedRunId: trimOptionalString(input.relatedRunId),
-        summaryText: normalizeSummaryText(input.summaryText),
-        payloadArtifactId: trimOptionalString(input.payloadArtifactId),
-        createdAt: now(),
-      })
-      .run();
+    const event: AgentRunEventRow = {
+      id,
+      runId: run.id,
+      stepId: trimOptionalString(input.stepId),
+      seq: nextRunEventSeq(tx, run.id),
+      eventKind: input.eventKind,
+      nodeId: trimOptionalString(input.nodeId),
+      relatedToolCallId: trimOptionalString(input.relatedToolCallId),
+      relatedRunId: trimOptionalString(input.relatedRunId),
+      summaryText: normalizeSummaryText(input.summaryText),
+      payloadArtifactId: trimOptionalString(input.payloadArtifactId),
+      createdAt: now(),
+    };
+    const events = parseStoredArray<AgentRunEventRow>(run.eventsJson);
     tx.update(schema.agentRuns)
-      .set({ updatedAt: now() })
+      .set({
+        eventsJson: stringifyStoredArray([...events, event]),
+        updatedAt: now(),
+      })
       .where(eq(schema.agentRuns.id, run.id))
       .run();
-    return mapRunEventRow(
-      tx.select().from(schema.agentRunEvents).where(eq(schema.agentRunEvents.id, id)).get()!,
-    );
+    return mapRunEventRow(event);
   });
   void persistRunTraceEventToGit(input.runId).catch((error) => {
     if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return;
@@ -2370,25 +2377,25 @@ export function markThreadNodePartsDone(nodeId: string) {
   return db.transaction((tx) => {
     const node = getNodeOrThrow(tx, nodeId);
     const message = getNodeModelMessage(tx, node);
-    const parts = listNodePartViews(tx, node.id);
-    parts.forEach((part) => {
+    const parts = parseStoredArray<AgentMessagePartRow>(node.partsJson);
+    const nextParts = parts.map((part) => {
       if (part.state !== "streaming") {
-        return;
+        return part;
       }
+      const currentPayload = JSON.parse(part.payloadJson) as unknown;
       const payload =
-        part.payload && typeof part.payload === "object"
-          ? { ...(part.payload as Record<string, unknown>), state: "done" }
-          : part.payload;
-      updateNodePart(tx, node.id, part.partIndex, {
-        payload,
-        state: "done",
-        providerOptions: part.providerOptions,
-        providerMetadata: part.providerMetadata,
-      });
+        currentPayload && typeof currentPayload === "object"
+          ? { ...(currentPayload as Record<string, unknown>), state: "done" }
+          : currentPayload;
+      return {
+        ...part,
+        state: "done" as const,
+        payloadJson: serializeRequiredJson(payload, "节点 part"),
+      };
     });
-    tx.update(schema.agentMessageParts)
-      .set({ state: "done" })
-      .where(eq(schema.agentMessageParts.nodeId, node.id))
+    tx.update(schema.agentThreadNodes)
+      .set({ partsJson: stringifyStoredArray(nextParts) })
+      .where(eq(schema.agentThreadNodes.id, node.id))
       .run();
     updateNodeSummary(tx, node.id, buildMessageSummary(message));
     return mapNodeRow(tx, getNodeOrThrow(tx, node.id));
@@ -2425,21 +2432,31 @@ export function updateRunStep(input: {
 }) {
   return db.transaction((tx) => {
     const step = getStepOrThrow(tx, input.stepId);
-    tx.update(schema.agentRunSteps)
+    const run = getRunOrThrow(tx, step.runId);
+    const steps = parseStoredArray<AgentRunStepRow>(run.stepsJson);
+    const stepIndex = steps.findIndex((entry) => entry.id === step.id);
+    invariant(stepIndex >= 0, "未找到 run step。");
+    const nextStep: AgentRunStepRow = {
+      ...step,
+      finishReason: trimOptionalString(input.finishReason),
+      rawFinishReason: trimOptionalString(input.rawFinishReason),
+      preparedMessagesArtifactId: trimOptionalString(input.preparedMessagesArtifactId),
+      responseMessagesArtifactId: trimOptionalString(input.responseMessagesArtifactId),
+      requestBodyArtifactId: trimOptionalString(input.requestBodyArtifactId),
+      responseBodyArtifactId: trimOptionalString(input.responseBodyArtifactId),
+      providerMetadataArtifactId: trimOptionalString(input.providerMetadataArtifactId),
+      usageJson: serializeOptionalJson(input.usage),
+      completedAt: now(),
+    };
+    steps[stepIndex] = nextStep;
+    tx.update(schema.agentRuns)
       .set({
-        finishReason: trimOptionalString(input.finishReason),
-        rawFinishReason: trimOptionalString(input.rawFinishReason),
-        preparedMessagesArtifactId: trimOptionalString(input.preparedMessagesArtifactId),
-        responseMessagesArtifactId: trimOptionalString(input.responseMessagesArtifactId),
-        requestBodyArtifactId: trimOptionalString(input.requestBodyArtifactId),
-        responseBodyArtifactId: trimOptionalString(input.responseBodyArtifactId),
-        providerMetadataArtifactId: trimOptionalString(input.providerMetadataArtifactId),
-        usageJson: serializeOptionalJson(input.usage),
-        completedAt: now(),
+        stepsJson: stringifyStoredArray(steps),
+        updatedAt: now(),
       })
-      .where(eq(schema.agentRunSteps.id, step.id))
+      .where(eq(schema.agentRuns.id, run.id))
       .run();
-    return mapRunStepRow(getStepOrThrow(tx, step.id));
+    return mapRunStepRow(nextStep);
   });
 }
 
@@ -2498,14 +2515,12 @@ export function updateRunContextSnapshot(
 ) {
   return db.transaction((tx) => {
     const run = getRunOrThrow(tx, runId);
-    const input = getRunInputRow(tx, run.id);
-    invariant(input, "run 缺少输入快照。");
-    tx.update(schema.agentRunInputs)
+    tx.update(schema.agentRuns)
       .set({
         contextSnapshotJson: serializeOptionalJson(contextSnapshot),
         updatedAt: now(),
       })
-      .where(eq(schema.agentRunInputs.id, input.id))
+      .where(eq(schema.agentRuns.id, run.id))
       .run();
     return mapRunRow(tx, getRunOrThrow(tx, run.id));
   });
@@ -2513,26 +2528,14 @@ export function updateRunContextSnapshot(
 
 export function getRunTrace(runId: string): AgentRunTraceView {
   const run = getRunOrThrow(db, runId);
-  const steps = db
-    .select()
-    .from(schema.agentRunSteps)
-    .where(eq(schema.agentRunSteps.runId, run.id))
-    .orderBy(schema.agentRunSteps.stepIndex)
-    .all()
+  const steps = parseStoredArray<AgentRunStepRow>(run.stepsJson)
+    .sort((left, right) => left.stepIndex - right.stepIndex)
     .map(mapRunStepRow);
-  const events = db
-    .select()
-    .from(schema.agentRunEvents)
-    .where(eq(schema.agentRunEvents.runId, run.id))
-    .orderBy(schema.agentRunEvents.seq)
-    .all()
+  const events = parseStoredArray<AgentRunEventRow>(run.eventsJson)
+    .sort((left, right) => left.seq - right.seq)
     .map(mapRunEventRow);
-  const artifacts = db
-    .select()
-    .from(schema.agentArtifacts)
-    .where(eq(schema.agentArtifacts.runId, run.id))
-    .orderBy(schema.agentArtifacts.createdAt)
-    .all()
+  const artifacts = parseStoredArray<AgentArtifactRow>(run.artifactsJson)
+    .sort((left, right) => left.createdAt - right.createdAt)
     .map(mapArtifactRow);
   const childRuns = db
     .select()
@@ -2549,6 +2552,15 @@ export function getRunTrace(runId: string): AgentRunTraceView {
     artifacts,
     childRuns,
   };
+}
+
+export function getRunStepResponseBody(stepId: string): unknown | null {
+  const step = getStepOrThrow(db, stepId);
+  if (!step.responseBodyArtifactId) {
+    return null;
+  }
+  const artifact = getArtifactOrThrow(db, step.responseBodyArtifactId);
+  return JSON.parse(artifact.contentJson) as unknown;
 }
 
 export function listChildRuns(runId: string) {

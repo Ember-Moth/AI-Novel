@@ -2,7 +2,7 @@ import type { ModelMessage } from "ai";
 import { eq } from "drizzle-orm";
 
 import { db, schema } from "@/db";
-import { resolveThreadPath } from "@/modules/ai/domain/logs";
+import { getRunStepResponseBody, resolveThreadPath } from "@/modules/ai/domain/logs";
 import type {
   AgentRunTraceView,
   AgentThreadNodeView,
@@ -216,32 +216,11 @@ function getStepResponseId(stepId: string | null | undefined) {
     return null;
   }
 
-  const step = db.query.agentRunSteps
-    .findFirst({
-      where: eq(schema.agentRunSteps.id, normalizedStepId),
-    })
-    .sync();
-  if (!step?.responseBodyArtifactId) {
-    return null;
-  }
-
-  const artifact = db.query.agentArtifacts
-    .findFirst({
-      where: eq(schema.agentArtifacts.id, step.responseBodyArtifactId),
-    })
-    .sync();
-  if (!artifact) {
-    return null;
-  }
-
-  let body: unknown;
   try {
-    body = JSON.parse(artifact.contentJson);
+    return extractResponseId(getRunStepResponseBody(normalizedStepId));
   } catch {
     return null;
   }
-
-  return extractResponseId(body);
 }
 
 export function resolveAssistantRequest({
