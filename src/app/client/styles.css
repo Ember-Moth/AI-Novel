@@ -403,21 +403,11 @@
 }
 
 .ai-markdown [data-streamdown="table-wrapper"] {
-  display: block;
-  gap: 0;
-  overflow-x: auto;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
+  max-width: 100%;
 }
 
-.ai-markdown [data-streamdown="table-wrapper"] > div {
-  overflow-x: auto;
-  overflow-y: visible;
-  border: none;
-  border-radius: 0;
-  background: transparent;
+.ai-markdown .ai-table-scrollbar {
+  max-width: 100%;
 }
 
 .ai-markdown [data-streamdown="table"] {

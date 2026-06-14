@@ -3,6 +3,7 @@ import { BlockPolicy, harden } from "rehype-harden";
 import { Streamdown, defaultRehypePlugins, type StreamdownProps } from "streamdown";
 
 import { cn } from "@/shared/lib/cn";
+import { MarkdownTable } from "@/shared/ui/markdown/MarkdownTable";
 import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
 
 const AI_MARKDOWN_REHYPE_PLUGINS: NonNullable<StreamdownProps["rehypePlugins"]> = [
@@ -30,6 +31,7 @@ const MARKDOWN_VARIANT_CLASS_NAMES = {
 
 const MARKDOWN_COMPONENTS: NonNullable<StreamdownProps["components"]> = {
   code: MarkdownCode,
+  table: MarkdownTable,
 };
 
 const MARKDOWN_ANIMATION: NonNullable<StreamdownProps["animated"]> = {

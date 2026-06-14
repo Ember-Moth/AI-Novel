@@ -3,6 +3,7 @@ import { BlockPolicy, harden } from "rehype-harden";
 import { Streamdown, defaultRehypePlugins, type StreamdownProps } from "streamdown";
 
 import { cn } from "@/shared/lib/cn";
+import { MarkdownTable } from "@/shared/ui/markdown/MarkdownTable";
 import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
 
 const WORKSPACE_MARKDOWN_REHYPE_PLUGINS: NonNullable<StreamdownProps["rehypePlugins"]> = [
@@ -22,6 +23,7 @@ const WORKSPACE_MARKDOWN_REHYPE_PLUGINS: NonNullable<StreamdownProps["rehypePlug
 
 const WORKSPACE_MARKDOWN_COMPONENTS: NonNullable<StreamdownProps["components"]> = {
   code: WorkspaceMarkdownCode,
+  table: MarkdownTable,
 };
 
 export function WorkspaceMarkdownPreview({

@@ -15,6 +15,8 @@ test("AiMarkdown renders markdown structures for assistant content", () => {
   expect(html).toContain('data-streamdown="heading-1"');
   expect(html).toContain('data-streamdown="unordered-list"');
   expect(html).toContain('data-streamdown="table-wrapper"');
+  expect(html).toContain('data-simplebar="init"');
+  expect(html).toContain("ai-table-scrollbar");
 });
 
 test("AiMarkdown tolerates incomplete fenced code blocks while streaming", () => {
