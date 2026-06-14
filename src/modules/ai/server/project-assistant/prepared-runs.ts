@@ -1,18 +1,22 @@
 import {
   appendRunEvent,
   appendUserNode,
+  createArtifact,
   createReplacementNode,
   createRun,
+  createToolApprovalResponseNode,
   getLatestRunForTriggerNode,
   getRunTrace,
   getThreadView,
   hasPendingRun,
+  markRunRunning,
   PROJECT_ASSISTANT_AGENT_PROFILE,
 } from "@/modules/ai/domain/logs";
 import type {
   AssistantInputRefSnapshot,
   AssistantMentionInput,
   AgentThreadView,
+  AgentThreadNodeView,
   ProjectAssistantContextSnapshot,
   ProjectAssistantToolName,
 } from "@/modules/ai/domain/types";
@@ -24,7 +28,13 @@ import type {
   ProjectAssistantEditResult,
   ProjectAssistantRetryResult,
   ProjectAssistantSendResult,
+  ProjectAssistantSubmitToolInputResult,
 } from "./service";
+import {
+  ASK_USER_TOOL_NAME,
+  type AskUserAnswer,
+  validateAskUserApprovalSubmission,
+} from "../assistant-tools/ask-user";
 import {
   buildProjectAssistantSystemPrompt,
   buildUserTextMessage,
@@ -54,6 +64,78 @@ function cloneInputRefsSnapshot(
 function findLatestInputRefsForTriggerNode(threadId: string, triggerNodeId: string) {
   const previousRun = getLatestRunForTriggerNode(threadId, triggerNodeId);
   return cloneInputRefsSnapshot(previousRun?.inputRefsSnapshot);
+}
+
+function getPayloadRecord(part: AgentThreadNodeView["parts"][number]) {
+  return part.payload && typeof part.payload === "object"
+    ? (part.payload as Record<string, unknown>)
+    : null;
+}
+
+function findAskUserApprovalRequest(input: {
+  activePath: readonly AgentThreadNodeView[];
+  runId: string;
+  approvalId: string;
+}) {
+  for (const node of input.activePath) {
+    if (node.role !== "assistant" || node.createdByRunId !== input.runId) {
+      continue;
+    }
+
+    const approvalPart = node.parts.find((part) => {
+      const payload = getPayloadRecord(part);
+      return (
+        part.partKind === "tool-approval-request" &&
+        payload?.type === "tool-approval-request" &&
+        payload.approvalId === input.approvalId
+      );
+    });
+    const approvalPayload = approvalPart ? getPayloadRecord(approvalPart) : null;
+    const toolCallId =
+      typeof approvalPayload?.toolCallId === "string" ? approvalPayload.toolCallId : null;
+    if (!toolCallId) {
+      continue;
+    }
+
+    const toolCallPart = node.parts.find((part) => {
+      const payload = getPayloadRecord(part);
+      return (
+        part.partKind === "tool-call" &&
+        payload?.type === "tool-call" &&
+        payload.toolCallId === toolCallId &&
+        payload.toolName === ASK_USER_TOOL_NAME
+      );
+    });
+    const toolCallPayload = toolCallPart ? getPayloadRecord(toolCallPart) : null;
+    if (!toolCallPayload) {
+      continue;
+    }
+
+    return {
+      assistantNode: node,
+      toolCallId,
+      request: toolCallPayload.input,
+    };
+  }
+
+  return null;
+}
+
+function assertApprovalNotAnswered(input: {
+  activePath: readonly AgentThreadNodeView[];
+  approvalId: string;
+}) {
+  const answered = input.activePath.some((node) =>
+    node.parts.some((part) => {
+      const payload = getPayloadRecord(part);
+      return (
+        part.partKind === "tool-approval-response" &&
+        payload?.type === "tool-approval-response" &&
+        payload.approvalId === input.approvalId
+      );
+    }),
+  );
+  invariant(!answered, "这个提问已经提交过答案。");
 }
 
 export function assertNoPendingRunForThread(thread: AgentThreadView) {
@@ -355,6 +437,133 @@ export function buildEditRun({
     buildFinalResult: ({ run: completedRun, lastAssistantNode }) => ({
       thread: getThreadView(thread.id).thread!,
       replacementNode,
+      assistantNode: lastAssistantNode,
+      run: completedRun,
+      state: getThreadView(thread.id),
+    }),
+  };
+}
+
+export function buildSubmitToolInputRun({
+  projectId,
+  threadId,
+  runId,
+  approvalId,
+  answers,
+}: {
+  projectId: string;
+  threadId: string;
+  runId: string;
+  approvalId: string;
+  answers: readonly AskUserAnswer[];
+}): PreparedProjectAssistantRun<ProjectAssistantSubmitToolInputResult> {
+  const threadView = getThreadView(threadId);
+  const thread = threadView.thread;
+  invariant(thread, "未找到当前会话。");
+  invariant(thread.projectId === projectId, "AI 会话不属于当前项目。");
+  invariant(thread.archivedAt == null, "不能向已归档会话提交工具输入。");
+
+  const trace = getRunTrace(runId);
+  const waitingRun = trace.run;
+  invariant(waitingRun.threadId === thread.id, "run 不属于当前会话。");
+  invariant(waitingRun.status === "waiting_for_input", "run 当前不在等待用户输入。");
+
+  const activeTipNodeId = thread.activeTipNodeId;
+  invariant(activeTipNodeId, "当前会话没有 active tip。");
+  const activeTip = threadView.activePath.at(-1);
+  invariant(activeTip?.id === activeTipNodeId, "当前 active tip 不在 active path 上。");
+  invariant(activeTip.createdByRunId === waitingRun.id, "只能回答当前 active path 上的提问。");
+  assertApprovalNotAnswered({ activePath: threadView.activePath, approvalId });
+
+  const pending = findAskUserApprovalRequest({
+    activePath: threadView.activePath,
+    runId: waitingRun.id,
+    approvalId,
+  });
+  invariant(pending, "未找到待回答的提问工具调用。");
+  invariant(pending.assistantNode.id === activeTipNodeId, "只能回答当前最新的提问。");
+
+  const validated = validateAskUserApprovalSubmission({
+    request: pending.request,
+    answers,
+  });
+  const responseNode = createToolApprovalResponseNode({
+    threadId: thread.id,
+    parentNodeId: activeTipNodeId,
+    runId: waitingRun.id,
+    approvalResponse: {
+      approvalId,
+      approved: true,
+      reason: validated.reason,
+    },
+  });
+  const payloadArtifact = createArtifact({
+    runId: waitingRun.id,
+    artifactKind: "tool-output",
+    visibility: "internal",
+    content: {
+      approvalId,
+      answers: validated.answers,
+    },
+    summaryText: "用户已回答提问",
+  });
+  appendRunEvent({
+    runId: waitingRun.id,
+    eventKind: "user-input-submitted",
+    nodeId: responseNode.id,
+    relatedToolCallId: pending.toolCallId,
+    summaryText: "用户已回答提问",
+    payloadArtifactId: payloadArtifact.id,
+  });
+
+  const run = markRunRunning(waitingRun.id);
+  const selection = resolveProjectAssistantModelSelectionFromSnapshot(run.selectionSnapshot);
+  const activeTools = run.activeTools ?? [];
+  invariant(
+    activeTools.length === 0 || selection.resolvedModel.supportsToolUse,
+    "原 run 使用了工具，但当前模型不支持工具调用，无法恢复。",
+  );
+  const context = normalizeAssistantContextSnapshot(run.contextSnapshot);
+  const inputRefs = cloneInputRefsSnapshot(run.inputRefsSnapshot);
+  const system = buildProjectAssistantSystemPrompt();
+  const request = resolveAssistantRequest({
+    threadId: thread.id,
+    triggerNodeId: responseNode.id,
+    system,
+    selection,
+    context,
+    inputRefs,
+  });
+
+  return {
+    projectId,
+    thread,
+    run,
+    triggerNodeId: responseNode.id,
+    messages: request.messages,
+    providerOptions: request.providerOptions,
+    system,
+    transportSystem: request.transportSystem,
+    selection,
+    context,
+    runtimeContext: createToolRuntimeContext(context),
+    activeTools,
+    stepIndexOffset: trace.steps.length,
+    initialResult: {
+      thread: getThreadView(thread.id).thread!,
+      toolNode: responseNode,
+      assistantNode: null,
+      run,
+      state: getThreadView(thread.id),
+    },
+    runStartedEvent: {
+      type: "user-input-submitted",
+      toolNodeId: responseNode.id,
+      approvalId,
+    },
+    buildFinalResult: ({ run: completedRun, lastAssistantNode }) => ({
+      thread: getThreadView(thread.id).thread!,
+      toolNode: responseNode,
       assistantNode: lastAssistantNode,
       run: completedRun,
       state: getThreadView(thread.id),

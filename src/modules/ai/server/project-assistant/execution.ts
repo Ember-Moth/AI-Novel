@@ -2,6 +2,7 @@ import {
   appendAssistantReasoningDelta,
   appendAssistantReasoningPart,
   appendAssistantTextDelta,
+  appendAssistantToolApprovalRequestPart,
   appendAssistantToolCallPart,
   appendRunEvent,
   assignThreadNodeSourceStepIds,
@@ -11,6 +12,7 @@ import {
   createStreamingToolResultNode,
   markRunCancelled,
   markRunFailed,
+  markRunWaitingForInput,
   markRunSucceeded,
   markThreadNodePartsDone,
   selectActiveTip,
@@ -29,6 +31,7 @@ import type {
 import { PROJECT_ASSISTANT_WRITE_TOOL_NAMES } from "@/modules/ai/domain/types";
 import { getDefaultWorkspace } from "@/modules/workspace/domain";
 
+import { ASK_USER_TOOL_NAME } from "../assistant-tools/ask-user";
 import { normalizeError } from "./runtime";
 import type {
   GeneratedAssistantStep,
@@ -324,52 +327,55 @@ function persistStepArtifactsAndEvents({
   system,
   steps,
   stepRuntime,
+  stepIndexOffset = 0,
 }: {
   run: AgentRunView;
   system: string;
   steps: GeneratedAssistantStep[];
   stepRuntime: Map<number, StepRuntimeState>;
+  stepIndexOffset?: number;
 }) {
   for (const step of steps) {
+    const stepIndex = step.stepNumber + stepIndexOffset;
     const preparedMessagesArtifact = createArtifact({
       runId: run.id,
       artifactKind: "prepared-model-messages",
       visibility: "internal",
       content: step.preparedMessages,
-      summaryText: `step ${step.stepNumber} 输入消息`,
+      summaryText: `step ${stepIndex} 输入消息`,
     });
     const responseMessagesArtifact = createArtifact({
       runId: run.id,
       artifactKind: "response-messages",
       visibility: "internal",
       content: step.response.messages,
-      summaryText: `step ${step.stepNumber} 响应消息`,
+      summaryText: `step ${stepIndex} 响应消息`,
     });
     const requestBodyArtifact = createArtifact({
       runId: run.id,
       artifactKind: "request-body",
       visibility: "internal",
       content: step.request.body ?? null,
-      summaryText: `step ${step.stepNumber} provider request`,
+      summaryText: `step ${stepIndex} provider request`,
     });
     const responseBodyArtifact = createArtifact({
       runId: run.id,
       artifactKind: "response-body",
       visibility: "internal",
       content: step.response.body ?? null,
-      summaryText: `step ${step.stepNumber} provider response`,
+      summaryText: `step ${stepIndex} provider response`,
     });
     const providerMetadataArtifact = createArtifact({
       runId: run.id,
       artifactKind: "provider-metadata",
       visibility: "internal",
       content: step.providerMetadata ?? null,
-      summaryText: `step ${step.stepNumber} provider metadata`,
+      summaryText: `step ${stepIndex} provider metadata`,
     });
 
     const stepRecord = createRunStep({
       runId: run.id,
-      stepIndex: step.stepNumber,
+      stepIndex,
       provider: step.model.provider,
       modelId: step.model.modelId,
       finishReason: step.finishReason ?? null,
@@ -383,27 +389,27 @@ function persistStepArtifactsAndEvents({
       usage: step.usage ?? null,
     });
 
-    const runtime = stepRuntime.get(step.stepNumber);
+    const runtime = stepRuntime.get(stepIndex);
     assignThreadNodeSourceStepIds(runtime?.nodeIds ?? [], stepRecord.id);
 
     appendRunEvent({
       runId: run.id,
       stepId: stepRecord.id,
       eventKind: "step-started",
-      summaryText: `step ${step.stepNumber} started`,
+      summaryText: `step ${stepIndex} started`,
     });
     appendRunEvent({
       runId: run.id,
       stepId: stepRecord.id,
       eventKind: "provider-requested",
-      summaryText: `step ${step.stepNumber} provider request`,
+      summaryText: `step ${stepIndex} provider request`,
       payloadArtifactId: requestBodyArtifact.id,
     });
     appendRunEvent({
       runId: run.id,
       stepId: stepRecord.id,
       eventKind: "provider-responded",
-      summaryText: `step ${step.stepNumber} provider response`,
+      summaryText: `step ${stepIndex} provider response`,
       payloadArtifactId: responseBodyArtifact.id,
     });
 
@@ -471,6 +477,13 @@ export async function executeProjectAssistantRun<TResult>({
   const stepRuntime = new Map<number, StepRuntimeState>();
   const assistantTextByNodeId = new Map<string, string>();
   const reasoningPartsByStreamId = new Map<string, { nodeId: string; partIndex: number }>();
+  const stepIndexOffset = prepared.stepIndexOffset ?? 0;
+  let pendingUserInputRequest: {
+    assistantNodeId: string;
+    approvalId: string;
+    toolCallId: string;
+    input: unknown;
+  } | null = null;
 
   const runtime = streamAssistantText({
     projectId: prepared.projectId,
@@ -486,20 +499,21 @@ export async function executeProjectAssistantRun<TResult>({
 
   try {
     for await (const chunk of runtime.chunks) {
-      if (!stepRuntime.has(chunk.stepNumber)) {
-        stepRuntime.set(chunk.stepNumber, {
+      const stepNumber = chunk.stepNumber + stepIndexOffset;
+      if (!stepRuntime.has(stepNumber)) {
+        stepRuntime.set(stepNumber, {
           nodeIds: [],
           toolCalls: [],
           toolResults: [],
         });
       }
-      const currentStepRuntime = stepRuntime.get(chunk.stepNumber)!;
+      const currentStepRuntime = stepRuntime.get(stepNumber)!;
 
       if (chunk.type === "start-step") {
         currentAssistantNode = null;
         relay.emit({
           type: "step-started",
-          stepIndex: chunk.stepNumber,
+          stepIndex: stepNumber,
         });
         continue;
       }
@@ -511,7 +525,7 @@ export async function executeProjectAssistantRun<TResult>({
             stepRuntime: currentStepRuntime,
             currentParentId,
             relay: relay as BufferedEventRelay<unknown>,
-            stepNumber: chunk.stepNumber,
+            stepNumber,
             assistantTextByNodeId,
           });
           currentParentId = currentAssistantNode.id;
@@ -538,7 +552,7 @@ export async function executeProjectAssistantRun<TResult>({
             stepRuntime: currentStepRuntime,
             currentParentId,
             relay: relay as BufferedEventRelay<unknown>,
-            stepNumber: chunk.stepNumber,
+            stepNumber,
             assistantTextByNodeId,
           });
           currentParentId = currentAssistantNode.id;
@@ -596,7 +610,7 @@ export async function executeProjectAssistantRun<TResult>({
             stepRuntime: currentStepRuntime,
             currentParentId,
             relay: relay as BufferedEventRelay<unknown>,
-            stepNumber: chunk.stepNumber,
+            stepNumber,
             assistantTextByNodeId,
           });
           currentParentId = currentAssistantNode.id;
@@ -627,7 +641,7 @@ export async function executeProjectAssistantRun<TResult>({
             stepRuntime: currentStepRuntime,
             currentParentId,
             relay: relay as BufferedEventRelay<unknown>,
-            stepNumber: chunk.stepNumber,
+            stepNumber,
             assistantTextByNodeId,
           });
           currentParentId = currentAssistantNode.id;
@@ -651,6 +665,79 @@ export async function executeProjectAssistantRun<TResult>({
               ? (Reflect.get(chunk.toolCall, "toolName") as string)
               : "tool",
           input: Reflect.get(chunk.toolCall, "input") ?? null,
+        });
+        continue;
+      }
+
+      if (chunk.type === "tool-approval-request") {
+        if (!currentAssistantNode) {
+          currentAssistantNode = ensureCurrentAssistantNode({
+            prepared,
+            stepRuntime: currentStepRuntime,
+            currentParentId,
+            relay: relay as BufferedEventRelay<unknown>,
+            stepNumber,
+            assistantTextByNodeId,
+          });
+          currentParentId = currentAssistantNode.id;
+          lastAssistantNode = currentAssistantNode;
+        }
+
+        const approvalId = Reflect.get(chunk.approvalRequest, "approvalId");
+        const toolCall = Reflect.get(chunk.approvalRequest, "toolCall");
+        const toolCallRecord =
+          toolCall && typeof toolCall === "object" ? (toolCall as Record<string, unknown>) : null;
+        const toolCallId =
+          typeof Reflect.get(chunk.approvalRequest, "toolCallId") === "string"
+            ? (Reflect.get(chunk.approvalRequest, "toolCallId") as string)
+            : typeof Reflect.get(toolCallRecord ?? {}, "toolCallId") === "string"
+              ? (Reflect.get(toolCallRecord ?? {}, "toolCallId") as string)
+              : null;
+        const toolName =
+          typeof Reflect.get(toolCallRecord ?? {}, "toolName") === "string"
+            ? (Reflect.get(toolCallRecord ?? {}, "toolName") as string)
+            : null;
+        if (typeof approvalId !== "string" || !toolCallId || toolName !== ASK_USER_TOOL_NAME) {
+          throw new Error("收到不支持的工具审批请求。");
+        }
+
+        currentAssistantNode = appendAssistantToolApprovalRequestPart({
+          nodeId: currentAssistantNode.id,
+          approvalRequest: {
+            ...chunk.approvalRequest,
+            approvalId,
+            toolCallId,
+          },
+        });
+        lastAssistantNode = currentAssistantNode;
+        pendingUserInputRequest = {
+          assistantNodeId: currentAssistantNode.id,
+          approvalId,
+          toolCallId,
+          input: Reflect.get(toolCallRecord ?? {}, "input") ?? null,
+        };
+        const payloadArtifact = createArtifact({
+          runId: prepared.run.id,
+          artifactKind: "tool-input",
+          visibility: "internal",
+          content: chunk.approvalRequest,
+          summaryText: "等待用户回答",
+        });
+        appendRunEvent({
+          runId: prepared.run.id,
+          eventKind: "user-input-requested",
+          nodeId: currentAssistantNode.id,
+          relatedToolCallId: toolCallId,
+          summaryText: "等待用户回答",
+          payloadArtifactId: payloadArtifact.id,
+        });
+        relay.emit({
+          type: "user-input-requested",
+          assistantNodeId: currentAssistantNode.id,
+          approvalId,
+          toolCallId,
+          toolName: ASK_USER_TOOL_NAME,
+          input: pendingUserInputRequest.input,
         });
         continue;
       }
@@ -710,7 +797,7 @@ export async function executeProjectAssistantRun<TResult>({
         }
         relay.emit({
           type: "step-finished",
-          stepIndex: chunk.stepNumber,
+          stepIndex: stepNumber,
           finishReason: chunk.finishReason,
           usage: chunk.usage,
         });
@@ -723,6 +810,7 @@ export async function executeProjectAssistantRun<TResult>({
       system: prepared.system,
       steps,
       stepRuntime,
+      stepIndexOffset,
     });
 
     if (currentParentId) {
@@ -732,6 +820,14 @@ export async function executeProjectAssistantRun<TResult>({
         eventKind: "active-tip-moved",
         nodeId: currentParentId,
         summaryText: "切换到新的 active tip",
+      });
+    }
+
+    if (pendingUserInputRequest) {
+      const waitingRun = markRunWaitingForInput(prepared.run.id);
+      return prepared.buildFinalResult({
+        run: waitingRun,
+        lastAssistantNode,
       });
     }
 

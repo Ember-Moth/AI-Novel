@@ -1223,6 +1223,127 @@ test("continueProjectAssistantRunStream emits events and invalidates parent and 
   );
 });
 
+test("submitProjectAssistantToolInput invalidates thread and waiting run trace", async () => {
+  let receivedAnswers: unknown = null;
+  const run = {
+    id: "run_submit_tool_input",
+    threadId: "thread_submit_tool_input",
+    parentRunId: null,
+    parentEventId: null,
+    triggerNodeId: "node_user_submit_tool_input",
+    baseTipNodeId: "node_user_submit_tool_input",
+    runMode: "send" as const,
+    status: "succeeded" as const,
+    agentProfile: "project-assistant",
+    selectionSnapshot: {},
+    contextSnapshot: null,
+    activeTools: ["ask_user"],
+    errorArtifactId: null,
+    startedAt: 1,
+    completedAt: 2,
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const result = {
+    thread: {
+      id: "thread_submit_tool_input",
+      projectId: "rpc_submit_tool_input",
+      agentProfile: "project-assistant",
+      title: "主会话",
+      activeTipNodeId: "node_assistant_submit_tool_input",
+      archivedAt: null,
+      createdAt: 1,
+      updatedAt: 2,
+    },
+    toolNode: {
+      id: "node_tool_submit_tool_input",
+      threadId: "thread_submit_tool_input",
+      parentNodeId: "node_assistant_waiting",
+      role: "tool" as const,
+      createdByRunId: run.id,
+      sourceStepId: null,
+      sourceKind: "tool_result" as const,
+      summaryText: "工具审批",
+      message: { role: "tool" as const, content: [] },
+      parts: [],
+      createdAt: 2,
+    },
+    assistantNode: null,
+    run,
+    state: {
+      thread: null,
+      activePath: [],
+      candidateGroups: [],
+      latestRuns: [],
+      runSummaries: [],
+    },
+  };
+
+  useService({
+    getProjectAssistantState: () => {
+      throw new Error("unused");
+    },
+    createProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    setProjectAssistantActiveThread: () => {
+      throw new Error("unused");
+    },
+    renameProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    archiveProjectAssistantThread: () => {
+      throw new Error("unused");
+    },
+    getThreadView: () => {
+      throw new Error("unused");
+    },
+    getRunTrace: () => ({
+      run,
+      steps: [],
+      events: [],
+      artifacts: [],
+      childRuns: [],
+    }),
+    getNodeCandidates: () => {
+      throw new Error("unused");
+    },
+    getChildRuns: () => {
+      throw new Error("unused");
+    },
+    selectThreadTip: () => {
+      throw new Error("unused");
+    },
+    submitProjectAssistantToolInput: async (input: unknown) => {
+      receivedAnswers = (input as { answers?: unknown }).answers;
+      return result;
+    },
+  } as unknown as ProjectAssistantService);
+
+  const response = await handlers.submitProjectAssistantToolInput.handler(
+    {
+      projectId: "rpc_submit_tool_input",
+      threadId: "thread_submit_tool_input",
+      runId: run.id,
+      approvalId: "approval_ask",
+      answers: [{ questionId: "tone", type: "single_choice", optionId: "quiet" }],
+    },
+    requestCtx,
+  );
+
+  expect(receivedAnswers).toEqual([
+    { questionId: "tone", type: "single_choice", optionId: "quiet" },
+  ]);
+  expect(response.invalidate).toEqual([
+    rpcTags.aiProjectAssistantOverview("rpc_submit_tool_input"),
+    rpcTags.aiProjectThreads("rpc_submit_tool_input"),
+    rpcTags.aiThreadView("thread_submit_tool_input"),
+    rpcTags.aiNodeCandidates("node_assistant_waiting"),
+    rpcTags.aiRunTrace(run.id),
+    rpcTags.aiChildRuns(run.id),
+  ]);
+});
+
 test("cancelProjectAssistantRun invalidates thread and run state", async () => {
   let received: unknown = null;
   useService({

@@ -574,7 +574,9 @@ export function selectPendingRun(state: AssistantState | null | undefined): Agen
   const latest = state?.latestRuns[0] ?? null;
   if (
     !latest ||
-    (latest.status !== "running" && latest.status !== "queued") ||
+    (latest.status !== "running" &&
+      latest.status !== "queued" &&
+      latest.status !== "waiting_for_input") ||
     !latest.triggerNodeId
   ) {
     return null;

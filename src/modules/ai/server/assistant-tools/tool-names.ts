@@ -25,7 +25,9 @@ export const AUX_WRITE_TOOL_NAMES = [
   "create_symlink",
   "retarget_symlink",
 ] as const;
+export const INTERACTION_TOOL_NAMES = ["ask_user"] as const;
 
+export type InteractionToolName = (typeof INTERACTION_TOOL_NAMES)[number];
 export type ContentReadToolName = (typeof CONTENT_READ_TOOL_NAMES)[number];
 export type ContentWriteToolName = (typeof CONTENT_WRITE_TOOL_NAMES)[number];
 export type TimelineToolName = (typeof TIMELINE_TOOL_NAMES)[number];
@@ -33,6 +35,7 @@ export type AuxReadToolName = (typeof AUX_READ_TOOL_NAMES)[number];
 export type AuxWriteToolName = (typeof AUX_WRITE_TOOL_NAMES)[number];
 
 type AllAssistantToolNames =
+  | InteractionToolName
   | ContentReadToolName
   | ContentWriteToolName
   | TimelineToolName

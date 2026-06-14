@@ -489,6 +489,7 @@ test("sendProjectAssistantMessage uses read-only tools by default and can opt in
 
   expect(capturedActiveTools).toEqual([
     [
+      "ask_user",
       "list_manuscript_nodes",
       "read_manuscript_node",
       "list_story_timeline_points",
@@ -1079,6 +1080,217 @@ test("sendProjectAssistantMessage rejects explicit tools when the model does not
     }),
   ).rejects.toThrow("当前模型不支持工具调用，无法启用请求级工具。");
   expect(streamCalls).toBe(0);
+});
+
+test("submitProjectAssistantToolInput resumes the same waiting run with continuous steps", async () => {
+  seedProject("assistant_submit_tool_input");
+  const seeded = seedCustomConnection({
+    connectionId: "conn_submit_tool_input",
+    modelId: "story-model",
+    modelRowId: "cmodel_submit_tool_input",
+    supportsToolUse: true,
+  });
+  const questionInput = {
+    title: "确认写法",
+    questions: [
+      {
+        id: "tone",
+        prompt: "这一段偏什么气质？",
+        kind: "single_choice",
+        options: [
+          { id: "quiet", label: "安静" },
+          { id: "sharp", label: "锋利" },
+        ],
+      },
+    ],
+  };
+  let streamCallCount = 0;
+  const service = createProjectAssistantService({
+    readStoredSelection: () => seeded.selection,
+    streamAssistantText: ((input: { messages: unknown[] }) => {
+      streamCallCount += 1;
+      if (streamCallCount === 1) {
+        return createMockStream({
+          chunks: [
+            { type: "start-step", stepNumber: 0 },
+            {
+              type: "tool-call",
+              stepNumber: 0,
+              toolCall: {
+                type: "tool-call",
+                toolCallId: "tool_ask",
+                toolName: "ask_user",
+                input: questionInput,
+              },
+            },
+            {
+              type: "tool-approval-request",
+              stepNumber: 0,
+              approvalRequest: {
+                type: "tool-approval-request",
+                approvalId: "approval_ask",
+                toolCallId: "tool_ask",
+                toolCall: {
+                  type: "tool-call",
+                  toolCallId: "tool_ask",
+                  toolName: "ask_user",
+                  input: questionInput,
+                },
+              },
+            },
+            {
+              type: "finish-step",
+              stepNumber: 0,
+              finishReason: "tool-calls",
+              usage: { totalTokens: 3 },
+            },
+          ],
+          text: "",
+          finishReason: "tool-calls",
+          usage: { totalTokens: 3 },
+          steps: [
+            {
+              stepNumber: 0,
+              preparedMessages: input.messages,
+              model: { provider: "openai", modelId: "story-model" },
+              finishReason: "tool-calls",
+              rawFinishReason: "tool_calls",
+              usage: { totalTokens: 3 },
+              request: { body: { step: 0 } },
+              response: {
+                body: { id: "resp_ask" },
+                messages: [
+                  {
+                    role: "assistant",
+                    content: [
+                      {
+                        type: "tool-call",
+                        toolCallId: "tool_ask",
+                        toolName: "ask_user",
+                        input: questionInput,
+                      },
+                      {
+                        type: "tool-approval-request",
+                        approvalId: "approval_ask",
+                        toolCallId: "tool_ask",
+                      },
+                    ],
+                  },
+                ],
+              },
+              providerMetadata: {},
+              toolCalls: [
+                {
+                  type: "tool-call",
+                  toolCallId: "tool_ask",
+                  toolName: "ask_user",
+                  input: questionInput,
+                },
+              ],
+              toolResults: [],
+            },
+          ],
+        })();
+      }
+
+      expect(JSON.stringify(input.messages)).toContain("tool-approval-response");
+      return createMockStream({
+        chunks: [
+          {
+            type: "tool-result",
+            stepNumber: 0,
+            toolResult: {
+              type: "tool-result",
+              toolCallId: "tool_ask",
+              toolName: "ask_user",
+              input: questionInput,
+              output: {
+                ok: true,
+                truncated: false,
+                data: {
+                  answers: [{ questionId: "tone", type: "single_choice", optionId: "quiet" }],
+                },
+              },
+            },
+          },
+          { type: "start-step", stepNumber: 0 },
+          { type: "text-delta", stepNumber: 0, delta: "按安静的气质继续。" },
+          {
+            type: "finish-step",
+            stepNumber: 0,
+            finishReason: "stop",
+            usage: { totalTokens: 5 },
+          },
+        ],
+        text: "按安静的气质继续。",
+        finishReason: "stop",
+        usage: { totalTokens: 5 },
+        steps: [
+          {
+            stepNumber: 0,
+            preparedMessages: input.messages,
+            model: { provider: "openai", modelId: "story-model" },
+            finishReason: "stop",
+            rawFinishReason: "stop",
+            usage: { totalTokens: 5 },
+            request: { body: { step: 1 } },
+            response: {
+              body: { id: "resp_answered" },
+              messages: [
+                {
+                  role: "assistant",
+                  content: [{ type: "text", text: "按安静的气质继续。" }],
+                },
+              ],
+            },
+            providerMetadata: {},
+            toolCalls: [],
+            toolResults: [
+              {
+                type: "tool-result",
+                toolCallId: "tool_ask",
+                toolName: "ask_user",
+                input: questionInput,
+                output: {
+                  ok: true,
+                  truncated: false,
+                  data: {
+                    answers: [{ questionId: "tone", type: "single_choice", optionId: "quiet" }],
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      })();
+    }) as any,
+  });
+  const thread = service.createProjectAssistantThread("assistant_submit_tool_input");
+  const waiting = await service.sendProjectAssistantMessage({
+    projectId: "assistant_submit_tool_input",
+    threadId: thread.id,
+    text: "帮我继续写，但先问我关键选择",
+    activeTools: ["ask_user"],
+  });
+
+  expect(waiting.run.status).toBe("waiting_for_input");
+  expect(
+    waiting.assistantNode?.parts.some((part) => part.partKind === "tool-approval-request"),
+  ).toBe(true);
+
+  const resumed = await service.submitProjectAssistantToolInput({
+    projectId: "assistant_submit_tool_input",
+    threadId: thread.id,
+    runId: waiting.run.id,
+    approvalId: "approval_ask",
+    answers: [{ questionId: "tone", type: "single_choice", optionId: "quiet" }],
+  });
+  const trace = service.getRunTrace(waiting.run.id);
+
+  expect(resumed.run.id).toBe(waiting.run.id);
+  expect(resumed.run.status).toBe("succeeded");
+  expect(trace.steps.map((step) => step.stepIndex)).toEqual([0, 1]);
+  expect(resumed.state.activePath.at(-1)?.summaryText).toContain("按安静的气质继续");
 });
 
 test("cancelProjectAssistantRun aborts the active backend run and marks it cancelled", async () => {

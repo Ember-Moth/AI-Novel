@@ -613,7 +613,7 @@ export function RunSummaryRow({
   expanded,
   onToggle,
 }: {
-  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  status: "queued" | "running" | "waiting_for_input" | "succeeded" | "failed" | "cancelled";
   stepCount: number;
   totalTokens: number | null;
   durationMs: number | null;
@@ -629,6 +629,7 @@ export function RunSummaryRow({
   onToggle?: () => void;
 }) {
   const isRunning = status === "running" || status === "queued";
+  const isWaitingForInput = status === "waiting_for_input";
   const isFailed = status === "failed";
   const isContinuationPaused = needsContinuation === true;
   const canExpand = isFailed && typeof errorMessage === "string" && errorMessage.trim().length > 0;
@@ -639,24 +640,28 @@ export function RunSummaryRow({
       : "border-border bg-editor-background text-foreground-muted";
   const statusIcon = isRunning
     ? "icon-[material-symbols--progress-activity] animate-spin text-accent-foreground"
-    : isContinuationPaused
-      ? "icon-[material-symbols--pause-circle]"
-      : isFailed
-        ? "icon-[material-symbols--warning]"
-        : status === "cancelled"
-          ? "icon-[material-symbols--block]"
-          : "icon-[material-symbols--check-circle]";
+    : isWaitingForInput
+      ? "icon-[material-symbols--help]"
+      : isContinuationPaused
+        ? "icon-[material-symbols--pause-circle]"
+        : isFailed
+          ? "icon-[material-symbols--warning]"
+          : status === "cancelled"
+            ? "icon-[material-symbols--block]"
+            : "icon-[material-symbols--check-circle]";
   const label = isRunning
     ? "正在生成回复..."
-    : isContinuationPaused
-      ? "已到轮次上限"
-      : isFailed
-        ? "生成失败"
-        : status === "cancelled"
-          ? "已取消"
-          : continuedByRunId
-            ? "已继续"
-            : "生成完成";
+    : isWaitingForInput
+      ? "等待回答"
+      : isContinuationPaused
+        ? "已到轮次上限"
+        : isFailed
+          ? "生成失败"
+          : status === "cancelled"
+            ? "已取消"
+            : continuedByRunId
+              ? "已继续"
+              : "生成完成";
   const metrics = [
     durationMs != null ? formatDuration(durationMs) : null,
     stepCount > 0 ? `${stepCount} 步` : null,

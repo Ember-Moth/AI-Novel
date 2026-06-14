@@ -246,7 +246,7 @@ export const agentRuns = sqliteTable(
     ),
     check(
       "agent_runs_status_valid",
-      sql`${table.status} IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')`,
+      sql`${table.status} IN ('queued', 'running', 'waiting_for_input', 'succeeded', 'failed', 'cancelled')`,
     ),
     check("agent_runs_profile_nonempty", sql`length(${table.agentProfile}) > 0`),
     index("agent_runs_thread_idx").on(table.threadId),

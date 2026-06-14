@@ -6,6 +6,7 @@ import {
   getThreadView,
   listChildRuns,
   listThreads,
+  markRunCancelled,
   PROJECT_ASSISTANT_AGENT_PROFILE,
   renameThread,
   resolveActiveThread,
@@ -26,8 +27,15 @@ import { getAiAssistantModelSelection } from "@/modules/config/domain/ai-assista
 import { invariant } from "@/shared/lib/domain";
 
 import { BufferedEventRelay, executeProjectAssistantRun } from "./execution";
-import { buildContinueRun, buildEditRun, buildRetryRun, buildSendRun } from "./prepared-runs";
+import {
+  buildContinueRun,
+  buildEditRun,
+  buildRetryRun,
+  buildSendRun,
+  buildSubmitToolInputRun,
+} from "./prepared-runs";
 import { defaultStreamAssistantText } from "./streaming";
+import type { AskUserAnswer } from "../assistant-tools/ask-user";
 import type {
   ActiveExecutionHandle,
   PreparedProjectAssistantRun,
@@ -64,6 +72,14 @@ export interface ProjectAssistantContinueResult {
   assistantNode: AgentThreadNodeView | null;
   run: AgentRunView;
   parentRun: AgentRunView;
+  state: AgentThreadStateView;
+}
+
+export interface ProjectAssistantSubmitToolInputResult {
+  thread: AgentThreadView;
+  toolNode: AgentThreadNodeView;
+  assistantNode: AgentThreadNodeView | null;
+  run: AgentRunView;
   state: AgentThreadStateView;
 }
 
@@ -262,6 +278,30 @@ export function createProjectAssistantService(
       );
     },
 
+    submitProjectAssistantToolInputStream({
+      projectId,
+      threadId,
+      runId,
+      approvalId,
+      answers,
+    }: {
+      projectId: string;
+      threadId: string;
+      runId: string;
+      approvalId: string;
+      answers: readonly AskUserAnswer[];
+    }) {
+      return startExecution(
+        buildSubmitToolInputRun({
+          projectId,
+          threadId,
+          runId,
+          approvalId,
+          answers,
+        }),
+      );
+    },
+
     cancelProjectAssistantRun({
       projectId,
       threadId,
@@ -279,9 +319,18 @@ export function createProjectAssistantService(
       const trace = getRunTrace(runId);
       invariant(trace.run.threadId === thread.id, "run 不属于当前会话。");
       invariant(
-        trace.run.status === "running" || trace.run.status === "queued",
+        trace.run.status === "running" ||
+          trace.run.status === "queued" ||
+          trace.run.status === "waiting_for_input",
         "run 当前不可取消。",
       );
+
+      if (trace.run.status === "waiting_for_input") {
+        markRunCancelled(runId);
+        return {
+          runId,
+        };
+      }
 
       const activeExecution = activeExecutions.get(runId);
       invariant(activeExecution, "run 当前没有活动执行。");
@@ -331,6 +380,16 @@ export function createProjectAssistantService(
       runId: string;
     }): Promise<ProjectAssistantContinueResult> {
       return this.continueProjectAssistantRunStream(args).finalResult;
+    },
+
+    async submitProjectAssistantToolInput(args: {
+      projectId: string;
+      threadId: string;
+      runId: string;
+      approvalId: string;
+      answers: readonly AskUserAnswer[];
+    }): Promise<ProjectAssistantSubmitToolInputResult> {
+      return this.submitProjectAssistantToolInputStream(args).finalResult;
     },
   };
 }

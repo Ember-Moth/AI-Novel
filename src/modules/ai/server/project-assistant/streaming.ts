@@ -42,11 +42,24 @@ export function defaultStreamAssistantText({
 
   async function* chunks(): AsyncIterable<GeneratedAssistantChunk> {
     let currentStepNumber = -1;
+    let hasImplicitCurrentStep = false;
+
+    function getCurrentStepNumber() {
+      if (currentStepNumber < 0) {
+        currentStepNumber = 0;
+        hasImplicitCurrentStep = true;
+      }
+      return currentStepNumber;
+    }
 
     for await (const rawPart of result.fullStream as AsyncIterable<Record<string, unknown>>) {
       const type = Reflect.get(rawPart, "type");
       if (type === "start-step") {
-        currentStepNumber += 1;
+        if (hasImplicitCurrentStep) {
+          hasImplicitCurrentStep = false;
+        } else {
+          currentStepNumber += 1;
+        }
         yield {
           type: "start-step",
           stepNumber: currentStepNumber,
@@ -97,7 +110,7 @@ export function defaultStreamAssistantText({
       if (type === "tool-call") {
         yield {
           type: "tool-call",
-          stepNumber: currentStepNumber,
+          stepNumber: getCurrentStepNumber(),
           toolCall: rawPart,
         };
         continue;
@@ -106,8 +119,25 @@ export function defaultStreamAssistantText({
       if (type === "tool-result" && Reflect.get(rawPart, "preliminary") !== true) {
         yield {
           type: "tool-result",
-          stepNumber: currentStepNumber,
+          stepNumber: getCurrentStepNumber(),
           toolResult: rawPart,
+        };
+        continue;
+      }
+
+      if (type === "tool-approval-request") {
+        const toolCall = Reflect.get(rawPart, "toolCall");
+        const toolCallId =
+          toolCall && typeof toolCall === "object"
+            ? Reflect.get(toolCall as Record<string, unknown>, "toolCallId")
+            : undefined;
+        yield {
+          type: "tool-approval-request",
+          stepNumber: getCurrentStepNumber(),
+          approvalRequest: {
+            ...rawPart,
+            ...(typeof toolCallId === "string" ? { toolCallId } : {}),
+          },
         };
         continue;
       }
@@ -115,7 +145,7 @@ export function defaultStreamAssistantText({
       if (type === "finish-step") {
         yield {
           type: "finish-step",
-          stepNumber: currentStepNumber,
+          stepNumber: getCurrentStepNumber(),
           finishReason:
             typeof Reflect.get(rawPart, "finishReason") === "string"
               ? (Reflect.get(rawPart, "finishReason") as string)

@@ -212,6 +212,7 @@ function assertRunStatus(status: string): asserts status is AgentRunStatus {
   invariant(
     status === "queued" ||
       status === "running" ||
+      status === "waiting_for_input" ||
       status === "succeeded" ||
       status === "failed" ||
       status === "cancelled",
@@ -226,6 +227,8 @@ function assertPartKind(kind: string): asserts kind is AgentThreadNodePartKind {
       kind === "reasoning" ||
       kind === "tool-call" ||
       kind === "tool-result" ||
+      kind === "tool-approval-request" ||
+      kind === "tool-approval-response" ||
       kind === "tool-error" ||
       kind === "file" ||
       kind === "source-url" ||
@@ -256,6 +259,8 @@ function assertEventKind(kind: string): asserts kind is AgentRunEventKind {
       kind === "tool-call-started" ||
       kind === "tool-call-finished" ||
       kind === "tool-call-failed" ||
+      kind === "user-input-requested" ||
+      kind === "user-input-submitted" ||
       kind === "node-materialized" ||
       kind === "active-tip-moved" ||
       kind === "child-run-started" ||
@@ -810,6 +815,12 @@ function inferPartKind(rawPart: Record<string, unknown>): AgentThreadNodePartKin
   if (type === "tool-result") {
     return "tool-result";
   }
+  if (type === "tool-approval-request") {
+    return "tool-approval-request";
+  }
+  if (type === "tool-approval-response") {
+    return "tool-approval-response";
+  }
   if (type === "tool-error") {
     return "tool-error";
   }
@@ -832,7 +843,13 @@ function inferVisibility(partKind: AgentThreadNodePartKind): AgentVisibility {
   if (partKind === "reasoning") {
     return "hidden";
   }
-  if (partKind === "tool-call" || partKind === "tool-result" || partKind === "tool-error") {
+  if (
+    partKind === "tool-call" ||
+    partKind === "tool-result" ||
+    partKind === "tool-approval-request" ||
+    partKind === "tool-approval-response" ||
+    partKind === "tool-error"
+  ) {
     return "internal";
   }
   return "public";
@@ -1929,7 +1946,10 @@ function buildRunSummaries(threadId: string, activePath: AgentThreadNodeView[]) 
       return true;
     }
     return (
-      row.status === "failed" && row.triggerNodeId != null && activeNodeIds.has(row.triggerNodeId)
+      (row.status === "failed" &&
+        row.triggerNodeId != null &&
+        activeNodeIds.has(row.triggerNodeId)) ||
+      row.status === "waiting_for_input"
     );
   });
   const relevantRuns = relevantRunRows.map((row) => mapRunRow(db, row));
@@ -2048,7 +2068,7 @@ export function hasPendingRun(threadId: string) {
     .where(
       and(
         eq(schema.agentRuns.threadId, threadId),
-        sql`${schema.agentRuns.status} IN ('queued', 'running')`,
+        sql`${schema.agentRuns.status} IN ('queued', 'running', 'waiting_for_input')`,
       ),
     )
     .get();
@@ -2612,6 +2632,42 @@ export function appendAssistantToolCallPart(input: {
   return result;
 }
 
+export function appendAssistantToolApprovalRequestPart(input: {
+  nodeId: string;
+  approvalRequest: Record<string, unknown>;
+}) {
+  const result = db.transaction((tx) => {
+    const node = getNodeOrThrow(tx, input.nodeId);
+    invariant(node.role === "assistant", "只能向 assistant 节点追加工具审批请求。");
+    const message = getNodeModelMessage(tx, node);
+    const approvalId = Reflect.get(input.approvalRequest, "approvalId");
+    const toolCallId = Reflect.get(input.approvalRequest, "toolCallId");
+    invariant(typeof approvalId === "string", "approvalId 不能为空。");
+    invariant(typeof toolCallId === "string", "toolCallId 不能为空。");
+    const nextPart = {
+      type: "tool-approval-request",
+      approvalId,
+      toolCallId,
+    };
+    appendNodePart(tx, node.id, {
+      partKind: "tool-approval-request",
+      visibility: "internal",
+      state: "done",
+      payload: nextPart,
+      providerOptions: Reflect.get(input.approvalRequest, "providerOptions"),
+      providerMetadata: Reflect.get(input.approvalRequest, "providerMetadata"),
+    });
+    updateNodeSummary(
+      tx,
+      node.id,
+      buildMessageSummary({ ...message, content: [nextPart] } as ModelMessage),
+    );
+    return mapNodeRow(tx, getNodeOrThrow(tx, node.id));
+  });
+  scheduleAiRunsIndexPersistForThread(result.threadId);
+  return result;
+}
+
 export function createStreamingToolResultNode(input: {
   threadId: string;
   parentNodeId: string | null;
@@ -2630,6 +2686,40 @@ export function createStreamingToolResultNode(input: {
       sourceKind: "tool_result",
       createdByRunId: input.runId,
       sourceStepId: trimOptionalString(input.stepId),
+    });
+    tx.update(schema.agentThreads)
+      .set({
+        activeTipNodeId: node.id,
+        updatedAt: now(),
+      })
+      .where(eq(schema.agentThreads.id, input.threadId))
+      .run();
+    return node;
+  });
+  scheduleAiRunsIndexPersistForThread(input.threadId);
+  return result;
+}
+
+export function createToolApprovalResponseNode(input: {
+  threadId: string;
+  parentNodeId: string | null;
+  runId: string;
+  approvalResponse: {
+    approvalId: string;
+    approved: boolean;
+    reason?: string;
+  };
+}) {
+  const result = db.transaction((tx) => {
+    const node = insertNode(tx, {
+      threadId: input.threadId,
+      parentNodeId: input.parentNodeId,
+      message: {
+        role: "tool",
+        content: [{ type: "tool-approval-response", ...input.approvalResponse }],
+      } as unknown as ModelMessage,
+      sourceKind: "tool_result",
+      createdByRunId: input.runId,
     });
     tx.update(schema.agentThreads)
       .set({
@@ -2769,6 +2859,62 @@ export function markRunSucceeded(runId: string) {
       .set({
         status: "succeeded",
         completedAt: now(),
+        updatedAt: now(),
+      })
+      .where(eq(schema.agentRuns.id, run.id))
+      .run();
+    return getRunOrThrow(tx, run.id);
+  });
+  const status = result.status;
+  assertRunStatus(status);
+  updateRunTraceRows(result.id, `Update AI run ${result.id}`, (rows) => ({
+    ...rows,
+    run: {
+      ...rows.run,
+      status,
+      completedAt: result.completedAt,
+      updatedAt: result.updatedAt,
+    },
+  }));
+  scheduleAiRunsIndexPersistForRun(result.id);
+  return getRunTrace(result.id).run;
+}
+
+export function markRunWaitingForInput(runId: string) {
+  const result = db.transaction((tx) => {
+    const run = getRunOrThrow(tx, runId);
+    tx.update(schema.agentRuns)
+      .set({
+        status: "waiting_for_input",
+        completedAt: null,
+        updatedAt: now(),
+      })
+      .where(eq(schema.agentRuns.id, run.id))
+      .run();
+    return getRunOrThrow(tx, run.id);
+  });
+  const status = result.status;
+  assertRunStatus(status);
+  updateRunTraceRows(result.id, `Update AI run ${result.id}`, (rows) => ({
+    ...rows,
+    run: {
+      ...rows.run,
+      status,
+      completedAt: result.completedAt,
+      updatedAt: result.updatedAt,
+    },
+  }));
+  scheduleAiRunsIndexPersistForRun(result.id);
+  return getRunTrace(result.id).run;
+}
+
+export function markRunRunning(runId: string) {
+  const result = db.transaction((tx) => {
+    const run = getRunOrThrow(tx, runId);
+    tx.update(schema.agentRuns)
+      .set({
+        status: "running",
+        completedAt: null,
         updatedAt: now(),
       })
       .where(eq(schema.agentRuns.id, run.id))

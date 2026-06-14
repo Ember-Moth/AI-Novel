@@ -18,7 +18,9 @@ import {
   type ProjectAssistantOverview,
   type ProjectAssistantRetryResult,
   type ProjectAssistantSendResult,
+  type ProjectAssistantSubmitToolInputResult,
 } from "@/modules/ai/server/project-assistant";
+import type { AskUserAnswer } from "@/modules/ai/server/assistant-tools/ask-user";
 import {
   type AiConnectionConfig,
   normalizeAiConnectionConfig,
@@ -175,6 +177,14 @@ interface ContinueProjectAssistantRunInput {
   projectId: string;
   threadId: string;
   runId: string;
+}
+
+interface SubmitProjectAssistantToolInputInput {
+  projectId: string;
+  threadId: string;
+  runId: string;
+  approvalId: string;
+  answers: AskUserAnswer[];
 }
 
 interface CancelProjectAssistantRunInput {
@@ -1168,6 +1178,80 @@ export const continueProjectAssistantRunStream = stream<
           threadId: result.thread.id,
           runId: result.run.id,
           candidateParentNodeId: result.run.triggerNodeId,
+        });
+        ctx.invalidate(rpcTags.aiRunTrace(runId), rpcTags.aiChildRuns(runId));
+        invalidateAuxWorkspaceForRun(ctx, projectId, result.run.id);
+      }
+      return result;
+    } finally {
+      unsubscribe();
+    }
+  },
+});
+
+export const submitProjectAssistantToolInput = mutation<
+  SubmitProjectAssistantToolInputInput,
+  ProjectAssistantSubmitToolInputResult,
+  RpcTagList
+>(async ({ projectId, threadId, runId, approvalId, answers }, ctx) => {
+  try {
+    const result = await getProjectAssistantService().submitProjectAssistantToolInput({
+      projectId,
+      threadId,
+      runId,
+      approvalId,
+      answers,
+    });
+    invalidateProjectAiState(ctx, projectId, {
+      threadId: result.thread.id,
+      runId: result.run.id,
+      candidateParentNodeId: result.toolNode.parentNodeId,
+    });
+    ctx.invalidate(rpcTags.aiRunTrace(runId), rpcTags.aiChildRuns(runId));
+    invalidateAuxWorkspaceForRun(ctx, projectId, result.run.id);
+    return result;
+  } catch (error) {
+    invalidateProjectAiState(ctx, projectId, { threadId, runId });
+    throw error;
+  }
+});
+
+export const submitProjectAssistantToolInputStream = stream<
+  SubmitProjectAssistantToolInputInput,
+  ProjectAssistantStreamEvent,
+  ProjectAssistantSubmitToolInputResult,
+  RpcTagList
+>({
+  handler: async ({ projectId, threadId, runId, approvalId, answers }, ctx) => {
+    const execution = getProjectAssistantService().submitProjectAssistantToolInputStream({
+      projectId,
+      threadId,
+      runId,
+      approvalId,
+      answers,
+    });
+    const unsubscribe = execution.subscribe((event) => {
+      ctx.emit(event);
+    });
+    try {
+      const result = await Promise.race([
+        execution.finalResult,
+        (async () => {
+          await new Promise<void>((resolve) => {
+            if (ctx.signal.aborted) {
+              resolve();
+              return;
+            }
+            ctx.signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+          return execution.initialResult;
+        })(),
+      ]);
+      if (!ctx.signal.aborted) {
+        invalidateProjectAiState(ctx, projectId, {
+          threadId: result.thread.id,
+          runId: result.run.id,
+          candidateParentNodeId: result.toolNode.parentNodeId,
         });
         ctx.invalidate(rpcTags.aiRunTrace(runId), rpcTags.aiChildRuns(runId));
         invalidateAuxWorkspaceForRun(ctx, projectId, result.run.id);

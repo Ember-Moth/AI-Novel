@@ -1,5 +1,6 @@
 import type { ProjectAssistantToolName } from "@/modules/ai/domain/types";
 
+import { buildInteractionTools } from "./ask-user";
 import { buildAuxReadTools } from "./aux-read";
 import { buildAuxWriteTools } from "./aux-write";
 import { buildContentReadTools } from "./content-read";
@@ -17,6 +18,7 @@ export function createAssistantTools({
   const ctx: ToolBuildContext = { projectId, runtimeContext };
 
   return {
+    ...buildInteractionTools(ctx),
     ...buildContentReadTools(ctx),
     ...buildContentWriteTools(ctx),
     ...buildTimelineTools(ctx),

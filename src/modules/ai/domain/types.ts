@@ -155,6 +155,8 @@ export type AgentThreadNodePartKind =
   | "reasoning"
   | "tool-call"
   | "tool-result"
+  | "tool-approval-request"
+  | "tool-approval-response"
   | "tool-error"
   | "file"
   | "source-url"
@@ -170,7 +172,13 @@ export type AgentRunMode =
   | "edit_regenerate"
   | "continue"
   | "subagent";
-export type AgentRunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type AgentRunStatus =
+  | "queued"
+  | "running"
+  | "waiting_for_input"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 export type AgentContinuationReason = "step-limit";
 export type AgentRunEventKind =
   | "run-started"
@@ -180,6 +188,8 @@ export type AgentRunEventKind =
   | "tool-call-started"
   | "tool-call-finished"
   | "tool-call-failed"
+  | "user-input-requested"
+  | "user-input-submitted"
   | "node-materialized"
   | "active-tip-moved"
   | "child-run-started"
@@ -201,6 +211,7 @@ export type AgentToolTraceStatus = "success" | "error";
 export type ProjectAssistantStreamToolStatus = AgentToolTraceStatus;
 
 export const PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES = [
+  "ask_user",
   "list_manuscript_nodes",
   "read_manuscript_node",
   "list_story_timeline_points",
@@ -504,6 +515,19 @@ export type ProjectAssistantStreamEvent =
       toolName: string;
       output: unknown;
       status: ProjectAssistantStreamToolStatus;
+    }
+  | {
+      type: "user-input-requested";
+      assistantNodeId: string;
+      approvalId: string;
+      toolCallId: string;
+      toolName: "ask_user";
+      input: unknown;
+    }
+  | {
+      type: "user-input-submitted";
+      toolNodeId: string;
+      approvalId: string;
     }
   | {
       type: "step-finished";

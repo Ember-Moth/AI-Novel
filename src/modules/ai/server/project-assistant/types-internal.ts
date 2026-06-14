@@ -98,6 +98,11 @@ export type GeneratedAssistantChunk =
       toolResult: Record<string, unknown>;
     }
   | {
+      type: "tool-approval-request";
+      stepNumber: number;
+      approvalRequest: Record<string, unknown>;
+    }
+  | {
       type: "finish-step";
       stepNumber: number;
       finishReason: string | undefined;
@@ -136,6 +141,7 @@ export interface PreparedProjectAssistantRun<TResult> {
   context: ProjectAssistantContextSnapshot | null;
   runtimeContext: ToolRuntimeContext;
   activeTools: ProjectAssistantToolName[];
+  stepIndexOffset?: number;
   initialResult: TResult;
   runStartedEvent: ProjectAssistantStreamEvent;
   buildFinalResult: (_input: {
