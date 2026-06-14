@@ -98,7 +98,7 @@ function AuxTreeNodeRow({
   const dragHandleId = !isSymlinkTargetPickerActive && !isDeleted ? node.id : undefined;
   const contentStateClass =
     node.overlayStatus === "deleted"
-      ? "text-red-500/65"
+      ? "text-deleted-foreground/65"
       : showTimelineChanges && !node.hasTimelineChange
         ? "opacity-55"
         : "opacity-100";
@@ -158,7 +158,7 @@ function AuxTreeNodeRow({
     >
       <AuxNodeIcon
         nodeType={isDir ? (isExpanded ? "dir-open" : "dir") : node.nodeType}
-        className={isDeleted ? "text-red-500/65" : undefined}
+        className={isDeleted ? "text-deleted-foreground/65" : undefined}
       />
     </span>
   );

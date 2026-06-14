@@ -65,6 +65,9 @@
   --color-accent-foreground: #f2a2c2;
   --color-accent-background: #902345;
 
+  /* Status */
+  --color-deleted-foreground: #ef4444;
+
   /* Scrollbar */
   --color-scrollbar-thumb: rgb(121 121 121 / 0.55);
   --color-scrollbar-thumb-hover: rgb(146 146 146 / 0.78);
