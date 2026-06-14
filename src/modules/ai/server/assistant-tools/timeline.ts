@@ -121,7 +121,8 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
         properties: {
           timelinePointId: {
             type: "string",
-            description: '要切换到的锚点 ID。传入 "origin" 表示切换回全局初始设定原点。',
+            description:
+              '要切换到的锚点 ID。传入 "origin" 表示切换回全局初始设定原点。也可回退传入锚点名称，但建议优先使用 ID。',
           },
         },
       }),
@@ -134,13 +135,26 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
         return withEnvelope(() => {
           const selected = resolveSelectableTimelinePoint({
             workspaceId: workspace.id,
-            timelinePointId,
+            timelinePointIdOrLabel: timelinePointId,
           });
           updateRuntimeTimelineSelection({
             runtimeContext,
             timelinePointId: selected.timelinePointId,
             timelineLabel: selected.timelineLabel,
           });
+          const warnings =
+            selected.matchedBy === "label"
+              ? [
+                  {
+                    code: "timeline_point_label_used_as_fallback" as const,
+                    message:
+                      "本次根据时间点名称匹配完成切换。为避免重名或后续改名带来的歧义，建议后续优先使用 timelinePointId。",
+                    providedValue: timelinePointId,
+                    matchedTimelinePointId: selected.timelinePointId,
+                    matchedTimelineLabel: selected.timelineLabel,
+                  },
+                ]
+              : [];
 
           return {
             ok: true,
@@ -149,6 +163,7 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
               action: "selected" as const,
               timelinePointId: selected.timelinePointId,
               timelineLabel: selected.timelineLabel,
+              ...(warnings.length > 0 ? { warnings } : {}),
             },
           };
         });

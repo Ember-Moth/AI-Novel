@@ -16,20 +16,31 @@ export function resolveCurrentTimelinePointId(runtimeContext: ToolRuntimeContext
 
 export function resolveSelectableTimelinePoint(input: {
   workspaceId: string;
-  timelinePointId: string;
+  timelinePointIdOrLabel: string;
 }) {
-  if (input.timelinePointId === "origin") {
+  if (input.timelinePointIdOrLabel === "origin") {
     return {
       timelinePointId: ORIGIN_TIMELINE_POINT_ID,
       timelineLabel: "原点",
+      matchedBy: "origin" as const,
     };
   }
   const points = listTimelinePoints(input.workspaceId);
-  const found = points.find((point) => point.id === input.timelinePointId);
-  invariant(found, "指定的时间点不存在。");
+  const foundById = points.find((point) => point.id === input.timelinePointIdOrLabel);
+  if (foundById) {
+    return {
+      timelinePointId: foundById.id,
+      timelineLabel: foundById.label,
+      matchedBy: "id" as const,
+    };
+  }
+
+  const foundByLabel = points.find((point) => point.label === input.timelinePointIdOrLabel);
+  invariant(foundByLabel, "指定的时间点不存在。");
   return {
-    timelinePointId: found.id,
-    timelineLabel: found.label,
+    timelinePointId: foundByLabel.id,
+    timelineLabel: foundByLabel.label,
+    matchedBy: "label" as const,
   };
 }
 

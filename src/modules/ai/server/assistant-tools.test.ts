@@ -1432,6 +1432,49 @@ test("set_current_timeline accepts origin", async () => {
   );
 });
 
+test("set_current_timeline accepts timeline label as fallback and returns warning", async () => {
+  const workspace = seedProject("assistant_tools_set_timeline_by_label");
+  const timelinePoint = workspaceDomain.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    label: "Draft",
+  });
+  const runtimeContext = createRuntimeContext({
+    workspaceId: workspace.id,
+    activeContentNodeId: null,
+    activeContentTitle: null,
+    activeAuxPath: null,
+    activeTimelinePointId: workspaceDomain.ORIGIN_TIMELINE_POINT_ID,
+    activeTimelineLabel: "原点",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_set_timeline_by_label",
+    runtimeContext,
+  });
+
+  const selected = await executeTool(tools.set_current_timeline!, {
+    timelinePointId: timelinePoint.label,
+  });
+
+  expect(selected).toMatchObject({
+    ok: true,
+    data: {
+      action: "selected",
+      timelinePointId: timelinePoint.id,
+      timelineLabel: timelinePoint.label,
+      warnings: [
+        {
+          code: "timeline_point_label_used_as_fallback",
+          providedValue: timelinePoint.label,
+          matchedTimelinePointId: timelinePoint.id,
+          matchedTimelineLabel: timelinePoint.label,
+        },
+      ],
+    },
+  });
+  expect(runtimeContext.snapshot?.activeTimelinePointId).toBe(timelinePoint.id);
+});
+
 test("list_story_timeline_points includes aux change summary counts", async () => {
   const { workspace, pointA, pointB } = seedTimelineAuxDiffScenario(
     "assistant_tools_timeline_aux_summary",
