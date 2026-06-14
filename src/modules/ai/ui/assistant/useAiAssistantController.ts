@@ -158,16 +158,18 @@ export function createStreamOverlay({
   kind,
   threadId,
   triggerNodeId,
+  runId = null,
 }: {
   kind: "send" | "retry" | "continue" | "tool-input";
   threadId: string;
   triggerNodeId: string | null;
+  runId?: string | null;
 }): AssistantStreamOverlay {
   return {
     kind,
     threadId,
     triggerNodeId,
-    runId: null,
+    runId,
     activeAssistantNodeId: null,
     startedAt: Date.now(),
     completedAt: null,
@@ -969,6 +971,7 @@ export function useAiAssistantController(
           kind: "tool-input",
           threadId: activeThreadId,
           triggerNodeId: pendingRun.triggerNodeId,
+          runId: pendingRun.id,
         }),
       );
 

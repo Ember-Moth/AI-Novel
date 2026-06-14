@@ -139,6 +139,17 @@ test("tool input streams render in the pending stream area", () => {
   expect(shouldRenderPendingStreamBlocks(null)).toBe(false);
 });
 
+test("tool input stream overlays can hide the waiting run summary immediately", () => {
+  const overlay = createStreamOverlay({
+    kind: "tool-input",
+    threadId: "thread_a",
+    triggerNodeId: "ask_node_1",
+    runId: "run_waiting_1",
+  });
+
+  expect(overlay.runId).toBe("run_waiting_1");
+});
+
 test("applyStreamEvent keeps reasoning, text, and tool traces aligned in one stream block", () => {
   const overlay = createStreamOverlay({
     kind: "send",
