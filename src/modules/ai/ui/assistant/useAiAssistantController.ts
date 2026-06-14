@@ -187,6 +187,19 @@ export function shouldRenderPendingStreamBlocks(
   return overlay?.kind === "send" || overlay?.kind === "continue" || overlay?.kind === "tool-input";
 }
 
+export function isToolInputResumeEvent(event: ProjectAssistantStreamEvent): boolean {
+  return (
+    event.type === "user-input-submitted" ||
+    event.type === "assistant-message-started" ||
+    event.type === "assistant-text-delta" ||
+    event.type === "assistant-reasoning-delta" ||
+    event.type === "tool-call" ||
+    event.type === "tool-result" ||
+    event.type === "step-started" ||
+    event.type === "step-finished"
+  );
+}
+
 export function buildProjectAssistantSendActiveTools({
   allowWrites,
 }: {
@@ -991,6 +1004,9 @@ export function useAiAssistantController(
                 event.type === "timeline-selection-updated"
               ) {
                 onWorkspaceRefreshRequested?.(event);
+              }
+              if (isToolInputResumeEvent(event)) {
+                setSubmittingToolInputToolCallId(null);
               }
               setActiveStream((current) =>
                 current == null ? current : applyStreamEvent(current, event),

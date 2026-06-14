@@ -13,6 +13,7 @@ import {
   buildSessionRows,
   createStreamOverlay,
   DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND,
+  isToolInputResumeEvent,
   resolveExpectedActiveThreadAfterArchiveToggle,
   shouldRenderPendingStreamBlocks,
 } from "./useAiAssistantController";
@@ -148,6 +149,16 @@ test("tool input stream overlays can hide the waiting run summary immediately", 
   });
 
   expect(overlay.runId).toBe("run_waiting_1");
+});
+
+test("user-input-submitted counts as tool input resume progress", () => {
+  expect(
+    isToolInputResumeEvent({
+      type: "user-input-submitted",
+      toolNodeId: "tool_node_1",
+      toolCallId: "tool_ask_1",
+    }),
+  ).toBe(true);
 });
 
 test("applyStreamEvent keeps reasoning, text, and tool traces aligned in one stream block", () => {
