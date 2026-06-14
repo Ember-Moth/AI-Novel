@@ -1,3 +1,5 @@
+import { cn } from "@/shared/lib/cn";
+
 export function ContentNodeIcon({
   hasBody,
   hasChildren,
@@ -33,7 +35,11 @@ export function AuxNodeIcon({
 
   return (
     <span
-      className={`${iconMap[nodeType] ?? "icon-[material-symbols--description] text-foreground-muted"} shrink-0 text-base ${className}`}
+      className={cn(
+        iconMap[nodeType] ?? "icon-[material-symbols--description] text-foreground-muted",
+        "shrink-0 text-base",
+        className,
+      )}
     />
   );
 }
