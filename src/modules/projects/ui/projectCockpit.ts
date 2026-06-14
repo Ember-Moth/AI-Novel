@@ -4,6 +4,16 @@ export interface BranchLike {
   headCommitId: string | null;
 }
 
+export interface WorkspaceRouteLike {
+  projectId: string;
+  workspaceId: string;
+}
+
+export interface WorkspaceLike {
+  id: string;
+  projectId: string;
+}
+
 export function sortProjectBranches<TBranch extends BranchLike>(
   branches: readonly TBranch[],
   defaultBranchId: string | null,
@@ -37,4 +47,20 @@ export function resolveNewBranchSourceCommitId<TBranch extends BranchLike>(
 ) {
   const defaultBranch = branches.find((branch) => branch.id === defaultBranchId);
   return defaultBranch?.headCommitId ?? null;
+}
+
+export function resolveWorkspaceRouteAfterBranchDelete<TWorkspace extends WorkspaceLike>(
+  currentRoute: WorkspaceRouteLike | null,
+  deletedWorkspace: TWorkspace | null,
+) {
+  if (
+    currentRoute &&
+    deletedWorkspace &&
+    currentRoute.projectId === deletedWorkspace.projectId &&
+    currentRoute.workspaceId === deletedWorkspace.id
+  ) {
+    return null;
+  }
+
+  return currentRoute;
 }

@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import {
   resolveNewBranchSourceCommitId,
   resolveSelectedBranchId,
+  resolveWorkspaceRouteAfterBranchDelete,
   sortProjectBranches,
 } from "./projectCockpit";
 
@@ -35,4 +36,28 @@ test("resolveNewBranchSourceCommitId uses the default branch head when present",
       "branch_empty",
     ),
   ).toBeNull();
+});
+
+test("resolveWorkspaceRouteAfterBranchDelete closes only the deleted workspace", () => {
+  const currentRoute = { projectId: "project_1", workspaceId: "workspace_1" };
+
+  expect(
+    resolveWorkspaceRouteAfterBranchDelete(currentRoute, {
+      id: "workspace_1",
+      projectId: "project_1",
+    }),
+  ).toBeNull();
+  expect(
+    resolveWorkspaceRouteAfterBranchDelete(currentRoute, {
+      id: "workspace_2",
+      projectId: "project_1",
+    }),
+  ).toEqual(currentRoute);
+  expect(
+    resolveWorkspaceRouteAfterBranchDelete(currentRoute, {
+      id: "workspace_1",
+      projectId: "project_2",
+    }),
+  ).toEqual(currentRoute);
+  expect(resolveWorkspaceRouteAfterBranchDelete(currentRoute, null)).toEqual(currentRoute);
 });

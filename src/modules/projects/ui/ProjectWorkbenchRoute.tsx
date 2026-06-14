@@ -14,6 +14,7 @@ import { updateProjectOptimistically } from "./projectCache";
 import {
   resolveNewBranchSourceCommitId,
   resolveSelectedBranchId,
+  resolveWorkspaceRouteAfterBranchDelete,
   sortProjectBranches,
 } from "./projectCockpit";
 import type { BranchRow, CommitRow, ProjectList } from "./projectTypes";
@@ -29,6 +30,7 @@ export function ProjectWorkbenchRoute({ projectId }: { projectId: string }) {
   const [, navigate] = useLocation();
   const projectBranchSelection = useLastProjectStore((state) => state.projectBranchSelection);
   const setProjectBranchSelection = useLastProjectStore((state) => state.setProjectBranchSelection);
+  const setLastWorkspaceRoute = useLastProjectStore((state) => state.setLastWorkspaceRoute);
   const workbenchStore = useProjectWorkbenchStoreApi();
   const createBranchDialogRef = useRef<HTMLDialogElement>(null);
   const forkBranchDialogRef = useRef<HTMLDialogElement>(null);
@@ -353,12 +355,16 @@ export function ProjectWorkbenchRoute({ projectId }: { projectId: string }) {
       selectedBranchId === branch.id ? null : selectedBranchId,
       project.defaultBranchId,
     );
+    const deletedWorkspace = workspaceMap.get(branch.id) ?? null;
 
     await deleteBranch.mutate({
       projectId: project.id,
       branchId: branch.id,
     });
 
+    setLastWorkspaceRoute((current) =>
+      resolveWorkspaceRouteAfterBranchDelete(current, deletedWorkspace),
+    );
     rememberSelectedBranch(nextSelectedBranchId);
     navigate(`/project/${project.id}`);
   };
