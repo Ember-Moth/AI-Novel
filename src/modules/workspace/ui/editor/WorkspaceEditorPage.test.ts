@@ -20,22 +20,20 @@ function createWorkspaceRefreshRequestedEvent(
     type: "workspace-refresh-requested",
     workspaceId: "workspace_1",
     areas: ["aux"],
-    auxNodeId: "aux_1",
+    auxPath: "/设定/角色.md",
     ...overrides,
   };
 }
 
 function createAuxFileNode(overrides: Partial<AuxTreeNodeVM> = {}): AuxTreeNodeVM {
   return {
-    id: "aux_1",
+    id: "/设定/角色.md",
     nodeType: "file",
     name: "角色.md",
     content: "",
     path: "/设定/角色.md",
-    symlinkTargetAuxNodeId: null,
     symlinkTargetPath: null,
     hasTimelineChange: false,
-    isDeleted: false,
     children: [],
     ...overrides,
   };
@@ -107,7 +105,7 @@ test("shouldClearActiveAuxDraftForRefresh only clears the active aux file target
     shouldClearActiveAuxDraftForRefresh({
       event: createWorkspaceRefreshRequestedEvent({
         areas: ["aux"],
-        auxNodeId: "aux_1",
+        auxPath: "/设定/角色.md",
       }),
       activeAuxNode: createAuxFileNode(),
       activeTimelinePointId: "point_active",
@@ -117,7 +115,7 @@ test("shouldClearActiveAuxDraftForRefresh only clears the active aux file target
     shouldClearActiveAuxDraftForRefresh({
       event: createWorkspaceRefreshRequestedEvent({
         areas: ["aux"],
-        auxNodeId: "aux_2",
+        auxPath: "/设定/地点.md",
       }),
       activeAuxNode: createAuxFileNode(),
       activeTimelinePointId: "point_active",
@@ -127,7 +125,7 @@ test("shouldClearActiveAuxDraftForRefresh only clears the active aux file target
     shouldClearActiveAuxDraftForRefresh({
       event: createWorkspaceRefreshRequestedEvent({
         areas: ["timeline", "aux"],
-        auxNodeId: undefined,
+        auxPath: undefined,
       }),
       activeAuxNode: createAuxFileNode(),
       activeTimelinePointId: "point_active",
@@ -137,7 +135,7 @@ test("shouldClearActiveAuxDraftForRefresh only clears the active aux file target
     shouldClearActiveAuxDraftForRefresh({
       event: createWorkspaceRefreshRequestedEvent({
         areas: ["aux"],
-        auxNodeId: "aux_1",
+        auxPath: "/设定/角色.md",
       }),
       activeAuxNode: createAuxFileNode({ nodeType: "dir" }),
       activeTimelinePointId: "point_active",
@@ -150,7 +148,7 @@ test("shouldClearActiveAuxDraftForRefresh only clears matching timeline target",
     shouldClearActiveAuxDraftForRefresh({
       event: createWorkspaceRefreshRequestedEvent({
         areas: ["aux"],
-        auxNodeId: "aux_1",
+        auxPath: "/设定/角色.md",
         timelinePointId: "point_active",
       }),
       activeAuxNode: createAuxFileNode(),
@@ -161,7 +159,7 @@ test("shouldClearActiveAuxDraftForRefresh only clears matching timeline target",
     shouldClearActiveAuxDraftForRefresh({
       event: createWorkspaceRefreshRequestedEvent({
         areas: ["aux"],
-        auxNodeId: "aux_1",
+        auxPath: "/设定/角色.md",
         timelinePointId: "point_other",
       }),
       activeAuxNode: createAuxFileNode(),

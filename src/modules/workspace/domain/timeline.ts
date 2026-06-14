@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import { eq } from "drizzle-orm";
 
 import { db, schema } from "@/db";
@@ -7,6 +10,7 @@ import { createId, invariant, now } from "@/shared/lib/domain";
 import { getWorkspace } from "./lifecycle";
 import type { TimelinePointRef, TimelinePointView } from "./types";
 import {
+  AUX_TIMELINE_DIR,
   normalizePointId,
   orderTimelineRows,
   pointIdOrOrigin,
@@ -150,16 +154,21 @@ export function deleteTimelinePoint(
     "无法删除：仍有章节锚定到该时间点。",
   );
   if (!options.purgeAuxLayers) {
+    const auxTimelineDir = path.join(workspace.worktreePath, AUX_TIMELINE_DIR, pointId);
     invariant(
-      !state.auxLayers.some((layer) => layer.timelinePointId === pointId),
+      !fs.existsSync(auxTimelineDir) || fs.readdirSync(auxTimelineDir).length === 0,
       "无法删除：该时间点仍有辅助信息变更。",
     );
   }
   const successor = state.timeline.find((item) => item.prevPointId === pointId);
   if (successor) successor.prevPointId = point.prevPointId;
   state.timeline = state.timeline.filter((item) => item.id !== pointId);
-  if (options.purgeAuxLayers)
-    state.auxLayers = state.auxLayers.filter((layer) => layer.timelinePointId !== pointId);
+  if (options.purgeAuxLayers) {
+    fs.rmSync(path.join(workspace.worktreePath, AUX_TIMELINE_DIR, pointId), {
+      recursive: true,
+      force: true,
+    });
+  }
   writeWorktreeStateSync(workspace.worktreePath, state);
   touchWorkspace(workspace.id);
 }

@@ -453,7 +453,6 @@ test("openai follow-up send uses previous response id and only sends incremental
       workspaceId: "workspace_openai_followup",
       activeContentNodeId: null,
       activeContentTitle: null,
-      activeAuxNodeId: null,
       activeAuxPath: "/设定/角色.md",
       activeTimelinePointId: "point_now",
       activeTimelineLabel: "现在",

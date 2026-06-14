@@ -55,6 +55,10 @@ function formatTimelineContentAnchorError(
   return `无法删除：以下章节仍锚定在此时间点：${paths.map((path) => `「${path}」`).join("、")}。`;
 }
 
+function joinAuxPath(parentPath: string, name: string) {
+  return parentPath === "/" ? `/${name}` : `${parentPath}/${name}`;
+}
+
 export function useProjectActions(workspace: ProjectWorkspaceState) {
   const store = useWorkspaceStoreApi();
 
@@ -79,7 +83,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
     },
     aux: {
       tree: auxTree,
-      rootId: auxRootId,
+      rootId: auxRootPath,
       nodeMap: auxNodeMap,
       parentMap: auxParentMap,
       mkdirAux,
@@ -88,7 +92,6 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       moveAux,
       retargetSymlinkAux,
       deleteAux,
-      restoreAux,
     },
     selection: { activeContentNode },
   } = workspace;
@@ -101,8 +104,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       const state = store.getState();
       if (state.activeTimelinePointId === pointId) {
         state.setActiveTimelinePointId(ORIGIN_TIMELINE_POINT_ID);
-        state.setPendingAuxNodeId(null);
-        state.setActiveAuxNodeId(null);
+        state.setPendingAuxPath(null);
+        state.setActiveAuxPath(null);
       }
     },
     [store],
@@ -174,7 +177,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         await writeFileAux.mutate({
           workspaceId,
           timelinePointId,
-          nodeId,
+          path: nodeId,
           content,
         });
         store.getState().setCommittedBodies((previous) => ({
@@ -218,12 +221,12 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
 
   const flushDirtyAux = useCallback(
     (timelinePointId = store.getState().activeTimelinePointId) => {
-      const { activeAuxNodeId, drafts, committedBodies } = store.getState();
-      if (!activeAuxNodeId || !timelinePointId) {
+      const { activeAuxPath, drafts, committedBodies } = store.getState();
+      if (!activeAuxPath || !timelinePointId) {
         return;
       }
 
-      const auxNode = auxNodeMap.get(activeAuxNodeId) ?? null;
+      const auxNode = auxNodeMap.get(activeAuxPath) ?? null;
       if (auxNode?.nodeType !== "file") {
         return;
       }
@@ -254,7 +257,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
 
   const toggleAuxExpanded = useCallback(
     (nodeId: string) => {
-      store.getState().setExpandedAuxIds((previous) => {
+      store.getState().setExpandedAuxPaths((previous) => {
         const next = new Set(previous);
         if (next.has(nodeId)) {
           next.delete(nodeId);
@@ -284,7 +287,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
 
   const expandAuxParent = useCallback(
     (parentId: string) => {
-      store.getState().setExpandedAuxIds((previous) => {
+      store.getState().setExpandedAuxPaths((previous) => {
         if (previous.has(parentId)) {
           return previous;
         }
@@ -299,17 +302,17 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
 
   const resolveAuxParentForSibling = useCallback(
     (activeId: string | null): string | null => {
-      if (!auxRootId) {
+      if (!auxRootPath) {
         return null;
       }
 
       if (!activeId) {
-        return auxRootId;
+        return auxRootPath;
       }
 
-      return auxParentMap.get(activeId) ?? auxRootId;
+      return auxParentMap.get(activeId) ?? auxRootPath;
     },
-    [auxParentMap, auxRootId],
+    [auxParentMap, auxRootPath],
   );
 
   const createAuxDir = useCallback(
@@ -319,7 +322,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         return;
       }
 
-      const siblings = listAuxSiblings(auxTree, auxNodeMap, parentDirId, auxRootId);
+      const siblings = listAuxSiblings(auxTree, auxNodeMap, parentDirId, auxRootPath);
       const name = nextAuxDirName(siblings);
 
       clearActionError(setAuxError);
@@ -328,14 +331,13 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         const node = await mkdirAux.mutate({
           workspaceId,
           timelinePointId: activeTimelinePointId,
-          parentDirId,
-          name,
+          path: joinAuxPath(parentDirId, name),
         });
         const state = store.getState();
         state.setShouldAutoSelectContent(false);
         state.setPendingContentNodeId(null);
-        state.setPendingAuxNodeId(auxNodeMap.has(node.id) ? null : node.id);
-        state.setActiveAuxNodeId(node.id);
+        state.setPendingAuxPath(auxNodeMap.has(node.path) ? null : node.path);
+        state.setActiveAuxPath(node.path);
         expandAuxParent(parentDirId);
       } catch (error) {
         setActionError(
@@ -345,7 +347,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         );
       }
     },
-    [auxNodeMap, auxRootId, auxTree, expandAuxParent, mkdirAux, store, workspaceId],
+    [auxNodeMap, auxRootPath, auxTree, expandAuxParent, mkdirAux, store, workspaceId],
   );
 
   const createAuxFile = useCallback(
@@ -355,7 +357,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         return;
       }
 
-      const siblings = listAuxSiblings(auxTree, auxNodeMap, parentDirId, auxRootId);
+      const siblings = listAuxSiblings(auxTree, auxNodeMap, parentDirId, auxRootPath);
       const name = nextAuxFileName(siblings);
 
       clearActionError(setAuxError);
@@ -364,15 +366,14 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         const node = await writeFileAux.mutate({
           workspaceId,
           timelinePointId: activeTimelinePointId,
-          parentDirId,
-          name,
+          path: joinAuxPath(parentDirId, name),
           content: "",
         });
         const state = store.getState();
         state.setShouldAutoSelectContent(false);
         state.setPendingContentNodeId(null);
-        state.setPendingAuxNodeId(auxNodeMap.has(node.id) ? null : node.id);
-        state.setActiveAuxNodeId(node.id);
+        state.setPendingAuxPath(auxNodeMap.has(node.path) ? null : node.path);
+        state.setActiveAuxPath(node.path);
         expandAuxParent(parentDirId);
       } catch (error) {
         setActionError(
@@ -382,17 +383,17 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         );
       }
     },
-    [auxNodeMap, auxRootId, auxTree, expandAuxParent, store, workspaceId, writeFileAux],
+    [auxNodeMap, auxRootPath, auxTree, expandAuxParent, store, workspaceId, writeFileAux],
   );
 
   const createAuxSymlink = useCallback(
-    async (parentDirId: string, targetNodeId: string, targetName: string, anchorId: string) => {
+    async (parentDirId: string, targetPath: string, targetName: string, anchorId: string) => {
       const { activeTimelinePointId, setAuxError } = store.getState();
       if (!workspaceId || !activeTimelinePointId) {
         return;
       }
 
-      const siblings = listAuxSiblings(auxTree, auxNodeMap, parentDirId, auxRootId);
+      const siblings = listAuxSiblings(auxTree, auxNodeMap, parentDirId, auxRootPath);
       const name = nextAuxSymlinkName(siblings, targetName);
 
       clearActionError(setAuxError);
@@ -401,15 +402,14 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         const node = await linkAux.mutate({
           workspaceId,
           timelinePointId: activeTimelinePointId,
-          parentDirId,
-          name,
-          targetNodeId,
+          path: joinAuxPath(parentDirId, name),
+          targetPath,
         });
         const state = store.getState();
         state.setShouldAutoSelectContent(false);
         state.setPendingContentNodeId(null);
-        state.setPendingAuxNodeId(auxNodeMap.has(node.id) ? null : node.id);
-        state.setActiveAuxNodeId(node.id);
+        state.setPendingAuxPath(auxNodeMap.has(node.path) ? null : node.path);
+        state.setActiveAuxPath(node.path);
         expandAuxParent(parentDirId);
       } catch (error) {
         setActionError(
@@ -419,7 +419,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         );
       }
     },
-    [auxNodeMap, auxRootId, auxTree, expandAuxParent, linkAux, store, workspaceId],
+    [auxNodeMap, auxRootPath, auxTree, expandAuxParent, linkAux, store, workspaceId],
   );
 
   const exitAuxSymlinkTargetPicker = useCallback(() => {
@@ -431,13 +431,13 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
   const enterAuxSymlinkTargetPicker = useCallback(
     (nodeId: string) => {
       const node = auxNodeMap.get(nodeId) ?? null;
-      if (node?.nodeType !== "symlink" || node.isDeleted) {
+      if (node?.nodeType !== "symlink") {
         return;
       }
 
       clearActionError(store.getState().setAuxError);
-      store.getState().setExpandedAuxIds((previous) => {
-        const targetId = node.symlinkTargetAuxNodeId;
+      store.getState().setExpandedAuxPaths((previous) => {
+        const targetId = node.symlinkTargetPath;
         if (!targetId) {
           return previous;
         }
@@ -457,8 +457,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       state.setShouldAutoSelectContent(false);
       state.setPendingContentNodeId(null);
       state.setActiveContentNodeId(null);
-      state.setPendingAuxNodeId(null);
-      state.setActiveAuxNodeId(node.id);
+      state.setPendingAuxPath(null);
+      state.setActiveAuxPath(node.id);
       state.setAuxSymlinkTargetPickerSourceId(node.id);
       state.setIsAuxSymlinkTargetPickerActive(true);
     },
@@ -470,7 +470,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
   }, [exitAuxSymlinkTargetPicker]);
 
   const submitAuxSymlinkTargetRetarget = useCallback(
-    async (targetNodeId: string) => {
+    async (targetPath: string) => {
       const state = store.getState();
       const {
         activeTimelinePointId,
@@ -488,17 +488,17 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       }
 
       const source = auxNodeMap.get(auxSymlinkTargetPickerSourceId) ?? null;
-      if (source?.nodeType !== "symlink" || source.isDeleted) {
+      if (source?.nodeType !== "symlink") {
         exitAuxSymlinkTargetPicker();
         return;
       }
 
-      if (source.symlinkTargetAuxNodeId === targetNodeId) {
+      if (source.symlinkTargetPath === targetPath) {
         return;
       }
 
       const invalidTargetIds = collectInvalidAuxSymlinkTargetIds(auxNodeMap, source.id);
-      if (invalidTargetIds.has(targetNodeId)) {
+      if (invalidTargetIds.has(targetPath)) {
         return;
       }
 
@@ -508,15 +508,15 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         await retargetSymlinkAux.mutate({
           workspaceId,
           timelinePointId: activeTimelinePointId,
-          symlinkNodeId: source.id,
-          targetNodeId,
+          path: source.id,
+          targetPath,
         });
         const nextState = store.getState();
         nextState.setShouldAutoSelectContent(false);
         nextState.setPendingContentNodeId(null);
         nextState.setActiveContentNodeId(null);
-        nextState.setPendingAuxNodeId(null);
-        nextState.setActiveAuxNodeId(source.id);
+        nextState.setPendingAuxPath(null);
+        nextState.setActiveAuxPath(source.id);
         exitAuxSymlinkTargetPicker();
       } catch (error) {
         setActionError(
@@ -533,8 +533,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
     (nodeId: string, anchorTimelinePointId: string) => {
       const state = store.getState();
       state.setShouldAutoSelectContent(true);
-      state.setPendingAuxNodeId(null);
-      state.setActiveAuxNodeId(null);
+      state.setPendingAuxPath(null);
+      state.setActiveAuxPath(null);
       state.setPendingContentNodeId(contentNodeMap.has(nodeId) ? null : nodeId);
       state.setActiveContentNodeId(nodeId);
       state.setActiveTimelinePointId(anchorTimelinePointId);
@@ -572,9 +572,9 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
     (node: AuxTreeNodeVM) => {
       flushDirtyContent();
 
-      const { activeAuxNodeId, drafts, committedBodies } = store.getState();
-      if (activeAuxNodeId && activeAuxNodeId !== node.id) {
-        const previousNode = auxNodeMap.get(activeAuxNodeId) ?? null;
+      const { activeAuxPath, drafts, committedBodies } = store.getState();
+      if (activeAuxPath && activeAuxPath !== node.id) {
+        const previousNode = auxNodeMap.get(activeAuxPath) ?? null;
         if (previousNode?.nodeType === "file") {
           const currentContent = drafts[previousNode.id] ?? previousNode.content;
           const baseline = committedBodies[previousNode.id] ?? previousNode.content;
@@ -588,20 +588,20 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       state.setShouldAutoSelectContent(false);
       state.setPendingContentNodeId(null);
       state.setActiveContentNodeId(null);
-      state.setPendingAuxNodeId(auxNodeMap.has(node.id) ? null : node.id);
-      state.setActiveAuxNodeId(node.id);
+      state.setPendingAuxPath(auxNodeMap.has(node.id) ? null : node.id);
+      state.setActiveAuxPath(node.id);
     },
     [auxNodeMap, flushAuxSave, flushDirtyContent, store],
   );
 
   const handleAuxContentChange = useCallback(
     (nextContent: string) => {
-      const { activeAuxNodeId } = store.getState();
-      if (!activeAuxNodeId) {
+      const { activeAuxPath } = store.getState();
+      if (!activeAuxPath) {
         return;
       }
 
-      const auxNode = auxNodeMap.get(activeAuxNodeId) ?? null;
+      const auxNode = auxNodeMap.get(activeAuxPath) ?? null;
       if (auxNode?.nodeType !== "file") {
         return;
       }
@@ -618,19 +618,19 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
 
   const handleTimelineSelect = useCallback(
     (pointId: string) => {
-      const { activeTimelinePointId, activeAuxNodeId } = store.getState();
+      const { activeTimelinePointId, activeAuxPath } = store.getState();
       if (pointId === activeTimelinePointId) {
         return;
       }
 
       flushDirtyAux(activeTimelinePointId ?? undefined);
 
-      if (activeAuxNodeId) {
+      if (activeAuxPath) {
         const state = store.getState();
-        state.setDrafts((previous) => omitRecordKey(previous, activeAuxNodeId));
-        state.setCommittedBodies((previous) => omitRecordKey(previous, activeAuxNodeId));
-        state.setPendingSaveCounts((previous) => omitRecordKey(previous, activeAuxNodeId));
-        state.setSaveErrors((previous) => omitRecordKey(previous, activeAuxNodeId));
+        state.setDrafts((previous) => omitRecordKey(previous, activeAuxPath));
+        state.setCommittedBodies((previous) => omitRecordKey(previous, activeAuxPath));
+        state.setPendingSaveCounts((previous) => omitRecordKey(previous, activeAuxPath));
+        state.setSaveErrors((previous) => omitRecordKey(previous, activeAuxPath));
       }
 
       store.getState().setActiveTimelinePointId(pointId);
@@ -1071,7 +1071,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
 
   const handleAuxCreateSiblingDir = useCallback(
     async (anchorId: string) => {
-      const parentDirId = resolveAuxParentForSibling(store.getState().activeAuxNodeId);
+      const parentDirId = resolveAuxParentForSibling(store.getState().activeAuxPath);
       if (!parentDirId) {
         return;
       }
@@ -1083,7 +1083,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
 
   const handleAuxCreateSiblingFile = useCallback(
     async (anchorId: string) => {
-      const parentDirId = resolveAuxParentForSibling(store.getState().activeAuxNodeId);
+      const parentDirId = resolveAuxParentForSibling(store.getState().activeAuxPath);
       if (!parentDirId) {
         return;
       }
@@ -1117,14 +1117,14 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
 
   const handleAuxCreateSymlink = useCallback(
     async (node: AuxTreeNodeVM, anchorId: string) => {
-      const parentDirId = auxParentMap.get(node.id) ?? auxRootId;
+      const parentDirId = auxParentMap.get(node.id) ?? auxRootPath;
       if (!parentDirId) {
         return;
       }
 
       await createAuxSymlink(parentDirId, node.id, node.name, anchorId);
     },
-    [auxParentMap, auxRootId, createAuxSymlink],
+    [auxParentMap, auxRootPath, createAuxSymlink],
   );
 
   const handleAuxRename = useCallback(
@@ -1134,7 +1134,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         return false;
       }
 
-      const parentDirId = auxParentMap.get(nodeId) ?? auxRootId;
+      const parentDirId = auxParentMap.get(nodeId) ?? auxRootPath;
       if (!parentDirId) {
         return false;
       }
@@ -1145,7 +1145,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         tree: auxTree,
         nodeMap: auxNodeMap,
         parentMap: auxParentMap,
-        auxRootId,
+        auxRootPath: auxRootPath,
         nodeId,
         name,
       });
@@ -1160,9 +1160,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         await moveAux.mutate({
           workspaceId,
           timelinePointId: activeTimelinePointId,
-          nodeId,
-          newParentDirId: parentDirId,
-          newName: normalized,
+          path: nodeId,
+          newPath: joinAuxPath(parentDirId, normalized),
         });
         return true;
       } catch (error) {
@@ -1174,20 +1173,20 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         return false;
       }
     },
-    [auxNodeMap, auxParentMap, auxRootId, auxTree, moveAux, store, workspaceId],
+    [auxNodeMap, auxParentMap, auxRootPath, auxTree, moveAux, store, workspaceId],
   );
 
   const handleAuxMove = useCallback(
     async (intent: AuxHierarchyMoveIntent) => {
       const { activeTimelinePointId, setAuxError } = store.getState();
-      if (!workspaceId || !activeTimelinePointId || !auxRootId) {
+      if (!workspaceId || !activeTimelinePointId || !auxRootPath) {
         return;
       }
 
       const move = resolveAuxHierarchyMove({
         parentMap: auxParentMap,
         nodeMap: auxNodeMap,
-        auxRootId,
+        auxRootPath: auxRootPath,
         ...intent,
       });
       if (!move) {
@@ -1201,7 +1200,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
 
       clearActionError(setAuxError);
 
-      if (move.newParentId !== auxRootId) {
+      if (move.newParentId !== auxRootPath) {
         expandAuxParent(move.newParentId);
       }
 
@@ -1209,9 +1208,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         await moveAux.mutate({
           workspaceId,
           timelinePointId: activeTimelinePointId,
-          nodeId: move.nodeId,
-          newParentDirId: move.newParentId,
-          newName: node.name.trim() || node.name,
+          path: move.nodeId,
+          newPath: joinAuxPath(move.newParentId, node.name.trim() || node.name),
         });
       } catch (error) {
         setActionError(
@@ -1221,7 +1219,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         );
       }
     },
-    [auxNodeMap, auxParentMap, auxRootId, expandAuxParent, moveAux, store, workspaceId],
+    [auxNodeMap, auxParentMap, auxRootPath, expandAuxParent, moveAux, store, workspaceId],
   );
 
   const handleAuxDelete = useCallback(
@@ -1237,17 +1235,17 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
         await deleteAux.mutate({
           workspaceId,
           timelinePointId: activeTimelinePointId,
-          nodeId,
+          path: nodeId,
         });
         clearAuxNodeLocalState(new Set([nodeId]));
         const state = store.getState();
-        if (state.activeAuxNodeId === nodeId) {
+        if (state.activeAuxPath === nodeId) {
           state.setShouldAutoSelectContent(false);
           state.setPendingContentNodeId(null);
           state.setActiveContentNodeId(null);
           if (activeTimelinePointId === ORIGIN_TIMELINE_POINT_ID) {
-            state.setPendingAuxNodeId(null);
-            state.setActiveAuxNodeId(null);
+            state.setPendingAuxPath(null);
+            state.setActiveAuxPath(null);
           }
         }
       } catch (error) {
@@ -1259,33 +1257,6 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       }
     },
     [clearAuxNodeLocalState, deleteAux, store, workspaceId],
-  );
-
-  const handleAuxRestore = useCallback(
-    async (nodeId: string, anchorId: string) => {
-      const { activeTimelinePointId, setAuxError } = store.getState();
-      if (!workspaceId || !activeTimelinePointId) {
-        return;
-      }
-
-      clearActionError(setAuxError);
-
-      try {
-        await restoreAux.mutate({
-          workspaceId,
-          timelinePointId: activeTimelinePointId,
-          nodeId,
-        });
-        clearAuxNodeLocalState(new Set([nodeId]));
-      } catch (error) {
-        setActionError(
-          store.getState().setAuxError,
-          error instanceof Error ? error.message : "恢复辅助节点失败，请稍后重试。",
-          anchorId,
-        );
-      }
-    },
-    [clearAuxNodeLocalState, restoreAux, store, workspaceId],
   );
 
   const handleTimelineDelete = useCallback(
@@ -1324,7 +1295,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
           setTimelineDeleteDialog({
             pointId,
             pointLabel,
-            auxPaths: (auxChanges ?? []).map((change: { path: string; isDeleted?: boolean }) =>
+            auxPaths: (auxChanges ?? []).map((change: { path: string; isDeleted: boolean }) =>
               change.isDeleted ? `${change.path}（已删除）` : change.path,
             ),
             anchorId,
@@ -1433,8 +1404,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       handleAuxRename,
       handleAuxMove,
       handleAuxDelete,
-      handleAuxRestore,
-      setActiveAuxNodeId: store.getState().setActiveAuxNodeId,
+      setActiveAuxPath: store.getState().setActiveAuxPath,
     },
     misc: {},
   });

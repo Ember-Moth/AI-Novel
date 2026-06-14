@@ -1,13 +1,19 @@
+import fs from "node:fs";
+import path from "node:path";
+import posix from "node:path/posix";
+
 import { eq } from "drizzle-orm";
 
 import { db, schema } from "@/db";
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
-import { createId, invariant, now } from "@/shared/lib/domain";
+import { invariant, now } from "@/shared/lib/domain";
 
 import type {
   AuxDirListTreeNode,
   AuxTimelineChangeSummary,
   AuxTimelineChangeView,
+  AuxTimelineModifiedAspect,
+  ExportedAuxNode,
   ExportedAuxSnapshotTree,
   ResolvedAuxSnapshotNode,
   TimelinePointRef,
@@ -15,17 +21,37 @@ import type {
 import { getWorkspace } from "./lifecycle";
 import {
   assertTimelinePoint,
+  AUX_ORIGIN_DIR,
+  AUX_TIMELINE_DIR,
   normalizePointId,
+  orderTimelineRows,
   pointIdOrOrigin,
-  readAuxContent,
+  readTextSync,
   readWorktreeState,
-  writeAuxContent,
-  writeWorktreeStateSync,
 } from "./git-storage/worktree-state";
-import type { AuxLayerMetaRow } from "./git-storage/types";
 import type { WorktreeState } from "./git-storage/worktree-state";
 
 export { ORIGIN_TIMELINE_POINT_ID };
+
+const WHITEOUT_PREFIX = ".wh.";
+const KEEP_FILE = ".gitkeep";
+
+type OverlayNodeType = "dir" | "file" | "symlink";
+
+interface OverlayLayerEntry {
+  kind: "node" | "whiteout";
+  path: string;
+  nodeType?: OverlayNodeType;
+  fsPath?: string;
+  symlinkTargetPath?: string | null;
+  timelinePointId: string | null;
+}
+
+interface OverlaySnapshotNode extends ResolvedAuxSnapshotNode {
+  nodeType: OverlayNodeType;
+  fsPath: string | null;
+  symlinkTargetPath: string | null;
+}
 
 function touchWorkspace(workspaceId: string) {
   db.update(schema.workspaces)
@@ -38,407 +64,507 @@ export function normalizeTimelinePointId(pointId: TimelinePointRef) {
   return normalizePointId(pointId) ?? ORIGIN_TIMELINE_POINT_ID;
 }
 
-function pointOrder(state: WorktreeState, pointId: string | null) {
+function timelinePointOrder(state: WorktreeState, pointId: string | null) {
   if (pointId == null) return 0;
-  const index = state.timeline.findIndex((point) => point.id === pointId);
+  const ordered = orderTimelineRows(state.timeline);
+  const index = ordered.findIndex((point) => point.id === pointId);
   return index < 0 ? -1 : index + 1;
 }
 
-function layerVisibleAt(state: WorktreeState, layer: AuxLayerMetaRow, pointId: string | null) {
-  const targetOrder = pointOrder(state, pointId);
-  const layerOrder = pointOrder(state, layer.timelinePointId);
-  return layerOrder >= 0 && layerOrder <= targetOrder;
+function timelineLayerPointIds(state: WorktreeState, targetPointId: string | null) {
+  const targetOrder = timelinePointOrder(state, targetPointId);
+  return orderTimelineRows(state.timeline)
+    .filter((point) => {
+      const order = timelinePointOrder(state, point.id);
+      return order >= 0 && order <= targetOrder;
+    })
+    .map((point) => point.id);
 }
 
-function latestLayersAt(state: WorktreeState, pointId: string | null) {
-  const byNode = new Map<string, AuxLayerMetaRow>();
-  for (const layer of state.auxLayers) {
-    if (!layerVisibleAt(state, layer, pointId)) continue;
-    const current = byNode.get(layer.auxNodeId);
-    if (
-      !current ||
-      pointOrder(state, current.timelinePointId) <= pointOrder(state, layer.timelinePointId)
-    ) {
-      byNode.set(layer.auxNodeId, layer);
+function normalizeAuxPath(
+  value: string,
+  actionLabel = "处理辅助信息",
+  options: { allowRoot?: boolean } = {},
+) {
+  const trimmed = value.trim();
+  invariant(trimmed.length > 0, `${actionLabel}失败：路径不能为空。`);
+  invariant(trimmed.startsWith("/"), `${actionLabel}失败：只支持以 / 开头的绝对路径。`);
+  invariant(!trimmed.includes("\\"), `${actionLabel}失败：路径不能包含反斜杠。`);
+  const segments = trimmed.split("/").filter(Boolean);
+  invariant(options.allowRoot || segments.length > 0, `${actionLabel}失败：不能作用于根目录。`);
+  for (const segment of segments) {
+    invariant(segment !== "." && segment !== "..", `${actionLabel}失败：路径不能包含 . 或 ..。`);
+    invariant(segment !== KEEP_FILE, `${actionLabel}失败：${KEEP_FILE} 是保留文件名。`);
+    invariant(!segment.startsWith(WHITEOUT_PREFIX), `${actionLabel}失败：.wh.* 是保留文件名。`);
+  }
+  return segments.length === 0 ? "/" : `/${segments.join("/")}`;
+}
+
+function splitAuxPath(value: string, actionLabel: string) {
+  const normalizedPath = normalizeAuxPath(value, actionLabel);
+  return {
+    normalizedPath,
+    parentPath: posix.dirname(normalizedPath),
+    name: posix.basename(normalizedPath),
+  };
+}
+
+function auxPathSegments(auxPath: string) {
+  return auxPath === "/" ? [] : auxPath.split("/").filter(Boolean);
+}
+
+function layerRoot(worktreePath: string, pointId: string | null) {
+  return path.join(worktreePath, pointId ? path.join(AUX_TIMELINE_DIR, pointId) : AUX_ORIGIN_DIR);
+}
+
+function fsPathForAuxPath(root: string, auxPath: string) {
+  return path.join(root, ...auxPathSegments(auxPath));
+}
+
+function ensureDirSync(dir: string) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function removePathSync(targetPath: string) {
+  fs.rmSync(targetPath, { recursive: true, force: true });
+}
+
+function removeWhiteoutForPath(root: string, auxPath: string) {
+  const parentPath = posix.dirname(auxPath);
+  const whiteoutPath = path.join(
+    fsPathForAuxPath(root, parentPath),
+    `${WHITEOUT_PREFIX}${posix.basename(auxPath)}`,
+  );
+  fs.rmSync(whiteoutPath, { force: true });
+}
+
+function writeKeepFile(dir: string) {
+  ensureDirSync(dir);
+  fs.closeSync(fs.openSync(path.join(dir, KEEP_FILE), "a"));
+}
+
+function removeFromSnapshot(snapshot: Map<string, OverlaySnapshotNode>, auxPath: string) {
+  for (const key of [...snapshot.keys()]) {
+    if (key === auxPath || key.startsWith(`${auxPath}/`)) {
+      snapshot.delete(key);
     }
   }
-  return byNode;
+}
+
+function readLayerEntries(worktreePath: string, pointId: string | null): OverlayLayerEntry[] {
+  const root = layerRoot(worktreePath, pointId);
+  if (!fs.existsSync(root)) return [];
+  const entries: OverlayLayerEntry[] = [];
+
+  const walk = (dir: string, logicalDir: string) => {
+    const dirents = fs.readdirSync(dir, { withFileTypes: true });
+    for (const dirent of dirents) {
+      if (dirent.name === KEEP_FILE) continue;
+      const childLogicalPath =
+        logicalDir === "/" ? `/${dirent.name}` : `${logicalDir}/${dirent.name}`;
+      const childFsPath = path.join(dir, dirent.name);
+      if (dirent.name.startsWith(WHITEOUT_PREFIX)) {
+        const name = dirent.name.slice(WHITEOUT_PREFIX.length);
+        if (!name) continue;
+        entries.push({
+          kind: "whiteout",
+          path: logicalDir === "/" ? `/${name}` : `${logicalDir}/${name}`,
+          timelinePointId: pointId,
+        });
+        continue;
+      }
+
+      const stat = fs.lstatSync(childFsPath);
+      if (stat.isSymbolicLink()) {
+        entries.push({
+          kind: "node",
+          path: childLogicalPath,
+          nodeType: "symlink",
+          fsPath: childFsPath,
+          symlinkTargetPath: fs.readlinkSync(childFsPath),
+          timelinePointId: pointId,
+        });
+        continue;
+      }
+      if (stat.isDirectory()) {
+        if (fs.existsSync(path.join(childFsPath, KEEP_FILE))) {
+          entries.push({
+            kind: "node",
+            path: childLogicalPath,
+            nodeType: "dir",
+            fsPath: childFsPath,
+            symlinkTargetPath: null,
+            timelinePointId: pointId,
+          });
+        }
+        walk(childFsPath, childLogicalPath);
+        continue;
+      }
+      if (stat.isFile()) {
+        entries.push({
+          kind: "node",
+          path: childLogicalPath,
+          nodeType: "file",
+          fsPath: childFsPath,
+          symlinkTargetPath: null,
+          timelinePointId: pointId,
+        });
+      }
+    }
+  };
+
+  walk(root, "/");
+  return entries.sort((left, right) => {
+    const depth = auxPathSegments(left.path).length - auxPathSegments(right.path).length;
+    return depth || left.path.localeCompare(right.path);
+  });
+}
+
+function readAuxContentFromSnapshot(node: OverlaySnapshotNode) {
+  if (node.nodeType !== "file" || !node.fsPath) return null;
+  return readTextSync(node.fsPath);
 }
 
 function buildSnapshot(workspaceId: string, pointId: TimelinePointRef) {
   const workspace = getWorkspace(workspaceId);
   const state = readWorktreeState(workspace.worktreePath);
   const normalizedPointId = assertTimelinePoint(state, pointId);
-  const layers = latestLayersAt(state, normalizedPointId);
-  const reachable = new Map<string, ResolvedAuxSnapshotNode>();
+  const snapshot = new Map<string, OverlaySnapshotNode>();
+  const layers = [null, ...timelineLayerPointIds(state, normalizedPointId)];
 
-  const resolvePath = (nodeId: string): string | null => {
-    if (nodeId === workspace.auxRootId) return "/";
-    const layer = layers.get(nodeId);
-    if (!layer || layer.isDeleted || !layer.name) return null;
-    const parentPath = resolvePath(layer.parentAuxNodeId ?? workspace.auxRootId);
-    if (!parentPath) return null;
-    return parentPath === "/" ? `/${layer.name}` : `${parentPath}/${layer.name}`;
-  };
-
-  for (const [nodeId, layer] of layers) {
-    if (layer.isDeleted) continue;
-    const path = resolvePath(nodeId);
-    if (!path) continue;
-    reachable.set(nodeId, {
-      id: nodeId,
-      nodeType: layer.nodeType,
-      parentAuxNodeId: layer.parentAuxNodeId,
-      name: layer.name,
-      content: readAuxContent(workspace.worktreePath, layer),
-      symlinkTargetAuxNodeId: layer.symlinkTargetAuxNodeId,
-      timelinePointId: pointIdOrOrigin(layer.timelinePointId),
-      path,
-      reachable: true,
-    });
+  for (const layerPointId of layers) {
+    for (const entry of readLayerEntries(workspace.worktreePath, layerPointId)) {
+      if (entry.kind === "whiteout") {
+        removeFromSnapshot(snapshot, entry.path);
+        continue;
+      }
+      invariant(entry.nodeType && entry.fsPath, "辅助信息层节点缺少类型或路径。");
+      if (entry.nodeType !== "dir") {
+        removeFromSnapshot(snapshot, entry.path);
+      } else {
+        const existing = snapshot.get(entry.path);
+        if (existing && existing.nodeType !== "dir") {
+          snapshot.delete(entry.path);
+        }
+      }
+      snapshot.set(entry.path, {
+        nodeType: entry.nodeType,
+        name: posix.basename(entry.path),
+        path: entry.path,
+        content: null,
+        symlinkTargetPath: entry.symlinkTargetPath ?? null,
+        timelinePointId: pointIdOrOrigin(entry.timelinePointId),
+        reachable: true,
+        fsPath: entry.fsPath,
+      });
+    }
   }
 
-  return { workspace, state, pointId: normalizedPointId, snapshot: reachable };
+  for (const node of snapshot.values()) {
+    node.content = readAuxContentFromSnapshot(node);
+  }
+
+  return { workspace, state, pointId: normalizedPointId, snapshot };
 }
 
-function findChildName(
-  snapshot: Map<string, ResolvedAuxSnapshotNode>,
-  parentId: string,
-  name: string,
-  except?: string,
+function sortedSnapshotNodes(snapshot: Map<string, OverlaySnapshotNode>) {
+  return [...snapshot.values()].sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function childrenOf(snapshot: Map<string, OverlaySnapshotNode>, parentPath: string) {
+  return sortedSnapshotNodes(snapshot).filter((node) => posix.dirname(node.path) === parentPath);
+}
+
+function assertParentDir(snapshot: Map<string, OverlaySnapshotNode>, parentPath: string) {
+  if (parentPath === "/") return;
+  const parent = snapshot.get(parentPath);
+  invariant(parent?.nodeType === "dir", "父路径不是辅助资料目录。");
+}
+
+function assertPathAvailable(
+  snapshot: Map<string, OverlaySnapshotNode>,
+  auxPath: string,
+  exceptPath?: string,
 ) {
-  return [...snapshot.values()].find(
-    (node) => node.parentAuxNodeId === parentId && node.name === name && node.id !== except,
+  const existing = snapshot.get(auxPath);
+  invariant(!existing || existing.path === exceptPath, "同路径辅助信息已存在。");
+}
+
+function currentLayerRoot(workspacePath: string, pointId: string | null) {
+  const root = layerRoot(workspacePath, pointId);
+  ensureDirSync(root);
+  return root;
+}
+
+function clearUpperNodeForWrite(root: string, auxPath: string) {
+  removeWhiteoutForPath(root, auxPath);
+  removePathSync(fsPathForAuxPath(root, auxPath));
+}
+
+function writeWhiteout(root: string, auxPath: string) {
+  const parentDir = fsPathForAuxPath(root, posix.dirname(auxPath));
+  ensureDirSync(parentDir);
+  clearUpperNodeForWrite(root, auxPath);
+  fs.writeFileSync(
+    path.join(parentDir, `${WHITEOUT_PREFIX}${posix.basename(auxPath)}`),
+    "",
+    "utf8",
   );
 }
 
-function addLayer(state: WorktreeState, layer: Omit<AuxLayerMetaRow, "id">) {
-  const row: AuxLayerMetaRow = { ...layer, id: createId("aux_layer") };
-  state.auxLayers.push(row);
-  return row;
+function materializeNode(worktreePath: string, pointId: string | null, node: OverlaySnapshotNode) {
+  const root = currentLayerRoot(worktreePath, pointId);
+  const targetPath = fsPathForAuxPath(root, node.path);
+  clearUpperNodeForWrite(root, node.path);
+  ensureDirSync(path.dirname(targetPath));
+  if (node.nodeType === "dir") {
+    writeKeepFile(targetPath);
+    return;
+  }
+  if (node.nodeType === "symlink") {
+    fs.symlinkSync(node.symlinkTargetPath ?? "/", targetPath);
+    return;
+  }
+  fs.writeFileSync(targetPath, node.content ?? "", "utf8");
+}
+
+function materializeSubtreeAt(input: {
+  worktreePath: string;
+  pointId: string | null;
+  snapshot: Map<string, OverlaySnapshotNode>;
+  sourcePath: string;
+  targetPath: string;
+}) {
+  const sourceNodes = sortedSnapshotNodes(input.snapshot).filter(
+    (node) => node.path === input.sourcePath || node.path.startsWith(`${input.sourcePath}/`),
+  );
+  for (const node of sourceNodes) {
+    const suffix = node.path.slice(input.sourcePath.length);
+    materializeNode(input.worktreePath, input.pointId, {
+      ...node,
+      path: `${input.targetPath}${suffix}`,
+      name: posix.basename(`${input.targetPath}${suffix}`),
+    });
+  }
 }
 
 export function mkdirAt(input: {
   workspaceId: string;
   timelinePointId?: TimelinePointRef;
-  parentDirId: string;
-  name: string;
+  path: string;
 }) {
   const { workspace, state, pointId, snapshot } = buildSnapshot(
     input.workspaceId,
     input.timelinePointId,
   );
-  const parent = snapshot.get(input.parentDirId);
-  invariant(parent?.nodeType === "root" || parent?.nodeType === "dir", "父节点不是文件夹。");
-  invariant(!findChildName(snapshot, input.parentDirId, input.name), "同名辅助信息已存在。");
-  const nodeId = createId("aux");
-  addLayer(state, {
-    auxNodeId: nodeId,
-    nodeType: "dir",
-    timelinePointId: pointId,
-    isDeleted: false,
-    parentAuxNodeId: input.parentDirId,
-    name: input.name,
-    contentPath: null,
-    symlinkTargetAuxNodeId: null,
-  });
-  writeWorktreeStateSync(workspace.worktreePath, state);
+  assertTimelinePoint(state, pointId);
+  const { normalizedPath, parentPath } = splitAuxPath(input.path, "创建辅助资料目录");
+  assertParentDir(snapshot, parentPath);
+  assertPathAvailable(snapshot, normalizedPath);
+  const root = currentLayerRoot(workspace.worktreePath, pointId);
+  const targetPath = fsPathForAuxPath(root, normalizedPath);
+  clearUpperNodeForWrite(root, normalizedPath);
+  writeKeepFile(targetPath);
   touchWorkspace(workspace.id);
-  return {
-    id: nodeId,
-    workspaceId: workspace.id,
-    nodeType: "dir",
-    createdAt: now(),
-    updatedAt: now(),
-  };
+  return { path: normalizedPath, workspaceId: workspace.id, nodeType: "dir" as const };
 }
 
 export function writeFileAt(input: {
   workspaceId: string;
   timelinePointId?: TimelinePointRef;
-  parentDirId?: string;
-  name?: string;
-  nodeId?: string;
+  path: string;
   content: string;
 }) {
-  const { workspace, state, pointId, snapshot } = buildSnapshot(
-    input.workspaceId,
-    input.timelinePointId,
-  );
-  let nodeId = input.nodeId;
-  let parentAuxNodeId: string;
-  let name: string;
-  if (nodeId) {
-    const existing = snapshot.get(nodeId);
-    invariant(existing?.nodeType === "file", "当前辅助信息不是文件，无法写入内容。");
-    parentAuxNodeId = existing.parentAuxNodeId!;
-    name = existing.name!;
-  } else {
-    invariant(input.parentDirId, "创建辅助文件时必须指定父文件夹。");
-    invariant(input.name, "创建辅助文件时必须填写名称。");
-    const parent = snapshot.get(input.parentDirId);
-    invariant(parent?.nodeType === "root" || parent?.nodeType === "dir", "父节点不是文件夹。");
-    invariant(!findChildName(snapshot, input.parentDirId, input.name), "同名辅助信息已存在。");
-    nodeId = createId("aux");
-    parentAuxNodeId = input.parentDirId;
-    name = input.name;
-  }
-  const layer = addLayer(state, {
-    auxNodeId: nodeId,
-    nodeType: "file",
-    timelinePointId: pointId,
-    isDeleted: false,
-    parentAuxNodeId,
-    name,
-    contentPath: null,
-    symlinkTargetAuxNodeId: null,
-  });
-  writeAuxContent(workspace.worktreePath, layer, input.content);
-  writeWorktreeStateSync(workspace.worktreePath, state);
+  const { workspace, pointId, snapshot } = buildSnapshot(input.workspaceId, input.timelinePointId);
+  const { normalizedPath, parentPath } = splitAuxPath(input.path, "写入辅助资料文件");
+  const existing = snapshot.get(normalizedPath);
+  invariant(!existing || existing.nodeType === "file", "目标路径不是文件。");
+  assertParentDir(snapshot, parentPath);
+  const root = currentLayerRoot(workspace.worktreePath, pointId);
+  const targetPath = fsPathForAuxPath(root, normalizedPath);
+  clearUpperNodeForWrite(root, normalizedPath);
+  ensureDirSync(path.dirname(targetPath));
+  fs.writeFileSync(targetPath, input.content, "utf8");
   touchWorkspace(workspace.id);
-  return {
-    id: nodeId,
-    workspaceId: workspace.id,
-    nodeType: "file",
-    createdAt: now(),
-    updatedAt: now(),
-  };
+  return { path: normalizedPath, workspaceId: workspace.id, nodeType: "file" as const };
 }
 
 export function linkAt(input: {
   workspaceId: string;
   timelinePointId?: TimelinePointRef;
-  parentDirId: string;
-  name: string;
-  targetNodeId: string;
+  path: string;
+  targetPath: string;
 }) {
-  const { workspace, state, pointId, snapshot } = buildSnapshot(
-    input.workspaceId,
-    input.timelinePointId,
-  );
-  invariant(snapshot.has(input.targetNodeId), "目标辅助信息不存在。");
-  invariant(!findChildName(snapshot, input.parentDirId, input.name), "同名辅助信息已存在。");
-  const nodeId = createId("aux");
-  addLayer(state, {
-    auxNodeId: nodeId,
-    nodeType: "symlink",
-    timelinePointId: pointId,
-    isDeleted: false,
-    parentAuxNodeId: input.parentDirId,
-    name: input.name,
-    contentPath: null,
-    symlinkTargetAuxNodeId: input.targetNodeId,
-  });
-  writeWorktreeStateSync(workspace.worktreePath, state);
+  const { workspace, pointId, snapshot } = buildSnapshot(input.workspaceId, input.timelinePointId);
+  const { normalizedPath, parentPath } = splitAuxPath(input.path, "创建辅助资料链接");
+  const normalizedTargetPath = normalizeAuxPath(input.targetPath, "创建辅助资料链接");
+  assertParentDir(snapshot, parentPath);
+  assertPathAvailable(snapshot, normalizedPath);
+  const root = currentLayerRoot(workspace.worktreePath, pointId);
+  const targetPath = fsPathForAuxPath(root, normalizedPath);
+  clearUpperNodeForWrite(root, normalizedPath);
+  ensureDirSync(path.dirname(targetPath));
+  fs.symlinkSync(normalizedTargetPath, targetPath);
   touchWorkspace(workspace.id);
   return {
-    id: nodeId,
+    path: normalizedPath,
     workspaceId: workspace.id,
-    nodeType: "symlink",
-    createdAt: now(),
-    updatedAt: now(),
+    nodeType: "symlink" as const,
   };
 }
 
 export function moveAuxNodeAt(input: {
   workspaceId: string;
   timelinePointId?: TimelinePointRef;
-  nodeId: string;
-  newParentDirId: string;
-  newName?: string | null;
+  path: string;
+  newPath: string;
 }) {
-  const { workspace, state, pointId, snapshot } = buildSnapshot(
-    input.workspaceId,
-    input.timelinePointId,
-  );
-  const existing = snapshot.get(input.nodeId);
+  const { workspace, pointId, snapshot } = buildSnapshot(input.workspaceId, input.timelinePointId);
+  const sourcePath = normalizeAuxPath(input.path, "移动辅助资料");
+  const { normalizedPath: targetPath, parentPath } = splitAuxPath(input.newPath, "移动辅助资料");
+  invariant(sourcePath !== targetPath, "目标路径不能与原路径相同。");
+  const existing = snapshot.get(sourcePath);
   invariant(existing, "辅助信息不存在。");
-  const name = input.newName ?? existing.name;
-  invariant(name, "名称不能为空。");
-  invariant(
-    !findChildName(snapshot, input.newParentDirId, name, input.nodeId),
-    "同名辅助信息已存在。",
-  );
-  const layer = addLayer(state, {
-    auxNodeId: existing.id,
-    nodeType: existing.nodeType as AuxLayerMetaRow["nodeType"],
-    timelinePointId: pointId,
-    isDeleted: false,
-    parentAuxNodeId: input.newParentDirId,
-    name,
-    contentPath: null,
-    symlinkTargetAuxNodeId: existing.symlinkTargetAuxNodeId,
+  invariant(!targetPath.startsWith(`${sourcePath}/`), "不能把目录移动到自身子目录中。");
+  assertParentDir(snapshot, parentPath);
+  assertPathAvailable(snapshot, targetPath, sourcePath);
+  materializeSubtreeAt({
+    worktreePath: workspace.worktreePath,
+    pointId,
+    snapshot,
+    sourcePath,
+    targetPath,
   });
-  writeAuxContent(workspace.worktreePath, layer, existing.content);
-  writeWorktreeStateSync(workspace.worktreePath, state);
+  writeWhiteout(currentLayerRoot(workspace.worktreePath, pointId), sourcePath);
   touchWorkspace(workspace.id);
   return {
-    id: existing.id,
+    path: targetPath,
+    previousPath: sourcePath,
     workspaceId: workspace.id,
     nodeType: existing.nodeType,
-    createdAt: now(),
-    updatedAt: now(),
   };
 }
 
 export function retargetAuxSymlinkAt(input: {
   workspaceId: string;
   timelinePointId?: TimelinePointRef;
-  symlinkNodeId: string;
-  targetNodeId: string;
+  path: string;
+  targetPath: string;
 }) {
-  const { workspace, state, pointId, snapshot } = buildSnapshot(
-    input.workspaceId,
-    input.timelinePointId,
-  );
-  const existing = snapshot.get(input.symlinkNodeId);
+  const { workspace, pointId, snapshot } = buildSnapshot(input.workspaceId, input.timelinePointId);
+  const normalizedPath = normalizeAuxPath(input.path, "重定向辅助资料链接");
+  const normalizedTargetPath = normalizeAuxPath(input.targetPath, "重定向辅助资料链接");
+  const existing = snapshot.get(normalizedPath);
   invariant(existing?.nodeType === "symlink", "当前辅助信息不是链接。");
-  invariant(snapshot.has(input.targetNodeId), "目标辅助信息不存在。");
-  addLayer(state, {
-    auxNodeId: existing.id,
-    nodeType: "symlink",
-    timelinePointId: pointId,
-    isDeleted: false,
-    parentAuxNodeId: existing.parentAuxNodeId,
-    name: existing.name,
-    contentPath: null,
-    symlinkTargetAuxNodeId: input.targetNodeId,
-  });
-  writeWorktreeStateSync(workspace.worktreePath, state);
+  const root = currentLayerRoot(workspace.worktreePath, pointId);
+  const targetPath = fsPathForAuxPath(root, normalizedPath);
+  clearUpperNodeForWrite(root, normalizedPath);
+  ensureDirSync(path.dirname(targetPath));
+  fs.symlinkSync(normalizedTargetPath, targetPath);
   touchWorkspace(workspace.id);
-  return {
-    id: existing.id,
-    workspaceId: workspace.id,
-    nodeType: "symlink",
-    createdAt: now(),
-    updatedAt: now(),
-  };
+  return { path: normalizedPath, workspaceId: workspace.id, nodeType: "symlink" as const };
 }
 
 export function deleteAuxNodeAt(input: {
   workspaceId: string;
   timelinePointId?: TimelinePointRef;
-  nodeId: string;
+  path: string;
 }) {
-  const { workspace, state, pointId, snapshot } = buildSnapshot(
-    input.workspaceId,
-    input.timelinePointId,
-  );
-  const existing = snapshot.get(input.nodeId);
-  invariant(existing, "辅助信息不存在。");
-  addLayer(state, {
-    auxNodeId: existing.id,
-    nodeType: existing.nodeType as AuxLayerMetaRow["nodeType"],
-    timelinePointId: pointId,
-    isDeleted: true,
-    parentAuxNodeId: existing.parentAuxNodeId,
-    name: existing.name,
-    contentPath: null,
-    symlinkTargetAuxNodeId: existing.symlinkTargetAuxNodeId,
-  });
-  writeWorktreeStateSync(workspace.worktreePath, state);
+  const { workspace, pointId, snapshot } = buildSnapshot(input.workspaceId, input.timelinePointId);
+  const normalizedPath = normalizeAuxPath(input.path, "删除辅助资料");
+  invariant(snapshot.has(normalizedPath), "辅助信息不存在。");
+  writeWhiteout(currentLayerRoot(workspace.worktreePath, pointId), normalizedPath);
   touchWorkspace(workspace.id);
-}
-
-export function restoreAuxNodeAt(input: {
-  workspaceId: string;
-  timelinePointId?: TimelinePointRef;
-  nodeId: string;
-}) {
-  const { workspace, state } = buildSnapshot(input.workspaceId, input.timelinePointId);
-  const latest = [...state.auxLayers]
-    .reverse()
-    .find((layer) => layer.auxNodeId === input.nodeId && layer.isDeleted);
-  invariant(latest, "未找到可恢复的辅助信息。");
-  state.auxLayers = state.auxLayers.filter((layer) => layer.id !== latest.id);
-  writeWorktreeStateSync(workspace.worktreePath, state);
-  touchWorkspace(workspace.id);
-}
-
-export function readAuxByIdAt(workspaceId: string, pointId: TimelinePointRef, nodeId: string) {
-  return buildSnapshot(workspaceId, pointId).snapshot.get(nodeId) ?? null;
 }
 
 export function readAuxByPathAt(
   workspaceId: string,
   pointId: TimelinePointRef,
-  path: string,
+  auxPath: string,
   _options?: { followSymlinks?: boolean },
 ) {
-  const normalized = path.startsWith("/") ? path : `/${path}`;
-  return (
-    [...buildSnapshot(workspaceId, pointId).snapshot.values()].find(
-      (node) => node.path === normalized,
-    ) ?? null
-  );
+  const normalized = normalizeAuxPath(auxPath, "读取辅助资料", { allowRoot: true });
+  if (normalized === "/") return null;
+  return buildSnapshot(workspaceId, pointId).snapshot.get(normalized) ?? null;
 }
 
 export function listAuxDirAt(
   workspaceId: string,
   pointId: TimelinePointRef,
-  input: { dirId?: string; path?: string } = {},
+  input: { path?: string } = {},
 ): AuxDirListTreeNode[] {
   const snapshot = buildSnapshot(workspaceId, pointId).snapshot;
-  const dir = input.dirId
-    ? snapshot.get(input.dirId)
-    : input.path
-      ? [...snapshot.values()].find((node) => node.path === input.path)
-      : [...snapshot.values()].find((node) => node.path === "/");
-  invariant(dir, "未找到辅助文件夹。");
-  const build = (parentId: string): AuxDirListTreeNode[] =>
-    [...snapshot.values()]
-      .filter((node) => node.parentAuxNodeId === parentId)
-      .sort((a, b) => a.path.localeCompare(b.path))
-      .map((node) => ({
-        nodeType: node.nodeType,
-        name: node.name,
-        path: node.path,
-        ...(node.symlinkTargetAuxNodeId
-          ? { symlinkTargetPath: snapshot.get(node.symlinkTargetAuxNodeId)?.path }
-          : {}),
-        children: node.nodeType === "dir" || node.nodeType === "root" ? build(node.id) : [],
-      }));
-  return build(dir.id);
+  const dirPath = input.path
+    ? normalizeAuxPath(input.path, "列出辅助资料目录", { allowRoot: true })
+    : "/";
+  const dir = dirPath === "/" ? null : snapshot.get(dirPath);
+  invariant(dirPath === "/" || dir?.nodeType === "dir", "未找到辅助文件夹。");
+  const build = (parentPath: string): AuxDirListTreeNode[] =>
+    childrenOf(snapshot, parentPath).map((node) => ({
+      nodeType: node.nodeType,
+      name: node.name,
+      path: node.path,
+      symlinkTargetPath: node.symlinkTargetPath ?? undefined,
+      children: node.nodeType === "dir" ? build(node.path) : [],
+    }));
+  return build(dirPath);
 }
 
 export function listAuxTreeAt(
   workspaceId: string,
   pointId: TimelinePointRef,
-  input: { dirId?: string; path?: string } = {},
-  _options: { depth?: number } = {},
+  input: { path?: string } = {},
+  options: { depth?: number } = {},
 ) {
-  return { nodes: listAuxDirAt(workspaceId, pointId, input), truncated: false };
+  const depth = Math.max(1, Math.trunc(options.depth ?? Number.POSITIVE_INFINITY));
+  const trimDepth = (nodes: AuxDirListTreeNode[], currentDepth: number): AuxDirListTreeNode[] =>
+    nodes.map((node) => {
+      const children =
+        currentDepth >= depth
+          ? node.children.length > 0
+            ? []
+            : node.children
+          : trimDepth(node.children, currentDepth + 1);
+      return {
+        ...node,
+        children,
+        ...(currentDepth >= depth && node.children.length > 0
+          ? { hiddenChildrenCount: node.children.length }
+          : {}),
+      };
+    });
+  return { nodes: trimDepth(listAuxDirAt(workspaceId, pointId, input), 1), truncated: false };
 }
 
 export function exportAuxSnapshotTree(
   workspaceId: string,
   pointId?: TimelinePointRef,
 ): ExportedAuxSnapshotTree {
-  const { workspace, snapshot } = buildSnapshot(workspaceId, pointId);
-  const build = (parentId: string): ExportedAuxSnapshotTree["nodes"] =>
-    [...snapshot.values()]
-      .filter((node) => node.parentAuxNodeId === parentId)
-      .sort((a, b) => a.path.localeCompare(b.path))
-      .map((node) => ({
-        id: node.id,
-        nodeType: node.nodeType,
-        parentAuxNodeId: node.parentAuxNodeId,
-        name: node.name,
-        content: node.content,
-        symlinkTargetAuxNodeId: node.symlinkTargetAuxNodeId,
-        symlinkTargetPath: node.symlinkTargetAuxNodeId
-          ? (snapshot.get(node.symlinkTargetAuxNodeId)?.path ?? null)
-          : null,
-        timelinePointId: node.timelinePointId,
-        path: node.path,
-        hasTimelineChange: node.timelinePointId !== ORIGIN_TIMELINE_POINT_ID,
-        isDeleted: false,
-        children: build(node.id),
-      }));
+  const { snapshot } = buildSnapshot(workspaceId, pointId);
+  const build = (parentPath: string): ExportedAuxNode[] =>
+    childrenOf(snapshot, parentPath).map((node) => ({
+      nodeType: node.nodeType,
+      name: node.name,
+      content: node.nodeType === "file" ? node.content : null,
+      symlinkTargetPath: node.symlinkTargetPath,
+      timelinePointId: node.timelinePointId,
+      path: node.path,
+      hasTimelineChange: node.timelinePointId !== ORIGIN_TIMELINE_POINT_ID,
+      children: node.nodeType === "dir" ? build(node.path) : [],
+    }));
   return {
-    rootNodeId: workspace.auxRootId,
+    rootPath: "/",
     timelinePointId: pointIdOrOrigin(normalizePointId(pointId)),
-    nodes: build(workspace.auxRootId),
+    nodes: build("/"),
+  };
+}
+
+function comparableNode(node: OverlaySnapshotNode | undefined) {
+  if (!node) return null;
+  return {
+    nodeType: node.nodeType,
+    content: node.nodeType === "file" ? node.content : null,
+    symlinkTargetPath: node.symlinkTargetPath,
   };
 }
 
@@ -447,57 +573,60 @@ export function listAuxTimelineChangesAt(
   pointId: TimelinePointRef,
 ): AuxTimelineChangeView[] {
   const current = buildSnapshot(workspaceId, pointId).snapshot;
-  const previousPointId = normalizePointId(pointId);
+  const normalizedPointId = normalizePointId(pointId);
   const workspace = getWorkspace(workspaceId);
   const state = readWorktreeState(workspace.worktreePath);
-  const point = previousPointId ? state.timeline.find((item) => item.id === previousPointId) : null;
+  const point = normalizedPointId
+    ? orderTimelineRows(state.timeline).find((item) => item.id === normalizedPointId)
+    : null;
   const previous = buildSnapshot(workspaceId, point?.prevPointId ?? null).snapshot;
-  const ids = new Set([...current.keys(), ...previous.keys()]);
-  ids.delete(workspace.auxRootId);
+  const paths = [...new Set([...current.keys(), ...previous.keys()])].sort((a, b) =>
+    a.localeCompare(b),
+  );
   const changes: AuxTimelineChangeView[] = [];
-  for (const id of ids) {
-    const before = previous.get(id);
-    const after = current.get(id);
+  for (const auxPath of paths) {
+    const before = previous.get(auxPath);
+    const after = current.get(auxPath);
     if (after && !before) {
       changes.push({
         kind: "added",
-        nodeId: id,
         nodeType: after.nodeType,
         path: after.path,
         previousPath: null,
-        symlinkTargetPath: null,
+        symlinkTargetPath: after.symlinkTargetPath,
         previousSymlinkTargetPath: null,
         changedAspects: [],
-        isDeleted: false,
       });
       continue;
     }
     if (before && !after) {
       changes.push({
         kind: "deleted",
-        nodeId: id,
         nodeType: before.nodeType,
         path: before.path,
         previousPath: null,
         symlinkTargetPath: null,
-        previousSymlinkTargetPath: null,
+        previousSymlinkTargetPath: before.symlinkTargetPath,
         changedAspects: [],
-        isDeleted: true,
       });
       continue;
     }
-    if (before && after && JSON.stringify(before) !== JSON.stringify(after)) {
-      changes.push({
-        kind: "modified",
-        nodeId: id,
-        nodeType: after.nodeType,
-        path: after.path,
-        previousPath: before.path === after.path ? null : before.path,
-        symlinkTargetPath: null,
-        previousSymlinkTargetPath: null,
-        changedAspects: ["content"],
-        isDeleted: false,
-      });
+    if (before && after) {
+      const aspects: AuxTimelineModifiedAspect[] = [];
+      if (before.nodeType !== after.nodeType) aspects.push("node_type");
+      if (before.content !== after.content) aspects.push("content");
+      if (before.symlinkTargetPath !== after.symlinkTargetPath) aspects.push("symlink_target");
+      if (JSON.stringify(comparableNode(before)) !== JSON.stringify(comparableNode(after))) {
+        changes.push({
+          kind: "modified",
+          nodeType: after.nodeType,
+          path: after.path,
+          previousPath: null,
+          symlinkTargetPath: after.symlinkTargetPath,
+          previousSymlinkTargetPath: before.symlinkTargetPath,
+          changedAspects: aspects.length > 0 ? aspects : ["content"],
+        });
+      }
     }
   }
   return changes;
@@ -506,7 +635,7 @@ export function listAuxTimelineChangesAt(
 export function listAuxChangesAt(workspaceId: string, pointId: TimelinePointRef) {
   return listAuxTimelineChangesAt(workspaceId, pointId).map((change) => ({
     path: change.path,
-    isDeleted: change.isDeleted ?? change.kind === "deleted",
+    isDeleted: change.kind === "deleted",
   }));
 }
 

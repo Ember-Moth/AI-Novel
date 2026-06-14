@@ -242,7 +242,6 @@ export interface ProjectAssistantContextSnapshot {
   workspaceId: string | null;
   activeContentNodeId: string | null;
   activeContentTitle: string | null;
-  activeAuxNodeId: string | null;
   activeAuxPath: string | null;
   activeTimelinePointId: string | null;
   activeTimelineLabel: string | null;
@@ -448,7 +447,7 @@ export interface WorkspaceRefreshRequestedEvent {
   workspaceId: string;
   areas: readonly WorkspaceRefreshArea[];
   contentNodeId?: string | null;
-  auxNodeId?: string | null;
+  auxPath?: string | null;
   timelinePointId?: string | null;
 }
 

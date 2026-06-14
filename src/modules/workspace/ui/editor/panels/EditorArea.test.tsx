@@ -7,15 +7,13 @@ import { EditorArea } from "./EditorArea";
 
 function createAuxNode(overrides: Partial<AuxTreeNodeVM> = {}): AuxTreeNodeVM {
   return {
-    id: "source_link",
+    id: "/索引/角色入口",
     nodeType: "symlink",
     name: "角色入口",
     content: "",
     path: "/索引/角色入口",
-    symlinkTargetAuxNodeId: "target_file",
     symlinkTargetPath: "/设定/角色.md",
     hasTimelineChange: false,
-    isDeleted: false,
     children: [],
     ...overrides,
   };

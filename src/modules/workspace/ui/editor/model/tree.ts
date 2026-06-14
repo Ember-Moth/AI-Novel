@@ -313,10 +313,10 @@ export function collectAuxSubtreeIds(root: AuxTreeNodeVM): Set<string> {
 export function wouldRetargetAuxSymlinkCreateCycle(
   nodeMap: ReadonlyMap<string, AuxTreeNodeVM>,
   sourceSymlinkId: string,
-  targetNodeId: string,
+  targetPath: string,
 ) {
   const seen = new Set<string>();
-  let current = nodeMap.get(targetNodeId) ?? null;
+  let current = nodeMap.get(targetPath) ?? null;
 
   while (current) {
     if (current.id === sourceSymlinkId || seen.has(current.id)) {
@@ -324,10 +324,10 @@ export function wouldRetargetAuxSymlinkCreateCycle(
     }
 
     seen.add(current.id);
-    if (current.nodeType !== "symlink" || !current.symlinkTargetAuxNodeId) {
+    if (current.nodeType !== "symlink" || !current.symlinkTargetPath) {
       return false;
     }
-    current = nodeMap.get(current.symlinkTargetAuxNodeId) ?? null;
+    current = nodeMap.get(current.symlinkTargetPath) ?? null;
   }
 
   return false;
@@ -351,35 +351,35 @@ export function collectInvalidAuxSymlinkTargetIds(
 export function resolveAuxHierarchyMove({
   parentMap,
   nodeMap,
-  auxRootId,
+  auxRootPath,
   nodeId,
   targetId,
 }: {
   parentMap: ReadonlyMap<string, string | null>;
   nodeMap: ReadonlyMap<string, AuxTreeNodeVM>;
-  auxRootId: string | null;
+  auxRootPath: string | null;
   nodeId: string;
   targetId: string | null;
 }): ResolvedAuxHierarchyMove | null {
-  if (!auxRootId) {
+  if (!auxRootPath) {
     return null;
   }
 
   const node = nodeMap.get(nodeId);
-  if (!node || node.isDeleted) {
+  if (!node) {
     return null;
   }
 
-  const currentParentId = parentMap.get(nodeId) ?? auxRootId;
+  const currentParentId = parentMap.get(nodeId) ?? auxRootPath;
 
   if (targetId === null) {
-    if (currentParentId === auxRootId) {
+    if (currentParentId === auxRootPath) {
       return null;
     }
 
     return {
       nodeId,
-      newParentId: auxRootId,
+      newParentId: auxRootPath,
     };
   }
 
@@ -388,7 +388,7 @@ export function resolveAuxHierarchyMove({
   }
 
   const target = nodeMap.get(targetId);
-  if (!target || target.isDeleted) {
+  if (!target) {
     return null;
   }
 
@@ -401,7 +401,7 @@ export function resolveAuxHierarchyMove({
   if (target.nodeType === "dir") {
     newParentId = target.id;
   } else {
-    newParentId = parentMap.get(target.id) ?? auxRootId;
+    newParentId = parentMap.get(target.id) ?? auxRootPath;
   }
 
   if (!newParentId || newParentId === currentParentId || subtreeIds.has(newParentId)) {
@@ -418,9 +418,9 @@ export function listAuxSiblings(
   tree: AuxTreeNodeVM[],
   nodeMap: ReadonlyMap<string, AuxTreeNodeVM>,
   parentId: string,
-  auxRootId: string | null,
+  auxRootPath: string | null,
 ): AuxTreeNodeVM[] {
-  if (auxRootId && parentId === auxRootId) {
+  if (auxRootPath && parentId === auxRootPath) {
     return tree;
   }
 
@@ -459,14 +459,14 @@ export function getAuxRenameValidationError({
   tree,
   nodeMap,
   parentMap,
-  auxRootId,
+  auxRootPath,
   nodeId,
   name,
 }: {
   tree: AuxTreeNodeVM[];
   nodeMap: ReadonlyMap<string, AuxTreeNodeVM>;
   parentMap: ReadonlyMap<string, string | null>;
-  auxRootId: string | null;
+  auxRootPath: string | null;
   nodeId: string;
   name: string;
 }) {
@@ -475,13 +475,13 @@ export function getAuxRenameValidationError({
     return "无法重命名辅助信息：辅助信息名称不能为空。请输入名称后再保存。";
   }
 
-  const parentId = parentMap.get(nodeId) ?? auxRootId;
+  const parentId = parentMap.get(nodeId) ?? auxRootPath;
   if (!parentId) {
     return null;
   }
 
-  const conflict = listAuxSiblings(tree, nodeMap, parentId, auxRootId).find(
-    (node) => node.id !== nodeId && node.name.trim() === normalizedName && !node.isDeleted,
+  const conflict = listAuxSiblings(tree, nodeMap, parentId, auxRootPath).find(
+    (node) => node.id !== nodeId && node.name.trim() === normalizedName,
   );
   if (!conflict) {
     return null;

@@ -164,29 +164,6 @@ export function EditorArea({
   }
 
   if (target === "aux" && auxNode) {
-    if (auxNode.isDeleted) {
-      const title =
-        auxNode.nodeType === "symlink" && auxNode.symlinkTargetPath
-          ? `${auxNode.path} → ${auxNode.symlinkTargetPath}`
-          : auxNode.path;
-
-      return (
-        <div className="flex h-full flex-col">
-          <div className={EDITOR_HEADER_CLASS}>
-            <AuxNodeIcon nodeType={auxNode.nodeType} />
-            <span className="min-w-0 truncate text-[14px] text-red-300">{title}</span>
-            <PendingStatus isPending={auxPending} />
-            <span className={`${auxPending ? "" : "ml-auto"}${TIMELINE_LABEL_CLASS}`}>
-              时间点: {timelineLabel}
-            </span>
-          </div>
-          <div className="flex flex-1 items-center justify-center px-4 text-sm text-foreground-muted">
-            该辅助信息已在当前时间点删除，需要恢复后才可以编辑
-          </div>
-        </div>
-      );
-    }
-
     if (auxNode.nodeType === "file") {
       return (
         <AutoTransition as="div" className="flex h-full flex-col">

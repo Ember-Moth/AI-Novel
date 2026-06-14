@@ -59,6 +59,14 @@ async function removeWorktreeGitFile(dir: string) {
   await fs.promises.rm(path.join(dir, ".git"), { force: true });
 }
 
+async function clearVersionedWorktreeFiles(dir: string) {
+  await Promise.all(
+    ["novel-evolver", "manuscript", "aux"].map((entry) =>
+      fs.promises.rm(path.join(dir, entry), { recursive: true, force: true }),
+    ),
+  );
+}
+
 export async function ensureWorktree(projectId: string, workspaceId: string) {
   const dir = getProjectWorktreeDir(projectId, workspaceId);
   await fs.promises.mkdir(dir, { recursive: true });
@@ -104,6 +112,7 @@ export async function checkoutRefToWorktree(input: {
   return withProjectLock(input.projectId, async () => {
     const gitdir = await ensureProjectRepo(input.projectId);
     const dir = await ensureWorktree(input.projectId, input.workspaceId);
+    await clearVersionedWorktreeFiles(dir);
     await git.checkout({ fs, dir, gitdir, ref: input.ref, force: true });
     await removeWorktreeGitFile(dir);
   });
@@ -117,6 +126,7 @@ export async function checkoutCommitToWorktree(input: {
   return withProjectLock(input.projectId, async () => {
     const gitdir = await ensureProjectRepo(input.projectId);
     const dir = await ensureWorktree(input.projectId, input.workspaceId);
+    await clearVersionedWorktreeFiles(dir);
     await git.checkout({ fs, dir, gitdir, ref: input.commitId, force: true });
     await removeWorktreeGitFile(dir);
   });

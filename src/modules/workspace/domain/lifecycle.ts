@@ -119,11 +119,10 @@ export async function createWorkspaceForBranch(branchId: string, name?: string) 
   const timestamp = now();
   const workspaceId = createId("workspace");
   let contentRootId = createId("content");
-  let auxRootId = createId("aux");
   const worktreePath = getProjectWorktreeDir(branch.projectId, workspaceId);
 
   mkdirSync(worktreePath, { recursive: true });
-  seedEmptyWorktree(worktreePath, { contentRootId, auxRootId });
+  seedEmptyWorktree(worktreePath, { contentRootId });
   if (branch.headCommitId) {
     await checkoutCommitToWorktree({
       projectId: branch.projectId,
@@ -132,10 +131,6 @@ export async function createWorkspaceForBranch(branchId: string, name?: string) 
     });
     const restored = readWorktreeState(worktreePath);
     contentRootId = restored.content.find((node) => node.parentId === null)?.id ?? contentRootId;
-    auxRootId =
-      restored.auxLayers.find(
-        (layer) => layer.nodeType === "root" && layer.timelinePointId === null,
-      )?.auxNodeId ?? auxRootId;
   }
 
   db.insert(schema.workspaces)
@@ -146,7 +141,6 @@ export async function createWorkspaceForBranch(branchId: string, name?: string) 
       name: name ?? branch.name,
       worktreePath,
       contentRootId,
-      auxRootId,
       createdAt: timestamp,
       updatedAt: timestamp,
     } as typeof schema.workspaces.$inferInsert)
@@ -163,10 +157,9 @@ export function createDefaultWorkspace(projectId: string, name = "main") {
     .run();
   const workspaceId = createId("workspace");
   const contentRootId = createId("content");
-  const auxRootId = createId("aux");
   const worktreePath = getProjectWorktreeDir(projectId, workspaceId);
   mkdirSync(worktreePath, { recursive: true });
-  seedEmptyWorktree(worktreePath, { contentRootId, auxRootId });
+  seedEmptyWorktree(worktreePath, { contentRootId });
   const timestamp = now();
   db.insert(schema.workspaces)
     .values({
@@ -176,7 +169,6 @@ export function createDefaultWorkspace(projectId: string, name = "main") {
       name,
       worktreePath,
       contentRootId,
-      auxRootId,
       createdAt: timestamp,
       updatedAt: timestamp,
     } as typeof schema.workspaces.$inferInsert)

@@ -136,16 +136,15 @@ test("resolveContentCreateSiblingPlacement appends to the top level when nothing
 });
 
 function auxNode(name: string): AuxTreeNodeVM {
+  const auxPath = name.startsWith("/") ? name : `/${name}`;
   return {
-    id: name,
+    id: auxPath,
     nodeType: "file",
     name,
     content: "",
-    path: `/${name}`,
-    symlinkTargetAuxNodeId: null,
+    path: auxPath,
     symlinkTargetPath: null,
     hasTimelineChange: false,
-    isDeleted: false,
     children: [],
   };
 }
@@ -155,16 +154,14 @@ function rawAuxNode(
   overrides: Partial<RawAuxTreeNode> = {},
   children: RawAuxTreeNode[] = [],
 ): RawAuxTreeNode {
+  const auxPath = id.startsWith("/") ? id : `/${id}`;
   return {
-    id,
     nodeType: "file",
     name: id,
     content: "",
-    path: `/${id}`,
-    symlinkTargetAuxNodeId: null,
+    path: auxPath,
     symlinkTargetPath: null,
     hasTimelineChange: false,
-    isDeleted: false,
     children,
     ...overrides,
   };
@@ -175,7 +172,7 @@ function resolveAux(nodes: RawAuxTreeNode[], nodeId: string, targetId: string | 
   return resolveAuxHierarchyMove({
     parentMap: state.parentMap,
     nodeMap: state.nodeMap,
-    auxRootId: "aux_root",
+    auxRootPath: "/",
     nodeId,
     targetId,
   });
@@ -221,92 +218,88 @@ test("collectAuxSubtreeIds includes descendants", () => {
     children: [{ ...auxNode("child"), children: [auxNode("leaf")] }],
   };
 
-  expect([...collectAuxSubtreeIds(root)]).toEqual(["dir", "child", "leaf"]);
+  expect([...collectAuxSubtreeIds(root)]).toEqual(["/dir", "/child", "/leaf"]);
 });
 
 test("collectInvalidAuxSymlinkTargetIds marks self and indirect cycles as invalid", () => {
   const state = buildAuxTreeState([
     rawAuxNode("source_link", {
       nodeType: "symlink",
-      symlinkTargetAuxNodeId: "target_file",
       symlinkTargetPath: "/target_file",
     }),
     rawAuxNode("target_file"),
     rawAuxNode("safe_link", {
       nodeType: "symlink",
-      symlinkTargetAuxNodeId: "target_file",
       symlinkTargetPath: "/target_file",
     }),
     rawAuxNode("loop_a", {
       nodeType: "symlink",
-      symlinkTargetAuxNodeId: "loop_b",
       symlinkTargetPath: "/loop_b",
     }),
     rawAuxNode("loop_b", {
       nodeType: "symlink",
-      symlinkTargetAuxNodeId: "source_link",
       symlinkTargetPath: "/source_link",
     }),
   ]);
 
-  expect(collectInvalidAuxSymlinkTargetIds(state.nodeMap, "source_link")).toEqual(
-    new Set(["source_link", "loop_a", "loop_b"]),
+  expect(collectInvalidAuxSymlinkTargetIds(state.nodeMap, "/source_link")).toEqual(
+    new Set(["/source_link", "/loop_a", "/loop_b"]),
   );
 });
 
 test("resolveAuxHierarchyMove moves into a hovered directory", () => {
   const move = resolveAux(
     [rawAuxNode("source"), rawAuxNode("dir", { nodeType: "dir" })],
-    "source",
-    "dir",
+    "/source",
+    "/dir",
   );
 
   expect(move).toEqual({
-    nodeId: "source",
-    newParentId: "dir",
+    nodeId: "/source",
+    newParentId: "/dir",
   });
 });
 
 test("resolveAuxHierarchyMove maps a hovered file to its parent directory", () => {
   const move = resolveAux(
     [rawAuxNode("source"), rawAuxNode("dir", { nodeType: "dir" }, [rawAuxNode("file")])],
-    "source",
-    "file",
+    "/source",
+    "/file",
   );
 
   expect(move).toEqual({
-    nodeId: "source",
-    newParentId: "dir",
+    nodeId: "/source",
+    newParentId: "/dir",
   });
 });
 
 test("resolveAuxHierarchyMove maps a hovered top-level file to root", () => {
   const move = resolveAux(
     [rawAuxNode("dir", { nodeType: "dir" }, [rawAuxNode("source")]), rawAuxNode("file")],
-    "source",
-    "file",
+    "/source",
+    "/file",
   );
 
   expect(move).toEqual({
-    nodeId: "source",
-    newParentId: "aux_root",
+    nodeId: "/source",
+    newParentId: "/",
   });
 });
 
 test("resolveAuxHierarchyMove still returns null for top-level no-op moves", () => {
-  expect(resolveAux([rawAuxNode("source"), rawAuxNode("file")], "source", "file")).toBeNull();
+  expect(resolveAux([rawAuxNode("source"), rawAuxNode("file")], "/source", "/file")).toBeNull();
 });
 
 test("resolveAuxHierarchyMove maps a blank-area drop to the root", () => {
   const move = resolveAux(
     [rawAuxNode("dir", { nodeType: "dir" }, [rawAuxNode("source")])],
-    "source",
+    "/source",
     null,
   );
 
   expect(move).toEqual({
-    nodeId: "source",
-    newParentId: "aux_root",
+    nodeId: "/source",
+    newParentId: "/",
   });
 });
 
@@ -314,8 +307,8 @@ test("resolveAuxHierarchyMove returns null for same-parent moves", () => {
   expect(
     resolveAux(
       [rawAuxNode("dir", { nodeType: "dir" }, [rawAuxNode("source"), rawAuxNode("file")])],
-      "source",
-      "file",
+      "/source",
+      "/file",
     ),
   ).toBeNull();
 });
@@ -328,17 +321,7 @@ test("resolveAuxHierarchyMove rejects moving into itself or its subtree", () => 
     rawAuxNode("sibling"),
   ];
 
-  expect(resolveAux(nodes, "dir", "dir")).toBeNull();
-  expect(resolveAux(nodes, "dir", "child-dir")).toBeNull();
-  expect(resolveAux(nodes, "dir", "leaf")).toBeNull();
-});
-
-test("resolveAuxHierarchyMove rejects deleted targets", () => {
-  expect(
-    resolveAux(
-      [rawAuxNode("source"), rawAuxNode("deleted-dir", { nodeType: "dir", isDeleted: true })],
-      "source",
-      "deleted-dir",
-    ),
-  ).toBeNull();
+  expect(resolveAux(nodes, "/dir", "/dir")).toBeNull();
+  expect(resolveAux(nodes, "/dir", "/child-dir")).toBeNull();
+  expect(resolveAux(nodes, "/dir", "/leaf")).toBeNull();
 });

@@ -137,8 +137,8 @@ test("delete project cascades content anchored to timeline points", async () => 
   expect(existsSync(getProjectWorktreeRoot("project_delete_content_anchor"))).toBe(false);
 });
 
-test("delete project cascades aux layers", async () => {
-  const workspace = seedProject("project_delete_aux_layers");
+test("delete project cascades aux overlay files", async () => {
+  const workspace = seedProject("project_delete_aux_overlay");
   const point = workspaceService.createTimelinePoint({
     workspaceId: workspace.id,
     label: "Act I",
@@ -146,13 +146,12 @@ test("delete project cascades aux layers", async () => {
   auxService.writeFileAt({
     workspaceId: workspace.id,
     timelinePointId: point.id,
-    parentDirId: workspace.auxRootId!,
-    name: "notes.md",
+    path: "/notes.md",
     content: "outline",
   });
 
-  await expect(deleteProject("project_delete_aux_layers")).resolves.toBeDefined();
+  await expect(deleteProject("project_delete_aux_overlay")).resolves.toBeDefined();
   expect(projectIndexCounts()).toEqual({ projects: 0, branches: 0, workspaces: 0 });
-  expect(existsSync(getProjectRepoGitDir("project_delete_aux_layers"))).toBe(false);
-  expect(existsSync(getProjectWorktreeRoot("project_delete_aux_layers"))).toBe(false);
+  expect(existsSync(getProjectRepoGitDir("project_delete_aux_overlay"))).toBe(false);
+  expect(existsSync(getProjectWorktreeRoot("project_delete_aux_overlay"))).toBe(false);
 });

@@ -10,10 +10,8 @@ import {
   normalizeTimelinePointId,
   moveAuxNodeAt,
   ORIGIN_TIMELINE_POINT_ID,
-  readAuxByIdAt,
   readAuxByPathAt,
   retargetAuxSymlinkAt,
-  restoreAuxNodeAt,
   writeFileAt,
 } from "@/modules/workspace/domain";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
@@ -76,22 +74,6 @@ export const deleteMutation = mutation<Parameters<typeof deleteAuxNodeAt>[0], vo
   },
 });
 
-export const restore = mutation<Parameters<typeof restoreAuxNodeAt>[0], void, RpcTagList>({
-  invalidate: (input) => [rpcTags.auxWorkspace(input.workspaceId)],
-  handler: (input) => {
-    restoreAuxNodeAt(input);
-  },
-});
-
-export const readById = query<
-  { workspaceId: string; pointId?: string | typeof ORIGIN_TIMELINE_POINT_ID; nodeId: string },
-  ReturnType<typeof readAuxByIdAt>,
-  RpcTagList
->({
-  watch: auxSnapshotTags,
-  handler: ({ workspaceId, pointId, nodeId }) => readAuxByIdAt(workspaceId, pointId, nodeId),
-});
-
 export const readByPath = query<
   { workspaceId: string; pointId?: string | typeof ORIGIN_TIMELINE_POINT_ID; path: string },
   ReturnType<typeof readAuxByPathAt>,
@@ -105,15 +87,13 @@ export const listDir = query<
   {
     workspaceId: string;
     pointId?: string | typeof ORIGIN_TIMELINE_POINT_ID;
-    dirId?: string;
     path?: string;
   },
   ReturnType<typeof listAuxDirAt>,
   RpcTagList
 >({
   watch: auxSnapshotTags,
-  handler: ({ workspaceId, pointId, dirId, path }) =>
-    listAuxDirAt(workspaceId, pointId, { dirId, path }),
+  handler: ({ workspaceId, pointId, path }) => listAuxDirAt(workspaceId, pointId, { path }),
 });
 
 export const snapshotTree = query<

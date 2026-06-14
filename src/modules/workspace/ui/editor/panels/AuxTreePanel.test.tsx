@@ -12,11 +12,9 @@ function createAuxNode(overrides: Partial<AuxTreeNodeVM> & Pick<AuxTreeNodeVM, "
     nodeType: "file",
     name,
     content: "",
-    path: `/${name}`,
-    symlinkTargetAuxNodeId: null,
+    path: id,
     symlinkTargetPath: null,
     hasTimelineChange: false,
-    isDeleted: false,
     children: [],
     ...rest,
   } satisfies AuxTreeNodeVM;
@@ -30,21 +28,20 @@ const inactiveSymlinkTargetPicker = {
   onPickTarget: () => {},
 };
 
-test("AuxTreePanel renders create-symlink actions for non-deleted entries only", () => {
+test("AuxTreePanel renders create-symlink actions for visible entries", () => {
   const html = renderToStaticMarkup(
     <AuxTreePanel
       tree={[
-        createAuxNode({ id: "dir_1", name: "设定", nodeType: "dir" }),
-        createAuxNode({ id: "file_1", name: "notes.md" }),
+        createAuxNode({ id: "/设定", name: "设定", nodeType: "dir" }),
+        createAuxNode({ id: "/notes.md", name: "notes.md" }),
         createAuxNode({
-          id: "symlink_1",
+          id: "/索引/角色入口",
           name: "角色入口",
           nodeType: "symlink",
           symlinkTargetPath: "/设定/角色.md",
         }),
-        createAuxNode({ id: "deleted_1", name: "旧资料", isDeleted: true }),
       ]}
-      rootId="aux_root"
+      rootId="/"
       expandedIds={new Set()}
       onToggle={() => {}}
       activeId={null}
@@ -56,7 +53,6 @@ test("AuxTreePanel renders create-symlink actions for non-deleted entries only",
       onStartRetargetSymlink={() => {}}
       onMove={() => {}}
       onDelete={() => {}}
-      onRestore={() => {}}
       symlinkTargetPicker={inactiveSymlinkTargetPicker}
       isBusy={false}
       isPending={false}
@@ -64,23 +60,21 @@ test("AuxTreePanel renders create-symlink actions for non-deleted entries only",
     />,
   );
 
-  expect(html).toContain('data-action-anchor="aux:create-symlink:dir_1"');
-  expect(html).toContain('data-action-anchor="aux:create-symlink:file_1"');
-  expect(html).toContain('data-action-anchor="aux:create-symlink:symlink_1"');
-  expect(html).toContain('data-action-anchor="aux:retarget-symlink:symlink_1"');
-  expect(html).not.toContain('data-action-anchor="aux:retarget-symlink:file_1"');
-  expect(html).not.toContain('data-action-anchor="aux:create-symlink:deleted_1"');
+  expect(html).toContain('data-action-anchor="aux:create-symlink:/设定"');
+  expect(html).toContain('data-action-anchor="aux:create-symlink:/notes.md"');
+  expect(html).toContain('data-action-anchor="aux:create-symlink:/索引/角色入口"');
+  expect(html).toContain('data-action-anchor="aux:retarget-symlink:/索引/角色入口"');
+  expect(html).not.toContain('data-action-anchor="aux:retarget-symlink:/notes.md"');
 });
 
-test("AuxTreePanel exposes drag handles for non-deleted entries only", () => {
+test("AuxTreePanel exposes drag handles for visible entries", () => {
   const html = renderToStaticMarkup(
     <AuxTreePanel
       tree={[
-        createAuxNode({ id: "dir_1", name: "设定", nodeType: "dir" }),
-        createAuxNode({ id: "file_1", name: "notes.md" }),
-        createAuxNode({ id: "deleted_1", name: "旧资料", isDeleted: true }),
+        createAuxNode({ id: "/设定", name: "设定", nodeType: "dir" }),
+        createAuxNode({ id: "/notes.md", name: "notes.md" }),
       ]}
-      rootId="aux_root"
+      rootId="/"
       expandedIds={new Set()}
       onToggle={() => {}}
       activeId={null}
@@ -92,7 +86,6 @@ test("AuxTreePanel exposes drag handles for non-deleted entries only", () => {
       onStartRetargetSymlink={() => {}}
       onMove={() => {}}
       onDelete={() => {}}
-      onRestore={() => {}}
       symlinkTargetPicker={inactiveSymlinkTargetPicker}
       isBusy={false}
       isPending={false}
@@ -100,10 +93,9 @@ test("AuxTreePanel exposes drag handles for non-deleted entries only", () => {
     />,
   );
 
-  expect(html).toContain('data-drag-handle="dir_1"');
-  expect(html).toContain('data-drag-handle="file_1"');
+  expect(html).toContain('data-drag-handle="/设定"');
+  expect(html).toContain('data-drag-handle="/notes.md"');
   expect(html).toContain('data-inline-edit-hit-area="label"');
-  expect(html).not.toContain('data-drag-handle="deleted_1"');
 });
 
 test("AuxTreePanel hides row actions and marks target picker states while retargeting", () => {
@@ -111,25 +103,23 @@ test("AuxTreePanel hides row actions and marks target picker states while retarg
     <AuxTreePanel
       tree={[
         createAuxNode({
-          id: "source_link",
+          id: "/索引/角色入口",
           name: "角色入口",
           nodeType: "symlink",
-          symlinkTargetAuxNodeId: "current_target",
           symlinkTargetPath: "/设定/角色.md",
         }),
-        createAuxNode({ id: "current_target", name: "角色.md" }),
+        createAuxNode({ id: "/设定/角色.md", name: "角色.md" }),
         createAuxNode({
-          id: "invalid_link",
+          id: "/索引/循环入口",
           name: "循环入口",
           nodeType: "symlink",
-          symlinkTargetAuxNodeId: "source_link",
           symlinkTargetPath: "/角色入口",
         }),
       ]}
-      rootId="aux_root"
+      rootId="/"
       expandedIds={new Set()}
       onToggle={() => {}}
-      activeId="source_link"
+      activeId="/索引/角色入口"
       onSelect={() => {}}
       onRename={async () => true}
       onCreateChildDir={() => {}}
@@ -138,12 +128,11 @@ test("AuxTreePanel hides row actions and marks target picker states while retarg
       onStartRetargetSymlink={() => {}}
       onMove={() => {}}
       onDelete={() => {}}
-      onRestore={() => {}}
       symlinkTargetPicker={{
         active: true,
-        sourceNodeId: "source_link",
-        selectedTargetNodeId: "current_target",
-        invalidTargetNodeIds: new Set(["source_link", "invalid_link"]),
+        sourceNodeId: "/索引/角色入口",
+        selectedTargetNodeId: "/设定/角色.md",
+        invalidTargetNodeIds: new Set(["/索引/角色入口", "/索引/循环入口"]),
         onPickTarget: () => {},
       }}
       isBusy={false}
@@ -152,10 +141,10 @@ test("AuxTreePanel hides row actions and marks target picker states while retarg
     />,
   );
 
-  expect(html).not.toContain('data-action-anchor="aux:create-symlink:source_link"');
-  expect(html).not.toContain('data-action-anchor="aux:retarget-symlink:source_link"');
+  expect(html).not.toContain('data-action-anchor="aux:create-symlink:/索引/角色入口"');
+  expect(html).not.toContain('data-action-anchor="aux:retarget-symlink:/索引/角色入口"');
   expect(html).toContain('data-symlink-target-picker-state="source"');
   expect(html).toContain('data-symlink-target-picker-state="selected-target"');
   expect(html).toContain('data-symlink-target-picker-state="disabled-target"');
-  expect(html).not.toContain('data-drag-handle="source_link"');
+  expect(html).not.toContain('data-drag-handle="/索引/角色入口"');
 });

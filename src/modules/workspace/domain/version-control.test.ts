@@ -52,15 +52,13 @@ test("commit then checkout round-trips content, timeline and aux state", async (
     title: "Scene 1",
     body: "Opening",
   });
-  const dir = service.mkdirAt({
+  service.mkdirAt({
     workspaceId: workspace.id,
-    parentDirId: workspace.auxRootId!,
-    name: "lore",
+    path: "/lore",
   });
   service.writeFileAt({
     workspaceId: workspace.id,
-    parentDirId: dir.id,
-    name: "world.md",
+    path: "/lore/world.md",
     content: "world building",
   });
 
@@ -82,7 +80,7 @@ test("commit then checkout round-trips content, timeline and aux state", async (
     title: "Changed title",
     body: "different",
   });
-  service.deleteAuxNodeAt({ workspaceId: workspace.id, nodeId: dir.id });
+  service.deleteAuxNodeAt({ workspaceId: workspace.id, path: "/lore" });
 
   // Checkout the commit and verify state is restored exactly.
   await service.checkoutCommit({ workspaceId: workspace.id, commitId: commit.id });
@@ -138,13 +136,11 @@ test("branch off a commit shares the same head and forked metadata", async () =>
   expect(exported.nodes[0]?.body).toBe("base");
 });
 
-test("branch workspaces restore aux layers with globally unique layer ids", async () => {
-  const workspace = seedProject("proj_branch_aux_layer_ids");
-  const rootId = workspace.auxRootId!;
-  const notesFile = service.writeFileAt({
+test("branch workspaces restore aux overlay paths", async () => {
+  const workspace = seedProject("proj_branch_aux_overlay_paths");
+  service.writeFileAt({
     workspaceId: workspace.id,
-    parentDirId: rootId,
-    name: "notes.md",
+    path: "/notes.md",
     content: "origin",
   });
   const point = service.createTimelinePoint({
@@ -154,7 +150,7 @@ test("branch workspaces restore aux layers with globally unique layer ids", asyn
   service.writeFileAt({
     workspaceId: workspace.id,
     timelinePointId: point.id,
-    nodeId: notesFile.id,
+    path: "/notes.md",
     content: "point",
   });
   const commit = await await service.createCommit({
@@ -163,12 +159,12 @@ test("branch workspaces restore aux layers with globally unique layer ids", asyn
   });
 
   const firstFeature = await service.createBranchWorkspace({
-    projectId: "proj_branch_aux_layer_ids",
+    projectId: "proj_branch_aux_overlay_paths",
     name: "feature-one",
     fromCommitId: commit.id,
   });
   const secondFeature = await service.createBranchWorkspace({
-    projectId: "proj_branch_aux_layer_ids",
+    projectId: "proj_branch_aux_overlay_paths",
     name: "feature-two",
     fromCommitId: commit.id,
   });

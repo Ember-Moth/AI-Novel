@@ -17,21 +17,19 @@ test("deriveProjectSelectionState resolves active nodes and timeline labels", ()
     children: [],
   };
   const auxNode: AuxTreeNodeVM = {
-    id: "aux_1",
+    id: "/notes.md",
     nodeType: "file",
     name: "notes.md",
     content: "Notes",
     path: "/notes.md",
-    symlinkTargetAuxNodeId: null,
     symlinkTargetPath: null,
     hasTimelineChange: false,
-    isDeleted: false,
     children: [],
   };
 
   const selection = deriveProjectSelectionState({
     activeContentNodeId: "content_1",
-    activeAuxNodeId: "aux_1",
+    activeAuxPath: "/notes.md",
     activeTimelinePointId: "point_b",
     contentNodeMap: new Map([[contentNode.id, contentNode]]),
     auxNodeMap: new Map([[auxNode.id, auxNode]]),
@@ -42,7 +40,7 @@ test("deriveProjectSelectionState resolves active nodes and timeline labels", ()
   });
 
   expect(selection.activeContentNode?.id).toBe("content_1");
-  expect(selection.activeAuxNode?.id).toBe("aux_1");
+  expect(selection.activeAuxNode?.id).toBe("/notes.md");
   expect(selection.activeTimelineLabel).toBe("Point A");
   expect(selection.browsingTimelineLabel).toBe("Point B");
 });
@@ -56,15 +54,13 @@ test("deriveProjectEditorState computes content and aux save state independently
     children: [],
   };
   const activeAuxNode: AuxTreeNodeVM = {
-    id: "aux_1",
+    id: "/notes.md",
     nodeType: "file",
     name: "notes.md",
     content: "Committed aux",
     path: "/notes.md",
-    symlinkTargetAuxNodeId: null,
     symlinkTargetPath: null,
     hasTimelineChange: true,
-    isDeleted: false,
     children: [],
   };
 
@@ -74,16 +70,16 @@ test("deriveProjectEditorState computes content and aux save state independently
     shouldShowContent: true,
     drafts: {
       content_1: "Draft body",
-      aux_1: "Draft aux",
+      "/notes.md": "Draft aux",
     },
     committedBodies: {
-      aux_1: "Committed aux",
+      "/notes.md": "Committed aux",
     },
     pendingSaveCounts: {
-      aux_1: 1,
+      "/notes.md": 1,
     },
     saveErrors: {
-      aux_1: "Save failed",
+      "/notes.md": "Save failed",
     },
   });
 
@@ -134,15 +130,13 @@ test("buildProjectAssistantEditorContext keeps content and aux references mutual
     children: [],
   };
   const activeAuxNode: AuxTreeNodeVM = {
-    id: "aux_1",
+    id: "/notes.md",
     nodeType: "file",
     name: "notes.md",
     content: "Hidden notes",
     path: "/notes.md",
-    symlinkTargetAuxNodeId: null,
     symlinkTargetPath: null,
     hasTimelineChange: false,
-    isDeleted: false,
     children: [],
   };
 
@@ -159,7 +153,6 @@ test("buildProjectAssistantEditorContext keeps content and aux references mutual
     workspaceId: "workspace_1",
     activeContentNodeId: "content_1",
     activeContentTitle: null,
-    activeAuxNodeId: null,
     activeAuxPath: null,
     activeTimelinePointId: "point_b",
     activeTimelineLabel: "Point B",
@@ -178,7 +171,6 @@ test("buildProjectAssistantEditorContext keeps content and aux references mutual
     workspaceId: "workspace_1",
     activeContentNodeId: null,
     activeContentTitle: null,
-    activeAuxNodeId: null,
     activeAuxPath: "/notes.md",
     activeTimelinePointId: "point_b",
     activeTimelineLabel: "Point B",

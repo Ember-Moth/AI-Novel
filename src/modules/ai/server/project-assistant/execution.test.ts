@@ -319,7 +319,6 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
               data: {
                 action: "created",
                 path: "/设定/角色.md",
-                nodeId: "aux_written",
               },
             },
           },
@@ -380,7 +379,6 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
                         data: {
                           action: "created",
                           path: "/设定/角色.md",
-                          nodeId: "aux_written",
                         },
                       },
                     },
@@ -406,7 +404,6 @@ test("sendProjectAssistantMessage records tool input and output artifacts for ex
                 data: {
                   action: "created",
                   path: "/设定/角色.md",
-                  nodeId: "aux_written",
                 },
               },
             },
@@ -577,7 +574,6 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for au
                 action: "created",
                 path: "/设定/角色.md",
                 timelinePointId: "timeline_written",
-                nodeId: "aux_stream",
               },
             },
           },
@@ -609,7 +605,6 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for au
                   action: "created",
                   path: "/设定/角色.md",
                   timelinePointId: "timeline_written",
-                  nodeId: "aux_stream",
                 },
               },
             },
@@ -637,7 +632,7 @@ test("sendProjectAssistantMessageStream emits workspace-refresh-requested for au
     type: "workspace-refresh-requested",
     workspaceId: workspace.id,
     areas: ["aux"],
-    auxNodeId: "aux_stream",
+    auxPath: "/设定/角色.md",
     timelinePointId: "timeline_written",
   });
 });

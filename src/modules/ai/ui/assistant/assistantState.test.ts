@@ -339,8 +339,7 @@ test("listAssistantContextDetails formats current context chips", () => {
       workspaceId: "workspace_main",
       activeContentNodeId: "content_1",
       activeContentTitle: "第 1 场",
-      activeAuxNodeId: "aux_1",
-      activeAuxPath: "notes/scene-1.md",
+      activeAuxPath: "/notes/scene-1.md",
       activeTimelinePointId: "timeline_now",
       activeTimelineLabel: "现在",
     }),
@@ -351,7 +350,7 @@ test("listAssistantContextDetails formats current context chips", () => {
     },
     {
       label: "辅助",
-      value: "notes/scene-1.md",
+      value: "/notes/scene-1.md",
     },
     {
       label: "时间",

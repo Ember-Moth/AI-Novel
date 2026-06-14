@@ -103,7 +103,6 @@ export function normalizeAssistantContextSnapshot(
     workspaceId: normalizeOptionalString(context.workspaceId),
     activeContentNodeId: normalizeOptionalString(context.activeContentNodeId),
     activeContentTitle: normalizeOptionalString(context.activeContentTitle),
-    activeAuxNodeId: normalizeOptionalString(context.activeAuxNodeId),
     activeAuxPath: normalizeOptionalString(context.activeAuxPath),
     activeTimelinePointId: normalizeOptionalString(context.activeTimelinePointId),
     activeTimelineLabel: normalizeOptionalString(context.activeTimelineLabel),

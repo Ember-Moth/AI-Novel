@@ -25,7 +25,6 @@ export interface WorkspaceIndexRow {
   name: string;
   worktreePath: string;
   contentRootId: string;
-  auxRootId: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -44,18 +43,6 @@ export interface TimelineMetaRow {
   label: string;
   description: string | null;
   prevPointId: string | null;
-}
-
-export interface AuxLayerMetaRow {
-  id: string;
-  auxNodeId: string;
-  nodeType: "root" | "dir" | "file" | "symlink";
-  timelinePointId: string | null;
-  isDeleted: boolean;
-  parentAuxNodeId: string | null;
-  name: string | null;
-  contentPath: string | null;
-  symlinkTargetAuxNodeId: string | null;
 }
 
 export interface ProjectMetaPayload {

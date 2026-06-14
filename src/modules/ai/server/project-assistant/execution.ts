@@ -168,10 +168,11 @@ function extractWorkspaceRefreshRequestedEventFromToolResult({
   }
   const record = data as Record<string, unknown>;
   const nodeId = Reflect.get(record, "nodeId");
+  const outputAuxPath = Reflect.get(record, "path");
   const timelinePointId = Reflect.get(record, "timelinePointId");
   let areas: readonly WorkspaceRefreshArea[] | null = null;
   let contentNodeId: string | null | undefined;
-  let auxNodeId: string | null | undefined;
+  let auxPath: string | null | undefined;
   let refreshTimelinePointId: string | null | undefined;
 
   if (CONTENT_WRITE_TOOL_NAME_SET.has(toolName as string)) {
@@ -190,7 +191,8 @@ function extractWorkspaceRefreshRequestedEventFromToolResult({
         : null;
   } else if (AUX_WRITE_TOOL_NAME_SET.has(toolName as string)) {
     areas = ["aux"];
-    auxNodeId = typeof nodeId === "string" && nodeId.trim().length > 0 ? nodeId : null;
+    auxPath =
+      typeof outputAuxPath === "string" && outputAuxPath.trim().length > 0 ? outputAuxPath : null;
     refreshTimelinePointId =
       typeof timelinePointId === "string" && timelinePointId.trim().length > 0
         ? timelinePointId
@@ -206,7 +208,7 @@ function extractWorkspaceRefreshRequestedEventFromToolResult({
     workspaceId: workspace.id,
     areas,
     ...(contentNodeId === undefined ? {} : { contentNodeId }),
-    ...(auxNodeId === undefined ? {} : { auxNodeId }),
+    ...(auxPath === undefined ? {} : { auxPath }),
     ...(refreshTimelinePointId === undefined ? {} : { timelinePointId: refreshTimelinePointId }),
   };
 }

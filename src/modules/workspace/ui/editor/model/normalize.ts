@@ -116,15 +116,13 @@ function buildAuxNode(
   }
 
   const normalizedNode: AuxTreeNodeVM = {
-    id: node.id,
+    id: node.path,
     nodeType: node.nodeType,
     name: node.name?.trim() || "(未命名)",
     content: node.content ?? "",
     path: node.path,
-    symlinkTargetAuxNodeId: node.symlinkTargetAuxNodeId,
-    symlinkTargetPath: node.symlinkTargetPath,
+    symlinkTargetPath: node.symlinkTargetPath ?? null,
     hasTimelineChange: node.hasTimelineChange,
-    isDeleted: node.isDeleted,
     children: [],
   };
 

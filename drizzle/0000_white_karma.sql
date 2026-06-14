@@ -185,7 +185,6 @@ CREATE TABLE `workspaces` (
 	`name` text NOT NULL,
 	`worktree_path` text NOT NULL,
 	`content_root_id` text NOT NULL,
-	`aux_root_id` text NOT NULL,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade,

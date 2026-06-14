@@ -119,11 +119,7 @@ function ProjectWorkspace({
   const content = useProjectContentData(identity.workspaceId);
   const timeline = useProjectTimelineData(identity.workspaceId);
   const rawActiveTimelinePointId = useWorkspaceState((state) => state.activeTimelinePointId);
-  const aux = useProjectAuxData(
-    identity.workspaceId,
-    identity.workspaceAuxRootId,
-    rawActiveTimelinePointId,
-  );
+  const aux = useProjectAuxData(identity.workspaceId, rawActiveTimelinePointId);
   const selection = useProjectSelectionView({
     contentNodeMap: content.nodeMap,
     auxNodeMap: aux.nodeMap,
@@ -163,17 +159,17 @@ function ProjectWorkspace({
   } = timeline;
   const {
     tree: auxTree,
-    rootId: auxRootId,
+    rootId: auxRootPath,
     busy: auxBusy,
     pending: auxPending,
     initialLoading: auxInitialLoading,
   } = aux;
   const {
     activeContentNodeId,
-    activeAuxNodeId,
+    activeAuxPath,
     activeTimelinePointId,
     expandedContentIds,
-    expandedAuxIds,
+    expandedAuxPaths,
     activeContentNode,
     activeAuxNode,
     activeTimelineLabel,
@@ -218,7 +214,7 @@ function ProjectWorkspace({
       if (contentTargetNodeId) {
         const state = workspaceStore.getState();
         state.setShouldAutoSelectContent(true);
-        state.setActiveAuxNodeId(null);
+        state.setActiveAuxPath(null);
         state.setPendingContentNodeId(contentTargetNodeId);
         state.setActiveContentNodeId(contentTargetNodeId);
         if (
@@ -405,14 +401,14 @@ function ProjectWorkspace({
                         icon="icon-[material-symbols--create-new-folder]"
                         title="添加文件夹"
                         onClick={() => actions.handleAuxCreateSiblingDir(AUX_CREATE_DIR_ANCHOR)}
-                        disabled={auxPending || !auxRootId || !activeTimelinePointId}
+                        disabled={auxPending || !activeTimelinePointId}
                         anchorId={AUX_CREATE_DIR_ANCHOR}
                       />
                       <IconButton
                         icon="icon-[material-symbols--note-add]"
                         title="添加文件"
                         onClick={() => actions.handleAuxCreateSiblingFile(AUX_CREATE_FILE_ANCHOR)}
-                        disabled={auxPending || !auxRootId || !activeTimelinePointId}
+                        disabled={auxPending || !activeTimelinePointId}
                         anchorId={AUX_CREATE_FILE_ANCHOR}
                       />
                     </>
@@ -422,10 +418,10 @@ function ProjectWorkspace({
                   ) : (
                     <AuxTreePanel
                       tree={auxTree}
-                      rootId={auxRootId}
-                      expandedIds={expandedAuxIds}
+                      rootId={auxRootPath}
+                      expandedIds={expandedAuxPaths}
                       onToggle={actions.toggleAuxExpanded}
-                      activeId={activeAuxNodeId}
+                      activeId={activeAuxPath}
                       onSelect={actions.handleAuxSelect}
                       onCreateChildDir={actions.handleAuxCreateChildDir}
                       onCreateChildFile={actions.handleAuxCreateChildFile}
@@ -436,14 +432,12 @@ function ProjectWorkspace({
                       onRename={actions.handleAuxRename}
                       onMove={actions.handleAuxMove}
                       onDelete={actions.handleAuxDelete}
-                      onRestore={actions.handleAuxRestore}
                       symlinkTargetPicker={
                         symlinkTargetPickerSourceNode?.nodeType === "symlink"
                           ? {
                               active: isAuxSymlinkTargetPickerActive,
                               sourceNodeId: symlinkTargetPickerSourceNode.id,
-                              selectedTargetNodeId:
-                                symlinkTargetPickerSourceNode.symlinkTargetAuxNodeId,
+                              selectedTargetNodeId: symlinkTargetPickerSourceNode.symlinkTargetPath,
                               invalidTargetNodeIds: invalidSymlinkTargetIds,
                               onPickTarget: actions.submitAuxSymlinkTargetRetarget,
                             }

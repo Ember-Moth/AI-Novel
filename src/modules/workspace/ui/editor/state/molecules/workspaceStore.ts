@@ -15,13 +15,13 @@ function resolveNext<T>(updater: Updater<T>, current: T): T {
 type WorkspaceStateData = {
   // selection
   activeContentNodeId: string | null;
-  activeAuxNodeId: string | null;
+  activeAuxPath: string | null;
   pendingContentNodeId: string | null;
-  pendingAuxNodeId: string | null;
+  pendingAuxPath: string | null;
   shouldAutoSelectContent: boolean;
   activeTimelinePointId: string | null;
   expandedContentIds: Set<string>;
-  expandedAuxIds: Set<string>;
+  expandedAuxPaths: Set<string>;
   isAuxSymlinkTargetPickerActive: boolean;
   auxSymlinkTargetPickerSourceId: string | null;
   // editor buffers
@@ -38,13 +38,13 @@ type WorkspaceStateData = {
 
 type WorkspaceStateActions = {
   setActiveContentNodeId: (updater: Updater<string | null>) => void;
-  setActiveAuxNodeId: (updater: Updater<string | null>) => void;
+  setActiveAuxPath: (updater: Updater<string | null>) => void;
   setPendingContentNodeId: (updater: Updater<string | null>) => void;
-  setPendingAuxNodeId: (updater: Updater<string | null>) => void;
+  setPendingAuxPath: (updater: Updater<string | null>) => void;
   setShouldAutoSelectContent: (updater: Updater<boolean>) => void;
   setActiveTimelinePointId: (updater: Updater<string | null>) => void;
   setExpandedContentIds: (updater: Updater<Set<string>>) => void;
-  setExpandedAuxIds: (updater: Updater<Set<string>>) => void;
+  setExpandedAuxPaths: (updater: Updater<Set<string>>) => void;
   setIsAuxSymlinkTargetPickerActive: (updater: Updater<boolean>) => void;
   setAuxSymlinkTargetPickerSourceId: (updater: Updater<string | null>) => void;
   setDrafts: (updater: Updater<Record<string, string>>) => void;
@@ -71,13 +71,13 @@ export function createWorkspaceStore() {
 
     return {
       activeContentNodeId: null,
-      activeAuxNodeId: null,
+      activeAuxPath: null,
       pendingContentNodeId: null,
-      pendingAuxNodeId: null,
+      pendingAuxPath: null,
       shouldAutoSelectContent: false,
       activeTimelinePointId: null,
       expandedContentIds: new Set<string>(),
-      expandedAuxIds: new Set<string>(),
+      expandedAuxPaths: new Set<string>(),
       isAuxSymlinkTargetPickerActive: false,
       auxSymlinkTargetPickerSourceId: null,
       drafts: {},
@@ -89,13 +89,13 @@ export function createWorkspaceStore() {
       auxError: null,
       pageErrorDismissed: false,
       setActiveContentNodeId: field("activeContentNodeId"),
-      setActiveAuxNodeId: field("activeAuxNodeId"),
+      setActiveAuxPath: field("activeAuxPath"),
       setPendingContentNodeId: field("pendingContentNodeId"),
-      setPendingAuxNodeId: field("pendingAuxNodeId"),
+      setPendingAuxPath: field("pendingAuxPath"),
       setShouldAutoSelectContent: field("shouldAutoSelectContent"),
       setActiveTimelinePointId: field("activeTimelinePointId"),
       setExpandedContentIds: field("expandedContentIds"),
-      setExpandedAuxIds: field("expandedAuxIds"),
+      setExpandedAuxPaths: field("expandedAuxPaths"),
       setIsAuxSymlinkTargetPickerActive: field("isAuxSymlinkTargetPickerActive"),
       setAuxSymlinkTargetPickerSourceId: field("auxSymlinkTargetPickerSourceId"),
       setDrafts: field("drafts"),

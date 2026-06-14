@@ -71,7 +71,6 @@ export const workspaces = sqliteTable(
     name: text("name").notNull(),
     worktreePath: text("worktree_path").notNull(),
     contentRootId: text("content_root_id").notNull(),
-    auxRootId: text("aux_root_id").notNull(),
     ...timestampColumns,
   },
   (table) => [

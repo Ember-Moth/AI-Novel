@@ -23,11 +23,9 @@ type PendingMutationState = {
 };
 type WorkspaceIdentityRow = NonNullable<ReturnType<typeof rpc.useQuery<"workspaces.get">>["data"]>;
 
-export function selectVisibleAuxSnapshot(
-  workspaceAuxRootId: string | null,
-  snapshot: AuxSnapshotData | undefined,
-) {
-  return snapshot?.rootNodeId === workspaceAuxRootId ? snapshot : undefined;
+export function selectVisibleAuxSnapshot(snapshot: AuxSnapshotData | null | undefined) {
+  if (!snapshot) return undefined;
+  return snapshot.rootPath === "/" ? snapshot : undefined;
 }
 
 export function isQueryRefreshing(query: RefreshableQueryState, hasVisibleData: boolean) {
@@ -63,7 +61,6 @@ export function resolveProjectWorkspaceIdentity({
     requestedWorkspaceId,
     workspaceId,
     contentRootId: matchedWorkspace?.contentRootId ?? null,
-    workspaceAuxRootId: matchedWorkspace?.auxRootId ?? null,
     workspaceInitialLoading: isInitialLoading && !workspace && !queryErrorMessage,
     routeMismatch,
     error: routeMismatch ?? queryErrorMessage,
@@ -204,7 +201,6 @@ export function useProjectTimelineData(workspaceId: string | undefined) {
 
 export function useProjectAuxData(
   workspaceId: string | undefined,
-  workspaceAuxRootId: string | null,
   activeTimelinePointId: string | null,
 ) {
   const auxQuery = rpc.useQuery(
@@ -213,7 +209,7 @@ export function useProjectAuxData(
       ? { workspaceId, pointId: activeTimelinePointId }
       : skipToken,
   );
-  const visibleAuxSnapshot = selectVisibleAuxSnapshot(workspaceAuxRootId, auxQuery.data);
+  const visibleAuxSnapshot = selectVisibleAuxSnapshot(auxQuery.data);
 
   const mkdirAux = rpc.useMutation("aux.mkdir");
   const writeFileAux = rpc.useMutation("aux.writeFile");
@@ -221,23 +217,14 @@ export function useProjectAuxData(
   const moveAux = rpc.useMutation("aux.move");
   const retargetSymlinkAux = rpc.useMutation("aux.retargetSymlink");
   const deleteAux = rpc.useMutation("aux.delete");
-  const restoreAux = rpc.useMutation("aux.restore");
 
   const auxState = useMemo(
     () => buildAuxTreeState(visibleAuxSnapshot?.nodes ?? []),
     [visibleAuxSnapshot],
   );
-  const rootId = visibleAuxSnapshot?.rootNodeId ?? null;
+  const rootId = visibleAuxSnapshot?.rootPath ?? "/";
 
-  const busy = isAuxBusy([
-    mkdirAux,
-    writeFileAux,
-    linkAux,
-    moveAux,
-    retargetSymlinkAux,
-    deleteAux,
-    restoreAux,
-  ]);
+  const busy = isAuxBusy([mkdirAux, writeFileAux, linkAux, moveAux, retargetSymlinkAux, deleteAux]);
   const initialLoading =
     !auxQuery.isSkipped && !visibleAuxSnapshot && auxQuery.isInitialLoading && !auxQuery.error;
   const refreshing = isQueryRefreshing(auxQuery, !!visibleAuxSnapshot);
@@ -253,7 +240,6 @@ export function useProjectAuxData(
       moveAux,
       retargetSymlinkAux,
       deleteAux,
-      restoreAux,
       tree: auxState.tree,
       rootId,
       nodeMap: auxState.nodeMap,
@@ -281,7 +267,6 @@ export function useProjectAuxData(
       retargetSymlinkAux,
       pending,
       refreshing,
-      restoreAux,
       rootId,
       writeFileAux,
     ],
@@ -294,24 +279,24 @@ export function useProjectSelectionView(data: {
   timelineLabelMap: ProjectTimelineData["labelMap"];
 }) {
   const activeContentNodeId = useWorkspaceState((state) => state.activeContentNodeId);
-  const activeAuxNodeId = useWorkspaceState((state) => state.activeAuxNodeId);
+  const activeAuxPath = useWorkspaceState((state) => state.activeAuxPath);
   const shouldAutoSelectContent = useWorkspaceState((state) => state.shouldAutoSelectContent);
   const activeTimelinePointId = useWorkspaceState((state) => state.activeTimelinePointId);
   const expandedContentIds = useWorkspaceState((state) => state.expandedContentIds);
-  const expandedAuxIds = useWorkspaceState((state) => state.expandedAuxIds);
+  const expandedAuxPaths = useWorkspaceState((state) => state.expandedAuxPaths);
 
   const derivedSelection = useMemo(
     () =>
       deriveProjectSelectionState({
         activeContentNodeId,
-        activeAuxNodeId,
+        activeAuxPath,
         activeTimelinePointId,
         contentNodeMap: data.contentNodeMap,
         auxNodeMap: data.auxNodeMap,
         timelineLabelMap: data.timelineLabelMap,
       }),
     [
-      activeAuxNodeId,
+      activeAuxPath,
       activeContentNodeId,
       activeTimelinePointId,
       data.auxNodeMap,
@@ -322,11 +307,11 @@ export function useProjectSelectionView(data: {
 
   return {
     activeContentNodeId,
-    activeAuxNodeId,
+    activeAuxPath,
     shouldAutoSelectContent,
     activeTimelinePointId,
     expandedContentIds,
-    expandedAuxIds,
+    expandedAuxPaths,
     ...derivedSelection,
   };
 }

@@ -2,21 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
-import { createId, invariant } from "@/shared/lib/domain";
+import { invariant } from "@/shared/lib/domain";
 
 import { parseJsonl, stringifyJsonl } from "./jsonl";
-import type { AuxLayerMetaRow, ContentMetaRow, TimelineMetaRow } from "./types";
+import type { ContentMetaRow, TimelineMetaRow } from "./types";
 
 export interface WorktreeState {
   content: ContentMetaRow[];
   timeline: TimelineMetaRow[];
-  auxLayers: AuxLayerMetaRow[];
 }
 
 const META_DIR = "novel-evolver";
 const CONTENT_FILE = `${META_DIR}/content.jsonl`;
 const TIMELINE_FILE = `${META_DIR}/timeline.jsonl`;
-const AUX_FILE = `${META_DIR}/aux-layers.jsonl`;
+export const AUX_ORIGIN_DIR = "aux/origin";
+export const AUX_TIMELINE_DIR = "aux/timeline";
 
 export function readTextSync(filePath: string) {
   try {
@@ -47,16 +47,10 @@ export function bodyPathForNode(node: { id: string; title?: string | null; order
   return `manuscript/${prefix}-${label}.md`;
 }
 
-export function auxContentPath(layer: Pick<AuxLayerMetaRow, "timelinePointId" | "auxNodeId">) {
-  const root = layer.timelinePointId ? `aux/timeline/${layer.timelinePointId}` : "aux/origin";
-  return `${root}/${layer.auxNodeId}.md`;
-}
-
 export function readWorktreeState(dir: string): WorktreeState {
   return {
     content: parseJsonl<ContentMetaRow>(readTextSync(path.join(dir, CONTENT_FILE))),
     timeline: parseJsonl<TimelineMetaRow>(readTextSync(path.join(dir, TIMELINE_FILE))),
-    auxLayers: parseJsonl<AuxLayerMetaRow>(readTextSync(path.join(dir, AUX_FILE))),
   };
 }
 
@@ -68,20 +62,17 @@ export async function writeWorktreeState(dir: string, state: WorktreeState) {
     stringifyJsonl(state.timeline),
     "utf8",
   );
-  await fs.promises.writeFile(path.join(dir, AUX_FILE), stringifyJsonl(state.auxLayers), "utf8");
+  await fs.promises.mkdir(path.join(dir, AUX_ORIGIN_DIR), { recursive: true });
 }
 
 export function writeWorktreeStateSync(dir: string, state: WorktreeState) {
   ensureDirSync(path.join(dir, META_DIR));
   fs.writeFileSync(path.join(dir, CONTENT_FILE), stringifyJsonl(state.content), "utf8");
   fs.writeFileSync(path.join(dir, TIMELINE_FILE), stringifyJsonl(state.timeline), "utf8");
-  fs.writeFileSync(path.join(dir, AUX_FILE), stringifyJsonl(state.auxLayers), "utf8");
+  ensureDirSync(path.join(dir, AUX_ORIGIN_DIR));
 }
 
-export function seedEmptyWorktree(
-  dir: string,
-  input: { contentRootId: string; auxRootId: string },
-) {
+export function seedEmptyWorktree(dir: string, input: { contentRootId: string }) {
   ensureDirSync(dir);
   writeWorktreeStateSync(dir, {
     content: [
@@ -95,19 +86,6 @@ export function seedEmptyWorktree(
       },
     ],
     timeline: [],
-    auxLayers: [
-      {
-        id: createId("aux_layer"),
-        auxNodeId: input.auxRootId,
-        nodeType: "root",
-        timelinePointId: null,
-        isDeleted: false,
-        parentAuxNodeId: null,
-        name: null,
-        contentPath: null,
-        symlinkTargetAuxNodeId: null,
-      },
-    ],
   });
 }
 
@@ -124,21 +102,6 @@ export function writeContentBody(dir: string, node: ContentMetaRow, body: string
   node.bodyPath = node.bodyPath ?? bodyPathForNode(node);
   ensureDirSync(path.dirname(path.join(dir, node.bodyPath)));
   fs.writeFileSync(path.join(dir, node.bodyPath), body, "utf8");
-}
-
-export function readAuxContent(dir: string, layer: AuxLayerMetaRow) {
-  return layer.contentPath ? readTextSync(path.join(dir, layer.contentPath)) : null;
-}
-
-export function writeAuxContent(dir: string, layer: AuxLayerMetaRow, content: string | null) {
-  if (content == null || layer.nodeType !== "file") {
-    if (layer.contentPath) fs.rmSync(path.join(dir, layer.contentPath), { force: true });
-    layer.contentPath = null;
-    return;
-  }
-  layer.contentPath = layer.contentPath ?? auxContentPath(layer);
-  ensureDirSync(path.dirname(path.join(dir, layer.contentPath)));
-  fs.writeFileSync(path.join(dir, layer.contentPath), content, "utf8");
 }
 
 export function orderTimelineRows(rows: TimelineMetaRow[]) {

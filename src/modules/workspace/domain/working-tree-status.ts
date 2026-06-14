@@ -38,12 +38,7 @@ export async function getWorkingTreeStatus(branchId: string): Promise<WorkingTre
   const gitdir = await ensureProjectRepo(branch.projectId);
   const matrix = await git.statusMatrix({ fs, dir: workspace.worktreePath, gitdir });
   const state = readWorktreeState(workspace.worktreePath);
-  if (
-    !branch.headCommitId &&
-    state.content.length === 1 &&
-    state.timeline.length === 0 &&
-    state.auxLayers.length === 1
-  ) {
+  if (!branch.headCommitId && state.content.length === 1 && state.timeline.length === 0) {
     return {
       hasChanges: false,
       headCommitId: null,

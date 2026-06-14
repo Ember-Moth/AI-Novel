@@ -38,15 +38,13 @@ test("uncommitted edits before first commit appear as additions", async () => {
     workspaceId: workspace.id,
     label: "Intro",
   });
-  const dir = service.mkdirAt({
+  service.mkdirAt({
     workspaceId: workspace.id,
-    parentDirId: workspace.auxRootId!,
-    name: "lore",
+    path: "/lore",
   });
   service.writeFileAt({
     workspaceId: workspace.id,
-    parentDirId: dir.id,
-    name: "world.md",
+    path: "/lore/world.md",
     content: "world building",
   });
 
@@ -96,15 +94,13 @@ test("content, timeline and aux edits appear in the diff summary", async () => {
     workspaceId: workspace.id,
     label: "Intro",
   });
-  const dir = service.mkdirAt({
+  service.mkdirAt({
     workspaceId: workspace.id,
-    parentDirId: workspace.auxRootId!,
-    name: "lore",
+    path: "/lore",
   });
   service.writeFileAt({
     workspaceId: workspace.id,
-    parentDirId: dir.id,
-    name: "world.md",
+    path: "/lore/world.md",
     content: "world building",
   });
   await service.createCommit({ branchId: workspace.branchId, message: "base" });
@@ -119,18 +115,16 @@ test("content, timeline and aux edits appear in the diff summary", async () => {
     workspaceId: workspace.id,
     label: "Middle",
   });
-  service.deleteAuxNodeAt({ workspaceId: workspace.id, nodeId: dir.id });
-  const notesDir = service.mkdirAt({
+  service.deleteAuxNodeAt({ workspaceId: workspace.id, path: "/lore" });
+  service.mkdirAt({
     workspaceId: workspace.id,
     timelinePointId: introPoint.id,
-    parentDirId: workspace.auxRootId!,
-    name: "notes",
+    path: "/notes",
   });
   service.writeFileAt({
     workspaceId: workspace.id,
     timelinePointId: introPoint.id,
-    parentDirId: notesDir.id,
-    name: "draft.md",
+    path: "/notes/draft.md",
     content: "timeline-specific note",
   });
 

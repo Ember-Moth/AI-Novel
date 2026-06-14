@@ -61,7 +61,6 @@ export function updateRuntimeTimelineSelection(input: {
     workspaceId: current?.workspaceId ?? null,
     activeContentNodeId: current?.activeContentNodeId ?? null,
     activeContentTitle: current?.activeContentTitle ?? null,
-    activeAuxNodeId: current?.activeAuxNodeId ?? null,
     activeAuxPath: current?.activeAuxPath ?? null,
     activeTimelinePointId: input.timelinePointId,
     activeTimelineLabel: input.timelineLabel,

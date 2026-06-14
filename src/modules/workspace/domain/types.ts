@@ -1,7 +1,7 @@
 import type { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
 
 export type TimelinePointRef = string | null | undefined | typeof ORIGIN_TIMELINE_POINT_ID;
-export type AuxNodeType = "root" | "dir" | "file" | "symlink";
+export type AuxNodeType = "dir" | "file" | "symlink";
 
 export interface TimelinePointView {
   id: string | typeof ORIGIN_TIMELINE_POINT_ID;
@@ -49,27 +49,23 @@ export interface ManuscriptNodeList {
 }
 
 export interface ExportedAuxNode {
-  id: string;
   nodeType: AuxNodeType;
-  parentAuxNodeId: string | null;
   name: string | null;
   content: string | null;
-  symlinkTargetAuxNodeId: string | null;
   symlinkTargetPath: string | null;
   timelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID;
   path: string;
   hasTimelineChange: boolean;
-  isDeleted: boolean;
   children: ExportedAuxNode[];
 }
 
 export interface ExportedAuxSnapshotTree {
-  rootNodeId: string;
+  rootPath: string;
   timelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID;
   nodes: ExportedAuxNode[];
 }
 
-export interface AuxLayerChangeView {
+export interface AuxPathChangeView {
   path: string;
   isDeleted: boolean;
 }
@@ -87,34 +83,27 @@ export interface AuxTimelineChangeSummary {
 
 export interface AuxTimelineChangeView {
   kind: AuxTimelineChangeKind;
-  nodeId: string;
   nodeType: AuxNodeType;
   path: string;
   previousPath: string | null;
   symlinkTargetPath: string | null;
   previousSymlinkTargetPath: string | null;
   changedAspects: AuxTimelineModifiedAspect[];
-  isDeleted?: boolean;
 }
 
 export interface ResolvedAuxNode {
-  id: string;
   nodeType: AuxNodeType;
-  parentAuxNodeId: string | null;
   name: string | null;
   content: string | null;
-  symlinkTargetAuxNodeId: string | null;
   timelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID;
   path: string;
+  symlinkTargetPath: string | null;
 }
 
 export interface AuxDirListTreeNode {
-  id?: string;
   nodeType: AuxNodeType;
-  parentAuxNodeId?: string | null;
   name: string | null;
   content?: string | null;
-  symlinkTargetAuxNodeId?: string | null;
   timelinePointId?: string | typeof ORIGIN_TIMELINE_POINT_ID;
   path: string;
   symlinkTargetPath?: string;

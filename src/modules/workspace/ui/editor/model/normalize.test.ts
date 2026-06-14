@@ -56,95 +56,76 @@ test("buildTimelineState normalizes labels and builds timeline lookup maps", () 
 test("buildAuxTreeState filters unsupported nodes and builds aux indexes", () => {
   const state = buildAuxTreeState([
     {
-      id: "dir",
       nodeType: "dir",
       name: "  ",
       content: null,
       path: "/dir",
-      symlinkTargetAuxNodeId: null,
       symlinkTargetPath: null,
       hasTimelineChange: false,
-      isDeleted: false,
       children: [
         {
-          id: "file",
           nodeType: "file",
           name: "notes.md",
           content: null,
           path: "/dir/notes.md",
-          symlinkTargetAuxNodeId: null,
           symlinkTargetPath: null,
           hasTimelineChange: true,
-          isDeleted: true,
           children: [],
         },
       ],
     },
     {
-      id: "ignored",
       nodeType: "unknown",
       name: "ignored",
       content: null,
       path: "/ignored",
-      symlinkTargetAuxNodeId: null,
       symlinkTargetPath: null,
       hasTimelineChange: true,
-      isDeleted: false,
       children: [
         {
-          id: "ignored-child",
           nodeType: "file",
           name: "still-ignored.md",
           content: "ignored",
           path: "/ignored/still-ignored.md",
-          symlinkTargetAuxNodeId: null,
           symlinkTargetPath: null,
           hasTimelineChange: true,
-          isDeleted: false,
           children: [],
         },
       ],
     },
   ]);
 
-  expect(state.tree.map((node) => node.id)).toEqual(["dir"]);
+  expect(state.tree.map((node) => node.id)).toEqual(["/dir"]);
   expect(state.tree[0]?.name).toBe("(未命名)");
-  expect(state.tree[0]?.children.map((node) => node.id)).toEqual(["file"]);
-  expect(state.nodeMap.get("file")?.content).toBe("");
-  expect(state.nodeMap.get("file")?.symlinkTargetAuxNodeId).toBeNull();
+  expect(state.tree[0]?.children.map((node) => node.id)).toEqual(["/dir/notes.md"]);
+  expect(state.nodeMap.get("/dir/notes.md")?.content).toBe("");
+  expect(state.nodeMap.get("/dir/notes.md")?.symlinkTargetPath).toBeNull();
   expect(state.tree[0]?.hasTimelineChange).toBe(false);
-  expect(state.nodeMap.get("file")?.hasTimelineChange).toBe(true);
-  expect(state.nodeMap.get("file")?.isDeleted).toBe(true);
-  expect(state.parentMap.get("dir")).toBeNull();
-  expect(state.parentMap.get("file")).toBe("dir");
-  expect([...state.idSet]).toEqual(["dir", "file"]);
-  expect(state.nodeMap.has("ignored-child")).toBe(false);
+  expect(state.nodeMap.get("/dir/notes.md")?.hasTimelineChange).toBe(true);
+  expect(state.parentMap.get("/dir")).toBeNull();
+  expect(state.parentMap.get("/dir/notes.md")).toBe("/dir");
+  expect([...state.idSet]).toEqual(["/dir", "/dir/notes.md"]);
+  expect(state.nodeMap.has("/ignored/still-ignored.md")).toBe(false);
 });
 
 test("getAuxRenameValidationError reports empty and duplicate aux names", () => {
   const state = buildAuxTreeState([
     {
-      id: "notes",
       nodeType: "file",
       name: "notes.md",
       content: "notes",
       path: "/notes.md",
-      symlinkTargetAuxNodeId: null,
       symlinkTargetPath: null,
       hasTimelineChange: false,
-      isDeleted: false,
       children: [],
     },
     {
-      id: "state",
       nodeType: "dir",
       name: "state",
       content: null,
       path: "/state",
-      symlinkTargetAuxNodeId: null,
       symlinkTargetPath: null,
       hasTimelineChange: false,
-      isDeleted: false,
       children: [],
     },
   ]);
@@ -154,8 +135,8 @@ test("getAuxRenameValidationError reports empty and duplicate aux names", () => 
       tree: state.tree,
       nodeMap: state.nodeMap,
       parentMap: state.parentMap,
-      auxRootId: "aux_root",
-      nodeId: "state",
+      auxRootPath: "/",
+      nodeId: "/state",
       name: "  ",
     }),
   ).toBe("无法重命名辅助信息：辅助信息名称不能为空。请输入名称后再保存。");
@@ -165,8 +146,8 @@ test("getAuxRenameValidationError reports empty and duplicate aux names", () => 
       tree: state.tree,
       nodeMap: state.nodeMap,
       parentMap: state.parentMap,
-      auxRootId: "aux_root",
-      nodeId: "state",
+      auxRootPath: "/",
+      nodeId: "/state",
       name: " notes.md ",
     }),
   ).toBe(
@@ -178,8 +159,8 @@ test("getAuxRenameValidationError reports empty and duplicate aux names", () => 
       tree: state.tree,
       nodeMap: state.nodeMap,
       parentMap: state.parentMap,
-      auxRootId: "aux_root",
-      nodeId: "state",
+      auxRootPath: "/",
+      nodeId: "/state",
       name: "archive",
     }),
   ).toBeNull();

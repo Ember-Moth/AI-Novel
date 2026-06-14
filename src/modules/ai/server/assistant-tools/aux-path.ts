@@ -21,22 +21,18 @@ export function splitAuxPath(path: string, actionLabel: string) {
   };
 }
 
-export function resolveParentDirId(input: {
+export function assertParentDirPath(input: {
   workspaceId: string;
   timelinePointId: string;
-  auxRootId: string | null;
   parentPath: string;
   actionLabel: string;
 }) {
-  if (input.parentPath === "/") {
-    invariant(input.auxRootId, "当前工作区没有辅助资料根目录。");
-    return input.auxRootId;
-  }
+  if (input.parentPath === "/") return "/";
 
   const parentNode = readAuxByPathAt(input.workspaceId, input.timelinePointId, input.parentPath);
   invariant(parentNode, `${input.actionLabel}失败：父目录不存在或在当前时间点不可见。`);
   invariant(parentNode.nodeType === "dir", `${input.actionLabel}失败：父路径不是辅助资料目录。`);
-  return parentNode.id;
+  return parentNode.path;
 }
 
 export function resolveAuxNodeByPathOrThrow(input: {

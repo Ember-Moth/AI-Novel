@@ -12,12 +12,10 @@ export function composeWritingContext(workspaceId: string, contentNodeId: string
   const flatten = (nodes: typeof auxTree.nodes): WritingContext["auxSnapshot"] =>
     nodes.flatMap((node) => [
       {
-        id: node.id,
         nodeType: node.nodeType,
-        parentAuxNodeId: node.parentAuxNodeId,
         name: node.name,
         content: node.content,
-        symlinkTargetAuxNodeId: node.symlinkTargetAuxNodeId,
+        symlinkTargetPath: node.symlinkTargetPath,
         timelinePointId: node.timelinePointId,
         path: node.path,
       },

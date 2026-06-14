@@ -13,7 +13,7 @@ import {
 import type { ResolvedAuxNode } from "@/modules/workspace/domain";
 import { invariant } from "@/shared/lib/domain";
 
-import { resolveAuxNodeByPathOrThrow, resolveParentDirId, splitAuxPath } from "./aux-path";
+import { assertParentDirPath, resolveAuxNodeByPathOrThrow, splitAuxPath } from "./aux-path";
 import type { ToolBuildContext } from "./context";
 import type { AssistantToolErrorContext } from "./envelope";
 import { failure, withEnvelope } from "./envelope";
@@ -34,13 +34,11 @@ function summarizeAuxNode(node: Partial<ResolvedAuxNode> | null | undefined) {
   }
 
   return {
-    id: node.id,
     nodeType: node.nodeType,
     path: node.path,
     name: node.name,
-    parentAuxNodeId: node.parentAuxNodeId,
     timelinePointId: node.timelinePointId,
-    symlinkTargetAuxNodeId: node.symlinkTargetAuxNodeId,
+    symlinkTargetPath: node.symlinkTargetPath,
   };
 }
 
@@ -79,7 +77,7 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"), errorContext.get);
         }
-        errorContext.set({ workspaceId: workspace.id, auxRootId: workspace.auxRootId });
+        errorContext.set({ workspaceId: workspace.id });
 
         return withEnvelope(() => {
           const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
@@ -94,18 +92,16 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
           errorContext.set({ existingNode: summarizeAuxNode(existing) });
           invariant(existing == null, "创建辅助资料目录失败：目标路径已存在。");
 
-          const parentDirId = resolveParentDirId({
+          assertParentDirPath({
             workspaceId: workspace.id,
             timelinePointId: resolvedTimelinePointId,
-            auxRootId: workspace.auxRootId,
             parentPath,
             actionLabel: "创建辅助资料目录",
           });
           const node = mkdirAt({
             workspaceId: workspace.id,
             timelinePointId: resolvedTimelinePointId,
-            parentDirId,
-            name,
+            path: normalizedPath,
           });
 
           return {
@@ -113,9 +109,8 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
             truncated: false,
             data: {
               action: "created",
-              path: normalizedPath,
+              path: node.path,
               timelinePointId: resolvedTimelinePointId,
-              nodeId: node.id,
             },
           };
         }, errorContext.get);
@@ -146,7 +141,7 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"), errorContext.get);
         }
-        errorContext.set({ workspaceId: workspace.id, auxRootId: workspace.auxRootId });
+        errorContext.set({ workspaceId: workspace.id });
 
         return withEnvelope(() => {
           const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
@@ -165,7 +160,7 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
             const node = writeFileAt({
               workspaceId: workspace.id,
               timelinePointId: resolvedTimelinePointId,
-              nodeId: existing.id,
+              path: existing.path,
               content,
             });
             return {
@@ -173,25 +168,22 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
               truncated: false,
               data: {
                 action: "updated",
-                path: normalizedPath,
+                path: node.path,
                 timelinePointId: resolvedTimelinePointId,
-                nodeId: node.id,
               },
             };
           }
 
-          const parentDirId = resolveParentDirId({
+          assertParentDirPath({
             workspaceId: workspace.id,
             timelinePointId: resolvedTimelinePointId,
-            auxRootId: workspace.auxRootId,
             parentPath,
             actionLabel: "写入辅助资料文件",
           });
           const node = writeFileAt({
             workspaceId: workspace.id,
             timelinePointId: resolvedTimelinePointId,
-            parentDirId,
-            name,
+            path: normalizedPath,
             content,
           });
 
@@ -200,9 +192,8 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
             truncated: false,
             data: {
               action: "created",
-              path: normalizedPath,
+              path: node.path,
               timelinePointId: resolvedTimelinePointId,
-              nodeId: node.id,
             },
           };
         }, errorContext.get);
@@ -233,7 +224,7 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"), errorContext.get);
         }
-        errorContext.set({ workspaceId: workspace.id, auxRootId: workspace.auxRootId });
+        errorContext.set({ workspaceId: workspace.id });
 
         return withEnvelope(() => {
           const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
@@ -270,19 +261,17 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
           errorContext.set({ conflictingNode: summarizeAuxNode(conflicting) });
           invariant(conflicting == null, "移动辅助资料失败：目标路径已存在。");
 
-          const newParentDirId = resolveParentDirId({
+          assertParentDirPath({
             workspaceId: workspace.id,
             timelinePointId: resolvedTimelinePointId,
-            auxRootId: workspace.auxRootId,
             parentPath: newParentPath,
             actionLabel: "移动辅助资料",
           });
           const node = moveAuxNodeAt({
             workspaceId: workspace.id,
             timelinePointId: resolvedTimelinePointId,
-            nodeId: existing.id,
-            newParentDirId,
-            newName,
+            path: existing.path,
+            newPath: normalizedNewPath,
           });
 
           return {
@@ -290,10 +279,9 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
             truncated: false,
             data: {
               action: "moved",
-              path: normalizedNewPath,
+              path: node.path,
               previousPath: normalizedPath,
               timelinePointId: resolvedTimelinePointId,
-              nodeId: node.id,
             },
           };
         }, errorContext.get);
@@ -317,7 +305,7 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"), errorContext.get);
         }
-        errorContext.set({ workspaceId: workspace.id, auxRootId: workspace.auxRootId });
+        errorContext.set({ workspaceId: workspace.id });
 
         return withEnvelope(() => {
           const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
@@ -334,7 +322,7 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
           deleteAuxNodeAt({
             workspaceId: workspace.id,
             timelinePointId: resolvedTimelinePointId,
-            nodeId: node.id,
+            path: node.path,
           });
 
           return {
@@ -344,14 +332,13 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
               action: "deleted" as const,
               path: normalizedPath,
               timelinePointId: resolvedTimelinePointId,
-              nodeId: node.id,
             },
           };
         }, errorContext.get);
       },
     }),
     create_symlink: tool({
-      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在当前时间点创建参考资料符号链接。符号链接适合做会随故事推进变化的指针；目标路径必须在当前时间点可见，可以是从更早时间点继承来的节点。`,
+      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在当前时间点创建参考资料符号链接。符号链接适合做会随故事推进变化的指针；目标路径只需是参考资料逻辑绝对路径，可以暂时不可见。`,
       inputSchema: jsonSchema<{
         path: string;
         targetPath: string;
@@ -365,8 +352,7 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
           },
           targetPath: {
             type: "string",
-            description:
-              "链接目标绝对路径，例如 /场景/城堡；目标必须已存在且在目标叠加视图中可见。",
+            description: "链接目标绝对路径，例如 /场景/城堡；目标可以暂时不可见。",
           },
         },
       }),
@@ -376,7 +362,7 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"), errorContext.get);
         }
-        errorContext.set({ workspaceId: workspace.id, auxRootId: workspace.auxRootId });
+        errorContext.set({ workspaceId: workspace.id });
 
         return withEnvelope(() => {
           const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
@@ -403,26 +389,17 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
               : "创建辅助资料符号链接失败：目标路径已存在。",
           );
 
-          const targetNode = resolveAuxNodeByPathOrThrow({
+          assertParentDirPath({
             workspaceId: workspace.id,
             timelinePointId: resolvedTimelinePointId,
-            path: normalizedTargetPath,
-            actionLabel: "创建辅助资料符号链接",
-          });
-          errorContext.set({ targetNode: summarizeAuxNode(targetNode) });
-          const parentDirId = resolveParentDirId({
-            workspaceId: workspace.id,
-            timelinePointId: resolvedTimelinePointId,
-            auxRootId: workspace.auxRootId,
             parentPath,
             actionLabel: "创建辅助资料符号链接",
           });
-          const node = linkAt({
+          linkAt({
             workspaceId: workspace.id,
             timelinePointId: resolvedTimelinePointId,
-            parentDirId,
-            name,
-            targetNodeId: targetNode.id,
+            path: normalizedPath,
+            targetPath: normalizedTargetPath,
           });
 
           return {
@@ -433,14 +410,13 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
               path: normalizedPath,
               targetPath: normalizedTargetPath,
               timelinePointId: resolvedTimelinePointId,
-              nodeId: node.id,
             },
           };
         }, errorContext.get);
       },
     }),
     retarget_symlink: tool({
-      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在当前时间点修改参考资料符号链接的目标路径。链接自身路径不变，只在当前时间点改变指向；早期时间点仍看到旧指向。新目标必须在当前时间点可见。`,
+      description: `${REFERENCE_OVERLAY_WRITE_SEMANTICS} 在当前时间点修改参考资料符号链接的目标路径。链接自身路径不变，只在当前时间点改变指向；早期时间点仍看到旧指向。新目标只需是参考资料逻辑绝对路径，可以暂时不可见。`,
       inputSchema: jsonSchema<{
         path: string;
         newTargetPath: string;
@@ -454,8 +430,7 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
           },
           newTargetPath: {
             type: "string",
-            description:
-              "新的目标绝对路径，例如 /场景/森林；目标必须已存在且在目标叠加视图中可见。",
+            description: "新的目标绝对路径，例如 /场景/森林；目标可以暂时不可见。",
           },
         },
       }),
@@ -468,7 +443,7 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
         if (!workspace) {
           return failure(new Error("当前项目没有默认工作区。"), errorContext.get);
         }
-        errorContext.set({ workspaceId: workspace.id, auxRootId: workspace.auxRootId });
+        errorContext.set({ workspaceId: workspace.id });
 
         return withEnvelope(() => {
           const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
@@ -497,19 +472,11 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
             "重定向辅助资料符号链接失败：指定路径不是符号链接。",
           );
 
-          const targetNode = resolveAuxNodeByPathOrThrow({
+          retargetAuxSymlinkAt({
             workspaceId: workspace.id,
             timelinePointId: resolvedTimelinePointId,
-            path: normalizedNewTargetPath,
-            actionLabel: "重定向辅助资料符号链接",
-          });
-          errorContext.set({ newTargetNode: summarizeAuxNode(targetNode) });
-
-          const node = retargetAuxSymlinkAt({
-            workspaceId: workspace.id,
-            timelinePointId: resolvedTimelinePointId,
-            symlinkNodeId: symlinkNode.id,
-            targetNodeId: targetNode.id,
+            path: symlinkNode.path,
+            targetPath: normalizedNewTargetPath,
           });
 
           return {
@@ -520,7 +487,6 @@ export function buildAuxWriteTools({ projectId, runtimeContext }: ToolBuildConte
               path: normalizedPath,
               newTargetPath: normalizedNewTargetPath,
               timelinePointId: resolvedTimelinePointId,
-              nodeId: node.id,
             },
           };
         }, errorContext.get);

@@ -7,7 +7,7 @@ import type {
 
 export function deriveProjectSelectionState(input: {
   activeContentNodeId: string | null;
-  activeAuxNodeId: string | null;
+  activeAuxPath: string | null;
   activeTimelinePointId: string | null;
   contentNodeMap: ReadonlyMap<string, ContentTreeNodeVM>;
   auxNodeMap: ReadonlyMap<string, AuxTreeNodeVM>;
@@ -16,8 +16,8 @@ export function deriveProjectSelectionState(input: {
   const activeContentNode = input.activeContentNodeId
     ? (input.contentNodeMap.get(input.activeContentNodeId) ?? null)
     : null;
-  const activeAuxNode = input.activeAuxNodeId
-    ? (input.auxNodeMap.get(input.activeAuxNodeId) ?? null)
+  const activeAuxNode = input.activeAuxPath
+    ? (input.auxNodeMap.get(input.activeAuxPath) ?? null)
     : null;
   const activeTimelineLabel =
     (activeContentNode && input.timelineLabelMap.get(activeContentNode.anchorTimelinePointId)) ||
@@ -113,7 +113,6 @@ export function buildProjectAssistantEditorContext(input: {
     workspaceId: input.workspaceId,
     activeContentNodeId,
     activeContentTitle: null,
-    activeAuxNodeId: null,
     activeAuxPath,
     activeTimelinePointId: input.activeTimelinePointId,
     activeTimelineLabel: input.activeTimelineLabel,

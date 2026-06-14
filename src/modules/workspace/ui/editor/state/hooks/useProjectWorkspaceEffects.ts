@@ -15,15 +15,15 @@ export function useProjectWorkspaceEffects(
   flushAuxSave: (_nodeId: string, _content: string) => Promise<void>,
 ) {
   const setActiveContentNodeId = useWorkspaceState((state) => state.setActiveContentNodeId);
-  const setActiveAuxNodeId = useWorkspaceState((state) => state.setActiveAuxNodeId);
+  const setActiveAuxPath = useWorkspaceState((state) => state.setActiveAuxPath);
   const pendingContentNodeId = useWorkspaceState((state) => state.pendingContentNodeId);
   const setPendingContentNodeId = useWorkspaceState((state) => state.setPendingContentNodeId);
-  const pendingAuxNodeId = useWorkspaceState((state) => state.pendingAuxNodeId);
-  const setPendingAuxNodeId = useWorkspaceState((state) => state.setPendingAuxNodeId);
+  const pendingAuxPath = useWorkspaceState((state) => state.pendingAuxPath);
+  const setPendingAuxPath = useWorkspaceState((state) => state.setPendingAuxPath);
   const shouldAutoSelectContent = useWorkspaceState((state) => state.shouldAutoSelectContent);
   const setActiveTimelinePointId = useWorkspaceState((state) => state.setActiveTimelinePointId);
   const setExpandedContentIds = useWorkspaceState((state) => state.setExpandedContentIds);
-  const setExpandedAuxIds = useWorkspaceState((state) => state.setExpandedAuxIds);
+  const setExpandedAuxPaths = useWorkspaceState((state) => state.setExpandedAuxPaths);
   const isAuxSymlinkTargetPickerActive = useWorkspaceState(
     (state) => state.isAuxSymlinkTargetPickerActive,
   );
@@ -49,11 +49,11 @@ export function useProjectWorkspaceEffects(
       parentMap: contentParentMap,
     },
     timeline: { points: timelinePoints, idSet: timelinePointIdSet },
-    aux: { tree: auxTree, nodeMap: auxNodeMap, idSet: auxNodeIdSet },
+    aux: { tree: auxTree, nodeMap: auxNodeMap, idSet: auxPathSet },
     selection: {
       activeContentNodeId,
-      activeAuxNodeId,
-      expandedAuxIds,
+      activeAuxPath,
+      expandedAuxPaths,
       activeContentNode,
       activeAuxNode,
     },
@@ -96,7 +96,7 @@ export function useProjectWorkspaceEffects(
       return;
     }
 
-    if (activeAuxNodeId) {
+    if (activeAuxPath) {
       return;
     }
 
@@ -113,7 +113,7 @@ export function useProjectWorkspaceEffects(
       setActiveContentNodeId(preferredNode.id);
     }
   }, [
-    activeAuxNodeId,
+    activeAuxPath,
     activeContentNodeId,
     contentTree,
     flatContentNodes,
@@ -164,33 +164,26 @@ export function useProjectWorkspaceEffects(
 
   useEffect(() => {
     if (auxTree.length === 0) {
-      if (pendingAuxNodeId) {
-        setPendingAuxNodeId(null);
+      if (pendingAuxPath) {
+        setPendingAuxPath(null);
       }
-      setActiveAuxNodeId(null);
+      setActiveAuxPath(null);
       return;
     }
 
-    if (activeAuxNodeId && auxNodeIdSet.has(activeAuxNodeId)) {
-      if (pendingAuxNodeId === activeAuxNodeId) {
-        setPendingAuxNodeId(null);
+    if (activeAuxPath && auxPathSet.has(activeAuxPath)) {
+      if (pendingAuxPath === activeAuxPath) {
+        setPendingAuxPath(null);
       }
       return;
     }
 
-    if (activeAuxNodeId && pendingAuxNodeId === activeAuxNodeId) {
+    if (activeAuxPath && pendingAuxPath === activeAuxPath) {
       return;
     }
 
-    setActiveAuxNodeId(null);
-  }, [
-    activeAuxNodeId,
-    auxNodeIdSet,
-    auxTree,
-    pendingAuxNodeId,
-    setActiveAuxNodeId,
-    setPendingAuxNodeId,
-  ]);
+    setActiveAuxPath(null);
+  }, [activeAuxPath, auxPathSet, auxTree, pendingAuxPath, setActiveAuxPath, setPendingAuxPath]);
 
   useEffect(() => {
     if (!isAuxSymlinkTargetPickerActive) {
@@ -202,17 +195,12 @@ export function useProjectWorkspaceEffects(
 
     const sourceId = auxSymlinkTargetPickerSourceId;
     const sourceNode = sourceId ? (auxNodeMap.get(sourceId) ?? null) : null;
-    if (
-      !sourceId ||
-      activeAuxNodeId !== sourceId ||
-      sourceNode?.nodeType !== "symlink" ||
-      sourceNode.isDeleted
-    ) {
+    if (!sourceId || activeAuxPath !== sourceId || sourceNode?.nodeType !== "symlink") {
       setIsAuxSymlinkTargetPickerActive(false);
       setAuxSymlinkTargetPickerSourceId(null);
     }
   }, [
-    activeAuxNodeId,
+    activeAuxPath,
     auxNodeMap,
     auxSymlinkTargetPickerSourceId,
     isAuxSymlinkTargetPickerActive,
@@ -225,7 +213,7 @@ export function useProjectWorkspaceEffects(
       return;
     }
 
-    const hasVisibleExpandedNode = [...expandedAuxIds].some((id) => auxNodeIdSet.has(id));
+    const hasVisibleExpandedNode = [...expandedAuxPaths].some((id) => auxPathSet.has(id));
     if (hasVisibleExpandedNode) {
       return;
     }
@@ -235,9 +223,9 @@ export function useProjectWorkspaceEffects(
       .slice(0, 2)
       .map((node) => node.id);
     if (nextExpandedIds.length > 0) {
-      setExpandedAuxIds(new Set(nextExpandedIds));
+      setExpandedAuxPaths(new Set(nextExpandedIds));
     }
-  }, [auxNodeIdSet, auxTree, expandedAuxIds, setExpandedAuxIds]);
+  }, [auxPathSet, auxTree, expandedAuxPaths, setExpandedAuxPaths]);
 
   useEffect(() => {
     setCommittedBodies((previous) => {

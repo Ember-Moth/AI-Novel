@@ -39,7 +39,7 @@ type AuxSymlinkTargetPickerState = {
   sourceNodeId: string | null;
   selectedTargetNodeId: string | null;
   invalidTargetNodeIds: ReadonlySet<string>;
-  onPickTarget: (_targetNodeId: string) => void;
+  onPickTarget: (_targetPath: string) => void;
 };
 
 function AuxTreeNodeRow({
@@ -56,7 +56,6 @@ function AuxTreeNodeRow({
   onCreateSymlink,
   onStartRetargetSymlink,
   onDelete,
-  onRestore,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -78,7 +77,6 @@ function AuxTreeNodeRow({
   onCreateSymlink: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onStartRetargetSymlink: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onDelete: (_id: string, _anchorId: string) => void;
-  onRestore: (_id: string, _anchorId: string) => void;
   onDragStart: (_nodeId: string) => void;
   onDragMove: (_nodeId: string, _point: { x: number; y: number }) => void;
   onDragEnd: (_nodeId: string, _point: { x: number; y: number }) => void;
@@ -89,27 +87,20 @@ function AuxTreeNodeRow({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const isDir = node.nodeType === "dir";
-  const isDeleted = node.isDeleted;
-  const canDrag = !isDeleted;
   const isSymlinkTargetPickerActive = symlinkTargetPicker.active;
   const isSymlinkTargetSource = symlinkTargetPicker.sourceNodeId === node.id;
   const isSymlinkTargetSelected = symlinkTargetPicker.selectedTargetNodeId === node.id;
   const isSymlinkTargetDisabled = symlinkTargetPicker.invalidTargetNodeIds.has(node.id);
-  const dragDisabled = isBusy || isEditing || !canDrag || isSymlinkTargetPickerActive;
-  const dragHandleId = canDrag && !isSymlinkTargetPickerActive ? node.id : undefined;
-  const contentStateClass = isDeleted
-    ? "text-red-300 opacity-55"
-    : showTimelineChanges && !node.hasTimelineChange
-      ? "opacity-55"
-      : "opacity-100";
+  const dragDisabled = isBusy || isEditing || isSymlinkTargetPickerActive;
+  const dragHandleId = !isSymlinkTargetPickerActive ? node.id : undefined;
+  const contentStateClass =
+    showTimelineChanges && !node.hasTimelineChange ? "opacity-55" : "opacity-100";
   const rowAnchorId = actionAnchorId("aux", "row", node.id);
   const addDirAnchorId = actionAnchorId("aux", "add-dir", node.id);
   const addFileAnchorId = actionAnchorId("aux", "add-file", node.id);
   const createSymlinkAnchorId = actionAnchorId("aux", "create-symlink", node.id);
   const retargetSymlinkAnchorId = actionAnchorId("aux", "retarget-symlink", node.id);
   const deleteAnchorId = actionAnchorId("aux", "delete", node.id);
-  const restoreAnchorId = actionAnchorId("aux", "restore", node.id);
-  const canRestore = showTimelineChanges && node.hasTimelineChange;
   const labelHitAreaProps = { [ROW_GESTURE_HIT_AREA_ATTRIBUTE]: "label" } as const;
   const symlinkTargetPickerState: "source" | "selected-target" | "disabled-target" | undefined =
     isSymlinkTargetSource
@@ -123,7 +114,6 @@ function AuxTreeNodeRow({
   const handleTargetPickerSelect = () => {
     if (
       !isSymlinkTargetPickerActive ||
-      isDeleted ||
       isSymlinkTargetDisabled ||
       isSymlinkTargetSource ||
       isSymlinkTargetSelected
@@ -164,11 +154,9 @@ function AuxTreeNodeRow({
     <span className={`min-w-0 flex-1 ${contentStateClass}`} {...labelHitAreaProps}>
       <InlineEditableText
         value={node.name}
-        disabled={isBusy || isDeleted || isSymlinkTargetPickerActive}
+        disabled={isBusy || isSymlinkTargetPickerActive}
         onEditStart={() => {
-          if (!isDeleted) {
-            onSelect(node);
-          }
+          onSelect(node);
         }}
         onEditingChange={setIsEditing}
         onCommit={async (next) => onRename(node.id, next)}
@@ -220,47 +208,34 @@ function AuxTreeNodeRow({
         actions={
           isSymlinkTargetPickerActive ? null : (
             <>
-              {canRestore ? (
-                <RowActionButton
-                  anchorId={restoreAnchorId}
-                  onClick={() => onRestore(node.id, restoreAnchorId)}
-                  disabled={isBusy || isEditing}
-                  title="恢复到上一时间点状态"
-                  icon="icon-[material-symbols--undo]"
-                />
-              ) : null}
-              {isDeleted ? null : (
-                <>
-                  <RowActionButton
-                    anchorId={addDirAnchorId}
-                    onClick={() => onCreateChildDir(node, addDirAnchorId)}
-                    disabled={isBusy || isEditing}
-                    title="添加子文件夹"
-                    icon="icon-[material-symbols--create-new-folder]"
-                  />
-                  <RowActionButton
-                    anchorId={addFileAnchorId}
-                    onClick={() => onCreateChildFile(node, addFileAnchorId)}
-                    disabled={isBusy || isEditing}
-                    title="添加子文件"
-                    icon="icon-[material-symbols--note-add]"
-                  />
-                  <RowActionButton
-                    anchorId={createSymlinkAnchorId}
-                    onClick={() => onCreateSymlink(node, createSymlinkAnchorId)}
-                    disabled={isBusy || isEditing}
-                    title="在同目录创建符号链接"
-                    icon="icon-[material-symbols--link]"
-                  />
-                  <RowActionButton
-                    anchorId={deleteAnchorId}
-                    onClick={() => onDelete(node.id, deleteAnchorId)}
-                    disabled={isBusy || isEditing}
-                    title="删除节点"
-                    icon="icon-[material-symbols--close]"
-                  />
-                </>
-              )}
+              <RowActionButton
+                anchorId={addDirAnchorId}
+                onClick={() => onCreateChildDir(node, addDirAnchorId)}
+                disabled={isBusy || isEditing}
+                title="添加子文件夹"
+                icon="icon-[material-symbols--create-new-folder]"
+              />
+              <RowActionButton
+                anchorId={addFileAnchorId}
+                onClick={() => onCreateChildFile(node, addFileAnchorId)}
+                disabled={isBusy || isEditing}
+                title="添加子文件"
+                icon="icon-[material-symbols--note-add]"
+              />
+              <RowActionButton
+                anchorId={createSymlinkAnchorId}
+                onClick={() => onCreateSymlink(node, createSymlinkAnchorId)}
+                disabled={isBusy || isEditing}
+                title="在同目录创建符号链接"
+                icon="icon-[material-symbols--link]"
+              />
+              <RowActionButton
+                anchorId={deleteAnchorId}
+                onClick={() => onDelete(node.id, deleteAnchorId)}
+                disabled={isBusy || isEditing}
+                title="删除节点"
+                icon="icon-[material-symbols--close]"
+              />
             </>
           )
         }
@@ -284,42 +259,29 @@ function AuxTreeNodeRow({
       actions={
         isSymlinkTargetPickerActive ? null : (
           <>
-            {canRestore ? (
+            {node.nodeType === "symlink" ? (
               <RowActionButton
-                anchorId={restoreAnchorId}
-                onClick={() => onRestore(node.id, restoreAnchorId)}
+                anchorId={retargetSymlinkAnchorId}
+                onClick={() => onStartRetargetSymlink(node, retargetSymlinkAnchorId)}
                 disabled={isBusy || isEditing}
-                title="恢复到上一时间点状态"
-                icon="icon-[material-symbols--undo]"
+                title="修改符号链接目标"
+                icon="icon-[material-symbols--target]"
               />
             ) : null}
-            {isDeleted ? null : (
-              <>
-                {node.nodeType === "symlink" ? (
-                  <RowActionButton
-                    anchorId={retargetSymlinkAnchorId}
-                    onClick={() => onStartRetargetSymlink(node, retargetSymlinkAnchorId)}
-                    disabled={isBusy || isEditing}
-                    title="修改符号链接目标"
-                    icon="icon-[material-symbols--target]"
-                  />
-                ) : null}
-                <RowActionButton
-                  anchorId={createSymlinkAnchorId}
-                  onClick={() => onCreateSymlink(node, createSymlinkAnchorId)}
-                  disabled={isBusy || isEditing}
-                  title="在同目录创建符号链接"
-                  icon="icon-[material-symbols--link]"
-                />
-                <RowActionButton
-                  anchorId={deleteAnchorId}
-                  onClick={() => onDelete(node.id, deleteAnchorId)}
-                  disabled={isBusy || isEditing}
-                  title="删除节点"
-                  icon="icon-[material-symbols--close]"
-                />
-              </>
-            )}
+            <RowActionButton
+              anchorId={createSymlinkAnchorId}
+              onClick={() => onCreateSymlink(node, createSymlinkAnchorId)}
+              disabled={isBusy || isEditing}
+              title="在同目录创建符号链接"
+              icon="icon-[material-symbols--link]"
+            />
+            <RowActionButton
+              anchorId={deleteAnchorId}
+              onClick={() => onDelete(node.id, deleteAnchorId)}
+              disabled={isBusy || isEditing}
+              title="删除节点"
+              icon="icon-[material-symbols--close]"
+            />
           </>
         )
       }
@@ -377,7 +339,6 @@ export function AuxTreePanel({
   onStartRetargetSymlink,
   onMove,
   onDelete,
-  onRestore,
   symlinkTargetPicker,
   isBusy,
   isPending,
@@ -396,7 +357,6 @@ export function AuxTreePanel({
   onStartRetargetSymlink: (_node: AuxTreeNodeVM, _anchorId: string) => void;
   onMove: (_intent: AuxHierarchyMoveIntent) => void;
   onDelete: (_id: string, _anchorId: string) => void;
-  onRestore: (_id: string, _anchorId: string) => void;
   symlinkTargetPicker: AuxSymlinkTargetPickerState;
   isBusy: boolean;
   isPending: boolean;
@@ -515,7 +475,7 @@ export function AuxTreePanel({
     const resolved = resolveAuxHierarchyMove({
       parentMap: panelParentMap,
       nodeMap: panelNodeMap,
-      auxRootId: rootId,
+      auxRootPath: rootId,
       ...nextIntent,
     });
     return resolved ? nextIntent : null;
@@ -554,7 +514,7 @@ export function AuxTreePanel({
     const resolved = resolveAuxHierarchyMove({
       parentMap: panelParentMap,
       nodeMap: panelNodeMap,
-      auxRootId: rootId,
+      auxRootPath: rootId,
       ...nextIntent,
     });
     return resolved ? nextIntent : null;
@@ -598,7 +558,6 @@ export function AuxTreePanel({
       onCreateSymlink={onCreateSymlink}
       onStartRetargetSymlink={onStartRetargetSymlink}
       onDelete={onDelete}
-      onRestore={onRestore}
       onDragStart={handleDragStart}
       onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
@@ -694,7 +653,7 @@ function resolveDropIndicatorTarget(
   }
 
   const target = nodeMap.get(intent.targetId);
-  if (!target || target.isDeleted) {
+  if (!target) {
     return null;
   }
 

@@ -42,10 +42,7 @@ export function buildAuxReadTools({ projectId, runtimeContext }: ToolBuildContex
           const tree = listAuxTreeAt(
             workspace.id,
             resolvedTimelinePointId,
-            {
-              dirId: path ? undefined : (workspace.auxRootId ?? undefined),
-              path: path ?? undefined,
-            },
+            { path: path ?? "/" },
             {
               depth,
             },

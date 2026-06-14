@@ -71,17 +71,17 @@ test("isQueryRefreshing only reports visible background refreshes", () => {
   ).toBe(false);
 });
 
-test("selectVisibleAuxSnapshot only returns snapshots for the current aux root", () => {
+test("selectVisibleAuxSnapshot only returns root path snapshots", () => {
   const snapshot = {
-    rootNodeId: "aux-root",
+    rootPath: "/",
     timelinePointId: ORIGIN_TIMELINE_POINT_ID,
     nodes: [],
   };
 
-  expect(selectVisibleAuxSnapshot("aux-root", snapshot)).toBe(snapshot);
-  expect(selectVisibleAuxSnapshot("other-root", snapshot)).toBeUndefined();
-  expect(selectVisibleAuxSnapshot(null, snapshot)).toBeUndefined();
-  expect(selectVisibleAuxSnapshot("aux-root", undefined)).toBeUndefined();
+  expect(selectVisibleAuxSnapshot(snapshot)).toBe(snapshot);
+  expect(selectVisibleAuxSnapshot({ ...snapshot, rootPath: "/other" })).toBeUndefined();
+  expect(selectVisibleAuxSnapshot(null)).toBeUndefined();
+  expect(selectVisibleAuxSnapshot(undefined)).toBeUndefined();
 });
 
 test("isAuxBusy treats link mutations as part of aux busy state", () => {
@@ -102,7 +102,6 @@ test("resolveProjectWorkspaceIdentity rejects workspaces from another project", 
         branchId: "branch_a",
         worktreePath: "/tmp/workspace_a",
         contentRootId: "content_root",
-        auxRootId: "aux_root",
         createdAt: 1,
         updatedAt: 2,
       },
@@ -112,7 +111,6 @@ test("resolveProjectWorkspaceIdentity rejects workspaces from another project", 
   ).toMatchObject({
     workspaceId: undefined,
     contentRootId: null,
-    workspaceAuxRootId: null,
     routeMismatch: "当前工作区不属于这个项目。",
     error: "当前工作区不属于这个项目。",
   });

@@ -48,7 +48,7 @@ export function shouldClearActiveAuxDraftForRefresh({
   return (
     event.areas.includes("aux") &&
     activeAuxNode?.nodeType === "file" &&
-    event.auxNodeId === activeAuxNode.id
+    event.auxPath === activeAuxNode.id
   );
 }
 
