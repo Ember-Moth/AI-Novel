@@ -451,7 +451,7 @@ function AiSidebarMessagesContent({
 
   return (
     <div className="flex min-h-full flex-col gap-2 px-3.5 py-2 select-text">
-      <AnimatePresence initial={false}>
+      <AnimatePresence initial={false} mode="popLayout">
         {controller.assistantStateIsInitialLoading && controller.showEmptyState ? (
           <motion.div
             key="loading-state"
@@ -464,9 +464,7 @@ function AiSidebarMessagesContent({
             正在加载会话...
           </motion.div>
         ) : null}
-      </AnimatePresence>
 
-      <AnimatePresence initial={false}>
         {controller.showEmptyState ? (
           <motion.div
             key="empty-state"
@@ -487,9 +485,7 @@ function AiSidebarMessagesContent({
             </p>
           </motion.div>
         ) : null}
-      </AnimatePresence>
 
-      <AnimatePresence initial={false} mode="popLayout">
         {visibleMessages.map(({ message, index }) => {
           const text = getMessageText(message);
           const refDisplays = getAssistantRefDisplays(message);
