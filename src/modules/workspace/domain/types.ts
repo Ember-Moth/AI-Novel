@@ -2,6 +2,7 @@ import type { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/consta
 
 export type TimelinePointRef = string | null | undefined | typeof ORIGIN_TIMELINE_POINT_ID;
 export type AuxNodeType = "dir" | "file" | "symlink";
+export type AuxOverlayStatus = "visible" | "deleted";
 
 export interface TimelinePointView {
   id: string | typeof ORIGIN_TIMELINE_POINT_ID;
@@ -56,6 +57,7 @@ export interface ExportedAuxNode {
   timelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID;
   path: string;
   hasTimelineChange: boolean;
+  overlayStatus: AuxOverlayStatus;
   children: ExportedAuxNode[];
 }
 
@@ -107,6 +109,7 @@ export interface AuxDirListTreeNode {
   timelinePointId?: string | typeof ORIGIN_TIMELINE_POINT_ID;
   path: string;
   symlinkTargetPath?: string;
+  overlayStatus?: AuxOverlayStatus;
   children: AuxDirListTreeNode[];
   hiddenChildrenCount?: number;
 }

@@ -16,9 +16,11 @@ export function deriveProjectSelectionState(input: {
   const activeContentNode = input.activeContentNodeId
     ? (input.contentNodeMap.get(input.activeContentNodeId) ?? null)
     : null;
-  const activeAuxNode = input.activeAuxPath
+  const activeAuxNodeCandidate = input.activeAuxPath
     ? (input.auxNodeMap.get(input.activeAuxPath) ?? null)
     : null;
+  const activeAuxNode =
+    activeAuxNodeCandidate?.overlayStatus === "deleted" ? null : activeAuxNodeCandidate;
   const activeTimelineLabel =
     (activeContentNode && input.timelineLabelMap.get(activeContentNode.anchorTimelinePointId)) ||
     (input.activeTimelinePointId

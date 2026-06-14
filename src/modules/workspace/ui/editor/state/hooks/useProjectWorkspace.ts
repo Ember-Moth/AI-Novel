@@ -217,6 +217,7 @@ export function useProjectAuxData(
   const moveAux = rpc.useMutation("aux.move");
   const retargetSymlinkAux = rpc.useMutation("aux.retargetSymlink");
   const deleteAux = rpc.useMutation("aux.delete");
+  const restoreDeletedAux = rpc.useMutation("aux.restoreDeleted");
 
   const auxState = useMemo(
     () => buildAuxTreeState(visibleAuxSnapshot?.nodes ?? []),
@@ -224,7 +225,15 @@ export function useProjectAuxData(
   );
   const rootId = visibleAuxSnapshot?.rootPath ?? "/";
 
-  const busy = isAuxBusy([mkdirAux, writeFileAux, linkAux, moveAux, retargetSymlinkAux, deleteAux]);
+  const busy = isAuxBusy([
+    mkdirAux,
+    writeFileAux,
+    linkAux,
+    moveAux,
+    retargetSymlinkAux,
+    deleteAux,
+    restoreDeletedAux,
+  ]);
   const initialLoading =
     !auxQuery.isSkipped && !visibleAuxSnapshot && auxQuery.isInitialLoading && !auxQuery.error;
   const refreshing = isQueryRefreshing(auxQuery, !!visibleAuxSnapshot);
@@ -240,6 +249,7 @@ export function useProjectAuxData(
       moveAux,
       retargetSymlinkAux,
       deleteAux,
+      restoreDeletedAux,
       tree: auxState.tree,
       rootId,
       nodeMap: auxState.nodeMap,
@@ -265,6 +275,7 @@ export function useProjectAuxData(
       mkdirAux,
       moveAux,
       retargetSymlinkAux,
+      restoreDeletedAux,
       pending,
       refreshing,
       rootId,

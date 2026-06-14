@@ -129,13 +129,15 @@ function removePathSync(targetPath: string) {
   fs.rmSync(targetPath, { recursive: true, force: true });
 }
 
-function removeWhiteoutForPath(root: string, auxPath: string) {
-  const parentPath = posix.dirname(auxPath);
-  const whiteoutPath = path.join(
-    fsPathForAuxPath(root, parentPath),
+function whiteoutPathForAuxPath(root: string, auxPath: string) {
+  return path.join(
+    fsPathForAuxPath(root, posix.dirname(auxPath)),
     `${WHITEOUT_PREFIX}${posix.basename(auxPath)}`,
   );
-  fs.rmSync(whiteoutPath, { force: true });
+}
+
+function removeWhiteoutForPath(root: string, auxPath: string) {
+  fs.rmSync(whiteoutPathForAuxPath(root, auxPath), { force: true });
 }
 
 function writeKeepFile(dir: string) {
@@ -158,6 +160,10 @@ function snapshotHasPathOrDescendant(snapshot: Map<string, OverlaySnapshotNode>,
     }
   }
   return false;
+}
+
+function hasAncestorPath(paths: string[], auxPath: string) {
+  return paths.some((pathItem) => auxPath.startsWith(`${pathItem}/`));
 }
 
 function readLayerEntries(worktreePath: string, pointId: string | null): OverlayLayerEntry[] {
@@ -354,6 +360,35 @@ function pruneInvalidWhiteouts(root: string, lowerSnapshot: Map<string, OverlayS
     }
   };
   walk(root, "/");
+}
+
+function currentLayerDeletedEntries(input: {
+  workspaceId: string;
+  state: WorktreeState;
+  worktreePath: string;
+  pointId: string | null;
+}) {
+  if (input.pointId == null) return [];
+  const lowerSnapshot = lowerSnapshotForLayer(input.workspaceId, input.state, input.pointId);
+  const selectedPaths: string[] = [];
+  const deletedEntries: OverlayLayerEntry[] = [];
+
+  for (const entry of readLayerEntries(input.worktreePath, input.pointId)) {
+    if (entry.kind !== "whiteout") continue;
+    if (hasAncestorPath(selectedPaths, entry.path)) continue;
+    if (!snapshotHasPathOrDescendant(lowerSnapshot, entry.path)) continue;
+    selectedPaths.push(entry.path);
+    deletedEntries.push(entry);
+  }
+
+  return deletedEntries.map((entry) => {
+    const lowerNode = lowerSnapshot.get(entry.path);
+    return {
+      entry,
+      lowerNode,
+      nodeType: lowerNode?.nodeType ?? ("dir" as const),
+    };
+  });
 }
 
 function deleteVisiblePathFromLayer(input: {
@@ -556,6 +591,31 @@ export function deleteAuxNodeAt(input: {
   touchWorkspace(workspace.id);
 }
 
+export function restoreDeletedAuxNodeAt(input: {
+  workspaceId: string;
+  timelinePointId: TimelinePointRef;
+  path: string;
+}) {
+  const workspace = getWorkspace(input.workspaceId);
+  const state = readWorktreeState(workspace.worktreePath);
+  const pointId = assertTimelinePoint(state, input.timelinePointId);
+  invariant(pointId !== null, "原点没有可恢复的辅助资料删除标记。");
+  const normalizedPath = normalizeAuxPath(input.path, "恢复辅助资料");
+  const lowerSnapshot = lowerSnapshotForLayer(input.workspaceId, state, pointId);
+  invariant(snapshotHasPathOrDescendant(lowerSnapshot, normalizedPath), "没有可恢复的辅助资料。");
+  const root = currentLayerRoot(workspace.worktreePath, pointId);
+  const whiteoutPath = whiteoutPathForAuxPath(root, normalizedPath);
+  invariant(fs.existsSync(whiteoutPath), "没有可恢复的辅助资料删除标记。");
+  fs.rmSync(whiteoutPath, { force: true });
+  pruneInvalidWhiteouts(root, lowerSnapshot);
+  touchWorkspace(workspace.id);
+  return {
+    path: normalizedPath,
+    workspaceId: workspace.id,
+    nodeType: lowerSnapshot.get(normalizedPath)?.nodeType ?? ("dir" as const),
+  };
+}
+
 export function readAuxByPathAt(
   workspaceId: string,
   pointId: TimelinePointRef,
@@ -619,9 +679,20 @@ export function exportAuxSnapshotTree(
   workspaceId: string,
   pointId?: TimelinePointRef,
 ): ExportedAuxSnapshotTree {
-  const { snapshot } = buildSnapshot(workspaceId, pointId);
-  const build = (parentPath: string): ExportedAuxNode[] =>
-    childrenOf(snapshot, parentPath).map((node) => ({
+  const {
+    workspace,
+    state,
+    pointId: normalizedPointId,
+    snapshot,
+  } = buildSnapshot(workspaceId, pointId);
+  const deletedEntries = currentLayerDeletedEntries({
+    workspaceId,
+    state,
+    worktreePath: workspace.worktreePath,
+    pointId: normalizedPointId,
+  });
+  const build = (parentPath: string): ExportedAuxNode[] => {
+    const visibleNodes = childrenOf(snapshot, parentPath).map((node) => ({
       nodeType: node.nodeType,
       name: node.name,
       content: node.nodeType === "file" ? node.content : null,
@@ -629,11 +700,29 @@ export function exportAuxSnapshotTree(
       timelinePointId: node.timelinePointId,
       path: node.path,
       hasTimelineChange: node.timelinePointId !== ORIGIN_TIMELINE_POINT_ID,
+      overlayStatus: "visible" as const,
       children: node.nodeType === "dir" ? build(node.path) : [],
     }));
+    const deletedNodes = deletedEntries
+      .filter(({ entry }) => posix.dirname(entry.path) === parentPath && !snapshot.has(entry.path))
+      .map(({ entry, nodeType }) => ({
+        nodeType,
+        name: posix.basename(entry.path),
+        content: null,
+        symlinkTargetPath: null,
+        timelinePointId: pointIdOrOrigin(entry.timelinePointId),
+        path: entry.path,
+        hasTimelineChange: true,
+        overlayStatus: "deleted" as const,
+        children: [],
+      }));
+    return [...visibleNodes, ...deletedNodes].sort((left, right) =>
+      left.path.localeCompare(right.path),
+    );
+  };
   return {
     rootPath: "/",
-    timelinePointId: pointIdOrOrigin(normalizePointId(pointId)),
+    timelinePointId: pointIdOrOrigin(normalizedPointId),
     nodes: build("/"),
   };
 }

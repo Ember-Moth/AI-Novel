@@ -432,6 +432,7 @@ function ProjectWorkspace({
                       onRename={actions.handleAuxRename}
                       onMove={actions.handleAuxMove}
                       onDelete={actions.handleAuxDelete}
+                      onRestoreDeleted={actions.handleAuxRestoreDeleted}
                       symlinkTargetPicker={
                         symlinkTargetPickerSourceNode?.nodeType === "symlink"
                           ? {

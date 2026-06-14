@@ -123,6 +123,7 @@ function buildAuxNode(
     path: node.path,
     symlinkTargetPath: node.symlinkTargetPath ?? null,
     hasTimelineChange: node.hasTimelineChange,
+    overlayStatus: node.overlayStatus ?? "visible",
     children: [],
   };
 

@@ -92,6 +92,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       moveAux,
       retargetSymlinkAux,
       deleteAux,
+      restoreDeletedAux,
     },
     selection: { activeContentNode },
   } = workspace;
@@ -1243,10 +1244,8 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
           state.setShouldAutoSelectContent(false);
           state.setPendingContentNodeId(null);
           state.setActiveContentNodeId(null);
-          if (activeTimelinePointId === ORIGIN_TIMELINE_POINT_ID) {
-            state.setPendingAuxPath(null);
-            state.setActiveAuxPath(null);
-          }
+          state.setPendingAuxPath(null);
+          state.setActiveAuxPath(null);
         }
       } catch (error) {
         setActionError(
@@ -1257,6 +1256,42 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       }
     },
     [clearAuxNodeLocalState, deleteAux, store, workspaceId],
+  );
+
+  const handleAuxRestoreDeleted = useCallback(
+    async (nodeId: string, anchorId: string) => {
+      const { activeTimelinePointId, setAuxError } = store.getState();
+      if (
+        !workspaceId ||
+        !activeTimelinePointId ||
+        activeTimelinePointId === ORIGIN_TIMELINE_POINT_ID
+      ) {
+        return;
+      }
+
+      clearActionError(setAuxError);
+
+      try {
+        await restoreDeletedAux.mutate({
+          workspaceId,
+          timelinePointId: activeTimelinePointId,
+          path: nodeId,
+        });
+        clearAuxNodeLocalState(new Set([nodeId]));
+        const state = store.getState();
+        if (state.activeAuxPath === nodeId) {
+          state.setPendingAuxPath(null);
+          state.setActiveAuxPath(null);
+        }
+      } catch (error) {
+        setActionError(
+          store.getState().setAuxError,
+          error instanceof Error ? error.message : "恢复辅助节点失败，请稍后重试。",
+          anchorId,
+        );
+      }
+    },
+    [clearAuxNodeLocalState, restoreDeletedAux, store, workspaceId],
   );
 
   const handleTimelineDelete = useCallback(
@@ -1404,6 +1439,7 @@ export function useProjectActions(workspace: ProjectWorkspaceState) {
       handleAuxRename,
       handleAuxMove,
       handleAuxDelete,
+      handleAuxRestoreDeleted,
       setActiveAuxPath: store.getState().setActiveAuxPath,
     },
     misc: {},

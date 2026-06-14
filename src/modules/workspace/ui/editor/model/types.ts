@@ -21,6 +21,7 @@ export interface AuxTreeNodeVM {
   path: string;
   symlinkTargetPath: string | null;
   hasTimelineChange: boolean;
+  overlayStatus?: "visible" | "deleted";
   children: AuxTreeNodeVM[];
 }
 
@@ -46,6 +47,7 @@ export interface RawAuxTreeNode {
   path: string;
   symlinkTargetPath?: string | null;
   hasTimelineChange: boolean;
+  overlayStatus?: "visible" | "deleted";
   children: RawAuxTreeNode[];
 }
 

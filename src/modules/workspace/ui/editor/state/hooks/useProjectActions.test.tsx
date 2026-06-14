@@ -68,6 +68,11 @@ function createWorkspaceState(input: {
     path: string;
     targetPath: string;
   }) => Promise<{ path: string }>;
+  restoreDeletedMutate?: (_input: {
+    workspaceId: string;
+    timelinePointId: string;
+    path: string;
+  }) => Promise<{ path: string }>;
 }) {
   const auxRootPath = input.auxRootPath ?? "/";
   const { nodeMap, parentMap } = buildAuxMaps(input.auxTree, auxRootPath);
@@ -129,6 +134,10 @@ function createWorkspaceState(input: {
           })),
       },
       deleteAux: { isPending: false, mutate: mock(async () => undefined) },
+      restoreDeletedAux: {
+        isPending: false,
+        mutate: input.restoreDeletedMutate ?? mock(async () => ({ path: "/aux_restored" })),
+      },
     },
     selection: {
       activeContentNode: null,
@@ -434,6 +443,37 @@ test("submitAuxSymlinkTargetRetarget keeps picker mode active and reports errors
     message: "循环冲突",
     anchorId: "aux:row:/索引/角色入口",
   });
+});
+
+test("handleAuxRestoreDeleted restores a deleted path and clears local aux state", async () => {
+  const restoreDeletedMutate = mock(async () => ({ path: "/notes.md" }));
+  const workspace = createWorkspaceState({
+    auxTree: [createAuxNode({ id: "/notes.md", name: "notes.md", overlayStatus: "deleted" })],
+    restoreDeletedMutate,
+  });
+  const { actions, store } = renderActions(workspace);
+
+  store.getState().setActiveTimelinePointId("timeline_1");
+  store.getState().setActiveAuxPath("/notes.md");
+  store.getState().setPendingAuxPath("/notes.md");
+  store.getState().setDrafts({ "/notes.md": "draft" });
+  store.getState().setCommittedBodies({ "/notes.md": "committed" });
+  store.getState().setPendingSaveCounts({ "/notes.md": 1 });
+  store.getState().setSaveErrors({ "/notes.md": "failed" });
+
+  await actions.handleAuxRestoreDeleted("/notes.md", "aux:restore-deleted:/notes.md");
+
+  expect(restoreDeletedMutate).toHaveBeenCalledWith({
+    workspaceId: "workspace_1",
+    timelinePointId: "timeline_1",
+    path: "/notes.md",
+  });
+  expect(store.getState().activeAuxPath).toBeNull();
+  expect(store.getState().pendingAuxPath).toBeNull();
+  expect(store.getState().drafts).toEqual({});
+  expect(store.getState().committedBodies).toEqual({});
+  expect(store.getState().pendingSaveCounts).toEqual({});
+  expect(store.getState().saveErrors).toEqual({});
 });
 
 test("handleTimelineMove calls the timeline move RPC with the requested anchor", async () => {

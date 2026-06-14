@@ -17,7 +17,13 @@ export function ContentNodeIcon({
   return <span className={`${icon} shrink-0 text-base`} />;
 }
 
-export function AuxNodeIcon({ nodeType }: { nodeType: string }) {
+export function AuxNodeIcon({
+  nodeType,
+  className = "",
+}: {
+  nodeType: string;
+  className?: string;
+}) {
   const iconMap: Record<string, string> = {
     dir: "icon-[material-symbols--folder] text-icon-folder",
     "dir-open": "icon-[material-symbols--folder-open] text-icon-folder",
@@ -27,7 +33,7 @@ export function AuxNodeIcon({ nodeType }: { nodeType: string }) {
 
   return (
     <span
-      className={`${iconMap[nodeType] ?? "icon-[material-symbols--description] text-foreground-muted"} shrink-0 text-base`}
+      className={`${iconMap[nodeType] ?? "icon-[material-symbols--description] text-foreground-muted"} shrink-0 text-base ${className}`}
     />
   );
 }

@@ -120,3 +120,34 @@ test("creating a point invalidates the aux workspace cache", async () => {
     rpcTags.auxWorkspace(workspace.id),
   ]);
 });
+
+test("restoring a deleted aux path invalidates the aux workspace cache", async () => {
+  const workspace = seedProject("rpc_aux_restore_deleted");
+  service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    path: "/notes.md",
+    content: "origin",
+  });
+  const point = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    label: "Point A",
+  });
+  service.deleteAuxNodeAt({
+    workspaceId: workspace.id,
+    timelinePointId: point.id,
+    path: "/notes.md",
+  });
+
+  const result = await auxHandlers.restoreDeleted.handler(
+    {
+      workspaceId: workspace.id,
+      timelinePointId: point.id,
+      path: "/notes.md",
+    },
+    requestCtx,
+  );
+
+  expect(result.invalidate).toEqual([rpcTags.auxWorkspace(workspace.id)]);
+});

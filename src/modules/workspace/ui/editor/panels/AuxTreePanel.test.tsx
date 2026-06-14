@@ -53,6 +53,7 @@ test("AuxTreePanel renders create-symlink actions for visible entries", () => {
       onStartRetargetSymlink={() => {}}
       onMove={() => {}}
       onDelete={() => {}}
+      onRestoreDeleted={() => {}}
       symlinkTargetPicker={inactiveSymlinkTargetPicker}
       isBusy={false}
       isPending={false}
@@ -86,6 +87,7 @@ test("AuxTreePanel exposes drag handles for visible entries", () => {
       onStartRetargetSymlink={() => {}}
       onMove={() => {}}
       onDelete={() => {}}
+      onRestoreDeleted={() => {}}
       symlinkTargetPicker={inactiveSymlinkTargetPicker}
       isBusy={false}
       isPending={false}
@@ -128,6 +130,7 @@ test("AuxTreePanel hides row actions and marks target picker states while retarg
       onStartRetargetSymlink={() => {}}
       onMove={() => {}}
       onDelete={() => {}}
+      onRestoreDeleted={() => {}}
       symlinkTargetPicker={{
         active: true,
         sourceNodeId: "/索引/角色入口",
@@ -147,4 +150,42 @@ test("AuxTreePanel hides row actions and marks target picker states while retarg
   expect(html).toContain('data-symlink-target-picker-state="selected-target"');
   expect(html).toContain('data-symlink-target-picker-state="disabled-target"');
   expect(html).not.toContain('data-drag-handle="/索引/角色入口"');
+});
+
+test("AuxTreePanel renders deleted rows as restore-only tombstones", () => {
+  const html = renderToStaticMarkup(
+    <AuxTreePanel
+      tree={[
+        createAuxNode({
+          id: "/旧设定",
+          name: "旧设定",
+          nodeType: "dir",
+          overlayStatus: "deleted",
+        }),
+      ]}
+      rootId="/"
+      expandedIds={new Set()}
+      onToggle={() => {}}
+      activeId={null}
+      onSelect={() => {}}
+      onRename={async () => true}
+      onCreateChildDir={() => {}}
+      onCreateChildFile={() => {}}
+      onCreateSymlink={() => {}}
+      onStartRetargetSymlink={() => {}}
+      onMove={() => {}}
+      onDelete={() => {}}
+      onRestoreDeleted={() => {}}
+      symlinkTargetPicker={inactiveSymlinkTargetPicker}
+      isBusy={false}
+      isPending={false}
+      showTimelineChanges={false}
+    />,
+  );
+
+  expect(html).toContain("text-red-500/65");
+  expect(html).toContain('data-action-anchor="aux:restore-deleted:/旧设定"');
+  expect(html).not.toContain('data-action-anchor="aux:create-symlink:/旧设定"');
+  expect(html).not.toContain('data-action-anchor="aux:delete:/旧设定"');
+  expect(html).not.toContain('data-drag-handle="/旧设定"');
 });
