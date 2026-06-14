@@ -471,7 +471,7 @@ export async function executeProjectAssistantRun<TResult>({
   relay: BufferedEventRelay<TResult>;
   abortSignal: AbortSignal;
 }) {
-  let currentParentId = prepared.run.baseTipNodeId;
+  let currentParentId = prepared.triggerNodeId;
   let currentAssistantNode: AgentThreadNodeView | null = null;
   let lastAssistantNode: AgentThreadNodeView | null = null;
   const stepRuntime = new Map<number, StepRuntimeState>();

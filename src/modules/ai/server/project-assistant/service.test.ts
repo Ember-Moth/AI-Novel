@@ -1193,7 +1193,21 @@ test("submitProjectAssistantToolInput resumes the same waiting run with continuo
         })();
       }
 
-      expect(JSON.stringify(input.messages)).toContain("tool-approval-response");
+      const resumedMessages = input.messages as Array<{ role?: string; content?: unknown }>;
+      expect(JSON.stringify(resumedMessages)).toContain("tool-approval-response");
+      expect(resumedMessages.at(-1)?.role).toBe("tool");
+      expect(JSON.stringify(resumedMessages.at(-1))).toContain("tool-approval-response");
+      const approvalAssistantIndex = resumedMessages.findIndex(
+        (message) =>
+          message.role === "assistant" &&
+          JSON.stringify(message.content).includes("tool-approval-request"),
+      );
+      const contextMessageIndex = resumedMessages.findIndex(
+        (message) =>
+          message.role === "user" && JSON.stringify(message.content).includes("当前编辑器"),
+      );
+      expect(contextMessageIndex).toBeGreaterThan(-1);
+      expect(approvalAssistantIndex).toBeGreaterThan(contextMessageIndex);
       return createMockStream({
         chunks: [
           {
@@ -1270,6 +1284,14 @@ test("submitProjectAssistantToolInput resumes the same waiting run with continuo
     projectId: "assistant_submit_tool_input",
     threadId: thread.id,
     text: "帮我继续写，但先问我关键选择",
+    context: {
+      workspaceId: "workspace_submit_tool_input",
+      activeContentNodeId: "content_submit_tool_input",
+      activeContentTitle: "雨夜重逢",
+      activeAuxPath: "/人物/主角.md",
+      activeTimelinePointId: "timeline_submit_tool_input",
+      activeTimelineLabel: "第二幕",
+    },
     activeTools: ["ask_user"],
   });
 
@@ -1290,6 +1312,23 @@ test("submitProjectAssistantToolInput resumes the same waiting run with continuo
   expect(resumed.run.id).toBe(waiting.run.id);
   expect(resumed.run.status).toBe("succeeded");
   expect(trace.steps.map((step) => step.stepIndex)).toEqual([0, 1]);
+  expect(resumed.state.activePath.map((node) => node.role)).toEqual([
+    "user",
+    "assistant",
+    "tool",
+    "tool",
+    "assistant",
+  ]);
+  expect(
+    resumed.state.activePath.some((node) =>
+      node.parts.some((part) => part.partKind === "tool-approval-request"),
+    ),
+  ).toBe(true);
+  expect(
+    resumed.state.activePath.some((node) =>
+      node.parts.some((part) => part.partKind === "tool-approval-response"),
+    ),
+  ).toBe(true);
   expect(resumed.state.activePath.at(-1)?.summaryText).toContain("按安静的气质继续");
 });
 

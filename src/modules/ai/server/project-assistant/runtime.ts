@@ -181,6 +181,51 @@ export function resolveProjectAssistantActiveTools({
   return normalizedActiveTools;
 }
 
+function hasMessagePart(message: ModelMessage, type: string) {
+  const content = (message as { content?: unknown }).content;
+  return (
+    Array.isArray(content) &&
+    content.some(
+      (part) =>
+        part != null &&
+        typeof part === "object" &&
+        Reflect.get(part as Record<string, unknown>, "type") === type,
+    )
+  );
+}
+
+function appendContextMessagesPreservingToolApprovalTail({
+  messages,
+  appendedMessages,
+}: {
+  messages: ModelMessage[];
+  appendedMessages: ModelMessage[];
+}) {
+  if (appendedMessages.length === 0) {
+    return messages;
+  }
+
+  const lastMessage = messages.at(-1);
+  if (lastMessage?.role !== "tool" || !hasMessagePart(lastMessage, "tool-approval-response")) {
+    return [...messages, ...appendedMessages];
+  }
+
+  const approvalAssistantIndex = [...messages]
+    .map(
+      (message) => message.role === "assistant" && hasMessagePart(message, "tool-approval-request"),
+    )
+    .lastIndexOf(true);
+  if (approvalAssistantIndex < 0) {
+    return [...messages, ...appendedMessages];
+  }
+
+  return [
+    ...messages.slice(0, approvalAssistantIndex),
+    ...appendedMessages,
+    ...messages.slice(approvalAssistantIndex),
+  ];
+}
+
 export function normalizeError(error: unknown) {
   if (error instanceof Error) {
     return {
@@ -247,7 +292,7 @@ export function resolveAssistantRequest({
     (message): message is ModelMessage => message != null,
   );
   const appendContextMessages = (messages: ModelMessage[]) =>
-    appendedMessages.length === 0 ? messages : [...messages, ...appendedMessages];
+    appendContextMessagesPreservingToolApprovalTail({ messages, appendedMessages });
 
   if (!isOpenAIResponsesConnection(selection.connection)) {
     return {
@@ -257,13 +302,19 @@ export function resolveAssistantRequest({
     };
   }
 
+  const pathMessages = path.map((node) => node.message);
+  const endsWithToolApprovalResponse =
+    pathMessages.at(-1)?.role === "tool" &&
+    hasMessagePart(pathMessages.at(-1)!, "tool-approval-response");
   const lastAssistantIndex = [...path].map((node) => node.role).lastIndexOf("assistant");
   const previousAssistant = lastAssistantIndex >= 0 ? path[lastAssistantIndex] : null;
-  const previousResponseId = getStepResponseId(previousAssistant?.sourceStepId);
+  const previousResponseId = endsWithToolApprovalResponse
+    ? null
+    : getStepResponseId(previousAssistant?.sourceStepId);
   const messages =
     previousAssistant && previousResponseId
       ? path.slice(lastAssistantIndex + 1).map((node) => node.message)
-      : path.map((node) => node.message);
+      : pathMessages;
   const openaiOptions = {
     ...(selection.resolvedModel.supportsReasoning ? { reasoningSummary: "auto" } : {}),
     ...(previousResponseId ? { previousResponseId, instructions: system } : {}),
