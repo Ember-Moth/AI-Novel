@@ -1052,7 +1052,7 @@ test("timeline point move rewires both source and target segments", () => {
   ]);
 });
 
-test("deleteAuxNodeAt writes a whiteout and hides the aux node", () => {
+test("deleteAuxNodeAt physically removes origin aux nodes without whiteouts", () => {
   const workspace = seedProject("project_aux_gc_delete");
 
   service.mkdirAt({
@@ -1060,6 +1060,7 @@ test("deleteAuxNodeAt writes a whiteout and hides the aux node", () => {
     timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
     path: "/notes",
   });
+  fs.writeFileSync(path.join(workspace.worktreePath, "aux/origin/.wh.orphan"), "", "utf8");
 
   service.deleteAuxNodeAt({
     workspaceId: workspace.id,
@@ -1070,7 +1071,52 @@ test("deleteAuxNodeAt writes a whiteout and hides the aux node", () => {
   expect(
     service.readAuxByPathAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, "/notes"),
   ).toBeNull();
-  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/.wh.notes"))).toBe(true);
+  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/notes"))).toBe(false);
+  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/.wh.notes"))).toBe(false);
+  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/.wh.orphan"))).toBe(false);
+});
+
+test("deleteAuxNodeAt keeps timeline whiteouts only when hiding lower nodes", () => {
+  const workspace = seedProject("project_aux_gc_timeline_whiteout");
+
+  service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    path: "/origin.md",
+    content: "origin",
+  });
+  const point = service.createTimelinePoint({
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    label: "Draft",
+  });
+  service.writeFileAt({
+    workspaceId: workspace.id,
+    timelinePointId: point.id,
+    path: "/draft.md",
+    content: "draft",
+  });
+
+  service.deleteAuxNodeAt({
+    workspaceId: workspace.id,
+    timelinePointId: point.id,
+    path: "/draft.md",
+  });
+  service.deleteAuxNodeAt({
+    workspaceId: workspace.id,
+    timelinePointId: point.id,
+    path: "/origin.md",
+  });
+
+  expect(
+    fs.existsSync(path.join(workspace.worktreePath, `aux/timeline/${point.id}/draft.md`)),
+  ).toBe(false);
+  expect(
+    fs.existsSync(path.join(workspace.worktreePath, `aux/timeline/${point.id}/.wh.draft.md`)),
+  ).toBe(false);
+  expect(
+    fs.existsSync(path.join(workspace.worktreePath, `aux/timeline/${point.id}/.wh.origin.md`)),
+  ).toBe(true);
 });
 
 test("deleting an aux parent hides its descendants", () => {
@@ -1166,7 +1212,7 @@ test("deleted aux subtree nodes are hidden and whiteouts are path-based", () => 
   expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/state/.wh.location.md"))).toBe(
     false,
   );
-  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/.wh.state"))).toBe(true);
+  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/.wh.state"))).toBe(false);
 });
 
 test("timeline point label can be updated", () => {

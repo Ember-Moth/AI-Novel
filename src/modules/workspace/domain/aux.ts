@@ -151,6 +151,15 @@ function removeFromSnapshot(snapshot: Map<string, OverlaySnapshotNode>, auxPath:
   }
 }
 
+function snapshotHasPathOrDescendant(snapshot: Map<string, OverlaySnapshotNode>, auxPath: string) {
+  for (const key of snapshot.keys()) {
+    if (key === auxPath || key.startsWith(`${auxPath}/`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function readLayerEntries(worktreePath: string, pointId: string | null): OverlayLayerEntry[] {
   const root = layerRoot(worktreePath, pointId);
   if (!fs.existsSync(root)) return [];
@@ -312,6 +321,58 @@ function writeWhiteout(root: string, auxPath: string) {
   );
 }
 
+function lowerSnapshotForLayer(workspaceId: string, state: WorktreeState, pointId: string | null) {
+  if (pointId == null) {
+    return new Map<string, OverlaySnapshotNode>();
+  }
+  const point = orderTimelineRows(state.timeline).find((item) => item.id === pointId);
+  invariant(point, "辅助资料时间点不存在。");
+  return buildSnapshot(workspaceId, point.prevPointId ?? null).snapshot;
+}
+
+function pruneInvalidWhiteouts(root: string, lowerSnapshot: Map<string, OverlaySnapshotNode>) {
+  if (!fs.existsSync(root)) return;
+  const walk = (dir: string, logicalDir: string) => {
+    for (const dirent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const childFsPath = path.join(dir, dirent.name);
+      if (dirent.name.startsWith(WHITEOUT_PREFIX)) {
+        const name = dirent.name.slice(WHITEOUT_PREFIX.length);
+        if (!name) {
+          fs.rmSync(childFsPath, { force: true });
+          continue;
+        }
+        const auxPath = logicalDir === "/" ? `/${name}` : `${logicalDir}/${name}`;
+        if (!snapshotHasPathOrDescendant(lowerSnapshot, auxPath)) {
+          fs.rmSync(childFsPath, { force: true });
+        }
+        continue;
+      }
+      if (dirent.name === KEEP_FILE) continue;
+      if (dirent.isDirectory()) {
+        walk(childFsPath, logicalDir === "/" ? `/${dirent.name}` : `${logicalDir}/${dirent.name}`);
+      }
+    }
+  };
+  walk(root, "/");
+}
+
+function deleteVisiblePathFromLayer(input: {
+  workspaceId: string;
+  state: WorktreeState;
+  worktreePath: string;
+  pointId: string | null;
+  auxPath: string;
+}) {
+  const root = currentLayerRoot(input.worktreePath, input.pointId);
+  const lowerSnapshot = lowerSnapshotForLayer(input.workspaceId, input.state, input.pointId);
+  if (snapshotHasPathOrDescendant(lowerSnapshot, input.auxPath)) {
+    writeWhiteout(root, input.auxPath);
+  } else {
+    clearUpperNodeForWrite(root, input.auxPath);
+  }
+  pruneInvalidWhiteouts(root, lowerSnapshot);
+}
+
 function materializeNode(worktreePath: string, pointId: string | null, node: OverlaySnapshotNode) {
   const root = currentLayerRoot(worktreePath, pointId);
   const targetPath = fsPathForAuxPath(root, node.path);
@@ -419,7 +480,10 @@ export function moveAuxNodeAt(input: {
   path: string;
   newPath: string;
 }) {
-  const { workspace, pointId, snapshot } = buildSnapshot(input.workspaceId, input.timelinePointId);
+  const { workspace, state, pointId, snapshot } = buildSnapshot(
+    input.workspaceId,
+    input.timelinePointId,
+  );
   const sourcePath = normalizeAuxPath(input.path, "移动辅助资料");
   const { normalizedPath: targetPath, parentPath } = splitAuxPath(input.newPath, "移动辅助资料");
   invariant(sourcePath !== targetPath, "目标路径不能与原路径相同。");
@@ -435,7 +499,13 @@ export function moveAuxNodeAt(input: {
     sourcePath,
     targetPath,
   });
-  writeWhiteout(currentLayerRoot(workspace.worktreePath, pointId), sourcePath);
+  deleteVisiblePathFromLayer({
+    workspaceId: workspace.id,
+    state,
+    worktreePath: workspace.worktreePath,
+    pointId,
+    auxPath: sourcePath,
+  });
   touchWorkspace(workspace.id);
   return {
     path: targetPath,
@@ -470,10 +540,19 @@ export function deleteAuxNodeAt(input: {
   timelinePointId?: TimelinePointRef;
   path: string;
 }) {
-  const { workspace, pointId, snapshot } = buildSnapshot(input.workspaceId, input.timelinePointId);
+  const { workspace, state, pointId, snapshot } = buildSnapshot(
+    input.workspaceId,
+    input.timelinePointId,
+  );
   const normalizedPath = normalizeAuxPath(input.path, "删除辅助资料");
   invariant(snapshot.has(normalizedPath), "辅助信息不存在。");
-  writeWhiteout(currentLayerRoot(workspace.worktreePath, pointId), normalizedPath);
+  deleteVisiblePathFromLayer({
+    workspaceId: workspace.id,
+    state,
+    worktreePath: workspace.worktreePath,
+    pointId,
+    auxPath: normalizedPath,
+  });
   touchWorkspace(workspace.id);
 }
 
