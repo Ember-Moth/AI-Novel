@@ -21,10 +21,6 @@ export function getConfigFilePath(filename: string) {
   return join(ensureConfigDir(), filename);
 }
 
-export function getSqlitePath() {
-  return join(ensureStorageRoot(), "sqlite.db");
-}
-
 export function getCatalogDir() {
   const dir = join(ensureStorageRoot(), "catalog");
   mkdirSync(dir, { recursive: true });

@@ -1,9 +1,6 @@
-import { eq } from "drizzle-orm";
-
-import { db, schema } from "@/db";
 import { createId, now } from "@/shared/lib/domain";
 
-import { getWorkspace } from "./lifecycle";
+import { getWorkspace, touchWorkspaceMeta } from "./lifecycle";
 import type {
   ExportedContentNode,
   ExportedContentSubtree,
@@ -27,10 +24,7 @@ import {
 import type { ManuscriptNodeDiskState } from "./git-storage/types";
 
 function touchWorkspace(workspaceId: string) {
-  db.update(schema.workspaces)
-    .set({ updatedAt: now() })
-    .where(eq(schema.workspaces.id, workspaceId))
-    .run();
+  touchWorkspaceMeta(workspaceId, now());
 }
 
 function toExportedNode(node: ManuscriptNodeDiskState): ExportedContentNode {

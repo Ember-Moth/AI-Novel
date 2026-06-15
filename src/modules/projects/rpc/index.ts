@@ -1,45 +1,49 @@
 import { mutation, query } from "@codehz/rpc/core";
-import { and, eq, type InferInsertModel, type InferSelectModel } from "drizzle-orm";
 import { rmSync } from "node:fs";
 
-import { db, schema } from "@/db";
 import { createDefaultWorkspace } from "@/modules/workspace/domain";
+import {
+  createProjectMetaSync,
+  listProjectRowsSync,
+  readProjectMetaSync,
+  updateProjectMetaSync,
+} from "@/modules/workspace/domain/git-storage/project-meta-store";
 import { withProjectLock } from "@/modules/workspace/domain/git-storage/lock";
 import {
   getProjectRepoGitDir,
   getProjectWorktreeRoot,
 } from "@/modules/workspace/domain/git-storage/paths";
+import type { ProjectIndexRow } from "@/modules/workspace/domain/git-storage/types";
 import { invariant } from "@/shared/lib/domain";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
 
-type ProjectMutationInput = Pick<
-  InferInsertModel<(typeof schema)["projects"]>,
-  "id" | "name" | "description"
->;
-type ProjectRow = InferSelectModel<(typeof schema)["projects"]>;
+type ProjectMutationInput = Pick<ProjectIndexRow, "id" | "name" | "description">;
+type ProjectRow = ProjectIndexRow;
 
 export const list = query<void, ProjectRow[], RpcTagList>({
   watch: () => [rpcTags.projectsList()],
-  handler: () => db.query.projects.findMany().sync(),
+  handler: () => listProjectRowsSync(),
 });
 
 export const get = query<{ projectId: string }, ProjectRow, RpcTagList>({
   watch: ({ projectId }) => [rpcTags.project(projectId)],
   handler: ({ projectId }) => {
-    const project = db.query.projects
-      .findFirst({
-        where: eq(schema.projects.id, projectId),
-      })
-      .sync();
-    invariant(project, "未找到项目。");
-    return project;
+    return readProjectMetaSync(projectId).project;
   },
 });
 
 export const create = mutation<ProjectMutationInput, { workspaceId: string }, RpcTagList>({
   invalidate: (input) => [rpcTags.projectsList(), rpcTags.project(input.id)],
   handler: (input) => {
-    db.insert(schema.projects).values(input).run();
+    const timestamp = Date.now();
+    createProjectMetaSync({
+      id: input.id,
+      name: input.name,
+      description: input.description ?? null,
+      defaultBranchId: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
     const workspace = createDefaultWorkspace(input.id);
     return { workspaceId: workspace.id };
   },
@@ -48,14 +52,19 @@ export const create = mutation<ProjectMutationInput, { workspaceId: string }, Rp
 export const update = mutation<ProjectMutationInput, void, RpcTagList>({
   invalidate: (input) => [rpcTags.projectsList(), rpcTags.project(input.id)],
   handler: (input) => {
-    db.update(schema.projects)
-      .set({
-        name: input.name,
-        description: input.description ?? null,
-        updatedAt: Date.now(),
-      })
-      .where(eq(schema.projects.id, input.id))
-      .run();
+    updateProjectMetaSync(
+      input.id,
+      (payload) => ({
+        ...payload,
+        project: {
+          ...payload.project,
+          name: input.name,
+          description: input.description ?? null,
+          updatedAt: Date.now(),
+        },
+      }),
+      "Update project metadata",
+    );
   },
 });
 
@@ -63,27 +72,22 @@ export const setDefaultBranch = mutation<{ projectId: string; branchId: string }
   {
     invalidate: ({ projectId }) => [rpcTags.projectsList(), rpcTags.project(projectId)],
     handler: ({ projectId, branchId }) => {
-      const project = db.query.projects
-        .findFirst({
-          where: eq(schema.projects.id, projectId),
-        })
-        .sync();
-      invariant(project, "未找到项目。");
-
-      const branch = db.query.branches
-        .findFirst({
-          where: and(eq(schema.branches.id, branchId), eq(schema.branches.projectId, projectId)),
-        })
-        .sync();
+      const payload = readProjectMetaSync(projectId);
+      const branch = payload.branches.find((item) => item.id === branchId);
       invariant(branch, "无法设置默认分支：该分支不属于当前项目。");
 
-      db.update(schema.projects)
-        .set({
-          defaultBranchId: branch.id,
-          updatedAt: Date.now(),
-        })
-        .where(eq(schema.projects.id, projectId))
-        .run();
+      updateProjectMetaSync(
+        projectId,
+        (current) => ({
+          ...current,
+          project: {
+            ...current.project,
+            defaultBranchId: branch.id,
+            updatedAt: Date.now(),
+          },
+        }),
+        "Set default branch",
+      );
     },
   },
 );
@@ -95,7 +99,6 @@ export const deleteMutation = mutation<{ id: string }, void, RpcTagList>({
       rmSync(getProjectRepoGitDir(id), { recursive: true, force: true });
       rmSync(getProjectWorktreeRoot(id), { recursive: true, force: true });
     };
-    db.delete(schema.projects).where(eq(schema.projects.id, id)).run();
     await withProjectLock(id, async () => {
       cleanup();
     });

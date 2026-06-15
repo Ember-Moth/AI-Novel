@@ -1,17 +1,18 @@
 import { expect, test } from "bun:test";
 
-import { setupMockDatabase } from "@/test/mock-db";
+import { setupTestDataDir } from "@/test/setup";
+import { seedProjectRecord } from "@/test/project";
 
-setupMockDatabase();
+setupTestDataDir();
 
-const { db, schema } = await import("@/db");
 const service = await import("./index");
 
 function seedProject(projectId: string) {
-  db.insert(schema.projects)
-    .values({ id: projectId, name: `Project ${projectId}`, description: null })
-    .run();
-  return service.createDefaultWorkspace(projectId);
+  seedProjectRecord(projectId);
+  if (!service.getDefaultWorkspace(projectId)) {
+    service.createDefaultWorkspace(projectId);
+  }
+  return service.getDefaultWorkspace(projectId)!;
 }
 
 test("empty branch before first commit reports no diff areas", async () => {
@@ -48,7 +49,7 @@ test("uncommitted edits before first commit appear as additions", async () => {
     content: "world building",
   });
 
-  const status = await await service.getWorkingTreeStatus(workspace.branchId);
+  const status = await service.getWorkingTreeStatus(workspace.branchId);
 
   expect(status.hasChanges).toBe(true);
   expect(status.headCommitId).toBeNull();
@@ -73,7 +74,7 @@ test("committed workspace with no edits reports hasChanges false", async () => {
   });
   await service.createCommit({ branchId: workspace.branchId, message: "first" });
 
-  const status = await await service.getWorkingTreeStatus(workspace.branchId);
+  const status = await service.getWorkingTreeStatus(workspace.branchId);
 
   expect(status.hasChanges).toBe(false);
   expect(status.headCommitId).toMatch(/^[0-9a-f]{40}$/);

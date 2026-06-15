@@ -2,9 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import posix from "node:path/posix";
 
-import { eq } from "drizzle-orm";
-
-import { db, schema } from "@/db";
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
 import { invariant, now } from "@/shared/lib/domain";
 
@@ -18,7 +15,7 @@ import type {
   ResolvedAuxSnapshotNode,
   TimelinePointRef,
 } from "./types";
-import { getWorkspace } from "./lifecycle";
+import { getWorkspace, touchWorkspaceMeta } from "./lifecycle";
 import {
   assertTimelinePoint,
   AUX_ORIGIN_DIR,
@@ -54,10 +51,7 @@ interface OverlaySnapshotNode extends ResolvedAuxSnapshotNode {
 }
 
 function touchWorkspace(workspaceId: string) {
-  db.update(schema.workspaces)
-    .set({ updatedAt: now() })
-    .where(eq(schema.workspaces.id, workspaceId))
-    .run();
+  touchWorkspaceMeta(workspaceId, now());
 }
 
 export function normalizeTimelinePointId(pointId: TimelinePointRef) {

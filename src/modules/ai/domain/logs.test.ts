@@ -1,21 +1,14 @@
 import { expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
 
 import { setupMockDatabase } from "@/test/mock-db";
+import { seedProjectRecord } from "@/test/project";
 
 setupMockDatabase();
 
-const { db, schema } = await import("@/db");
 const logs = await import("./logs");
 
 function seedProject(projectId: string) {
-  db.insert(schema.projects)
-    .values({
-      id: projectId,
-      name: `Project ${projectId}`,
-      description: null,
-    })
-    .run();
+  seedProjectRecord(projectId);
 }
 
 test("createThread activates the new thread and appendUserNode extends the active path", () => {
@@ -170,7 +163,7 @@ test("run trace keeps steps, artifacts, and events", () => {
   expect(trace.artifacts).toHaveLength(1);
 });
 
-test("run trace reads Git projection instead of SQLite run index fields", () => {
+test("run trace reads Git projection instead of local run index fields", () => {
   seedProject("project_trace_git_authoritative");
   const thread = logs.createThread({
     projectId: "project_trace_git_authoritative",
@@ -209,11 +202,6 @@ test("run trace reads Git projection instead of SQLite run index fields", () => 
     eventKind: "provider-requested",
     payloadArtifactId: artifact.id,
   });
-
-  db.update(schema.agentRuns)
-    .set({ status: "failed" })
-    .where(eq(schema.agentRuns.id, run.id))
-    .run();
 
   const trace = logs.getRunTrace(run.id);
   expect(trace.run.status).toBe("running");

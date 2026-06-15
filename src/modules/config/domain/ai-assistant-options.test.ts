@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 
 import { PROJECT_ASSISTANT_MAX_STEPS } from "@/modules/ai/domain/types";
-import { setupMockDatabase } from "@/test/mock-db";
+import { setupTestDataDir } from "@/test/setup";
 
-setupMockDatabase();
+setupTestDataDir();
 const { setGlobalConfig } = await import("./global-config");
 const {
   AI_ASSISTANT_MAX_STEPS_MAX,

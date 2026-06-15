@@ -2,24 +2,21 @@ import { expect, test } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 
-import { setupMockDatabase } from "@/test/mock-db";
+import { setupTestDataDir } from "@/test/setup";
+import { seedProjectRecord } from "@/test/project";
 
-setupMockDatabase();
+setupTestDataDir();
 
-const { db, schema } = await import("@/db");
 const service = await import("./index");
 
 type ExportedAuxNode = ReturnType<typeof service.exportAuxSnapshotTree>["nodes"][number];
 
 function seedProject(projectId: string) {
-  db.insert(schema.projects)
-    .values({
-      id: projectId,
-      name: `Project ${projectId}`,
-      description: null,
-    })
-    .run();
-  return service.createDefaultWorkspace(projectId);
+  seedProjectRecord(projectId);
+  if (!service.getDefaultWorkspace(projectId)) {
+    service.createDefaultWorkspace(projectId);
+  }
+  return service.getDefaultWorkspace(projectId)!;
 }
 
 function flattenAuxNodes(nodes: ExportedAuxNode[]): ExportedAuxNode[] {
@@ -39,8 +36,8 @@ function expectNoTemporaryManuscriptDirs(worktreePath: string) {
   expect(listManuscriptDirs(worktreePath).filter((name) => name.startsWith("__tmp__"))).toEqual([]);
 }
 
-test("content export preserves sibling order and nesting", () => {
-  const workspace = seedProject("project_content");
+test("content export preserves sibling order and nesting", async () => {
+  const workspace = await seedProject("project_content");
   const rootId = null;
 
   const chapter1 = service.createContentNode({
@@ -72,8 +69,8 @@ test("content export preserves sibling order and nesting", () => {
   expect(chapter2.parentId).toBe(rootId);
 });
 
-test("aux overlay resolves by timeline point and composeWritingContext follows anchor point", () => {
-  const workspace = seedProject("project_overlay");
+test("aux overlay resolves by timeline point and composeWritingContext follows anchor point", async () => {
+  const workspace = await seedProject("project_overlay");
   const contentRootId = null;
 
   service.mkdirAt({
@@ -120,8 +117,8 @@ test("aux overlay resolves by timeline point and composeWritingContext follows a
   );
 });
 
-test("symlink stores a logical aux path target and does not follow target moves", () => {
-  const workspace = seedProject("project_symlink");
+test("symlink stores a logical aux path target and does not follow target moves", async () => {
+  const workspace = await seedProject("project_symlink");
 
   service.mkdirAt({
     workspaceId: workspace.id,
@@ -178,8 +175,8 @@ test("symlink stores a logical aux path target and does not follow target moves"
   ).toEqual(["home", "villa"]);
 });
 
-test("retargetAuxSymlinkAt updates the exported symlink target path", () => {
-  const workspace = seedProject("project_symlink_retarget");
+test("retargetAuxSymlinkAt updates the exported symlink target path", async () => {
+  const workspace = await seedProject("project_symlink_retarget");
 
   service.writeFileAt({
     workspaceId: workspace.id,
@@ -213,8 +210,8 @@ test("retargetAuxSymlinkAt updates the exported symlink target path", () => {
   ).toBe("/current");
 });
 
-test("retargetAuxSymlinkAt can point to another symlink node", () => {
-  const workspace = seedProject("project_symlink_retarget_symlink");
+test("retargetAuxSymlinkAt can point to another symlink node", async () => {
+  const workspace = await seedProject("project_symlink_retarget_symlink");
 
   service.writeFileAt({
     workspaceId: workspace.id,
@@ -251,8 +248,8 @@ test("retargetAuxSymlinkAt can point to another symlink node", () => {
   ).toBe("/source_link");
 });
 
-test("retargetAuxSymlinkAt records self and indirect symlink targets", () => {
-  const workspace = seedProject("project_symlink_retarget_cycle");
+test("retargetAuxSymlinkAt records self and indirect symlink targets", async () => {
+  const workspace = await seedProject("project_symlink_retarget_cycle");
 
   service.writeFileAt({
     workspaceId: workspace.id,

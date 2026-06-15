@@ -1,66 +1,53 @@
 import { mkdirSync } from "node:fs";
 
-import { eq } from "drizzle-orm";
-
-import { db, schema } from "@/db";
 import { createId, invariant, now } from "@/shared/lib/domain";
 
 import { createBranch } from "./branches";
-import {
-  checkoutCommitToWorktree,
-  commitCustomRef,
-  commitCustomRefSync,
-  metaRef,
-} from "./git-storage/git-store";
-import { stringifyJsonl } from "./git-storage/jsonl";
+import { checkoutCommitToWorktree } from "./git-storage/git-store";
 import { getProjectWorktreeDir } from "./git-storage/paths";
-import type {
-  BranchIndexRow,
-  ProjectIndexRow,
-  ProjectMetaPayload,
-  WorkspaceIndexRow,
-} from "./git-storage/types";
+import type { BranchIndexRow, ProjectIndexRow, WorkspaceIndexRow } from "./git-storage/types";
+import {
+  findProjectMetaByWorkspaceIdSync,
+  listProjectMetaSync,
+  readProjectMetaSync,
+  updateProjectMetaSync,
+  writeProjectMetaSync as persistProjectMetaSync,
+} from "./git-storage/project-meta-store";
 import { seedEmptyWorktree } from "./git-storage/worktree-state";
 
 export type WorkspaceRow = WorkspaceIndexRow;
 
 function getProjectRow(projectId: string): ProjectIndexRow {
-  const project = db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).get();
-  invariant(project, "未找到项目。");
-  return project as ProjectIndexRow;
+  return readProjectMetaSync(projectId).project;
 }
 
 function getBranchRow(branchId: string): BranchIndexRow {
-  const branch = db.select().from(schema.branches).where(eq(schema.branches.id, branchId)).get();
+  const branch = listAllBranches().find((item) => item.id === branchId);
   invariant(branch, "未找到分支。");
-  return branch as BranchIndexRow;
+  return branch;
+}
+
+function listAllBranches() {
+  return listProjectMetaSync().flatMap((payload) => payload.branches);
 }
 
 export function listWorkspaces(projectId: string): WorkspaceRow[] {
-  getProjectRow(projectId);
-  return db
-    .select()
-    .from(schema.workspaces)
-    .where(eq(schema.workspaces.projectId, projectId))
-    .all() as WorkspaceRow[];
+  return readProjectMetaSync(projectId).workspaces;
 }
 
 export function getWorkspace(workspaceId: string): WorkspaceRow {
-  const workspace = db
-    .select()
-    .from(schema.workspaces)
-    .where(eq(schema.workspaces.id, workspaceId))
-    .get();
+  const payload = findProjectMetaByWorkspaceIdSync(workspaceId);
+  const workspace = payload?.workspaces.find((item) => item.id === workspaceId);
   invariant(workspace, "未找到工作区。");
-  return workspace as WorkspaceRow;
+  return workspace;
 }
 
 export function getWorkspaceForBranchId(branchId: string): WorkspaceRow | null {
-  return (
-    (db.select().from(schema.workspaces).where(eq(schema.workspaces.branchId, branchId)).get() as
-      | WorkspaceRow
-      | undefined) ?? null
-  );
+  return listAllWorkspaces().find((workspace) => workspace.branchId === branchId) ?? null;
+}
+
+function listAllWorkspaces() {
+  return listProjectMetaSync().flatMap((payload) => payload.workspaces);
 }
 
 export function getDefaultWorkspace(projectId: string) {
@@ -71,45 +58,44 @@ export function getDefaultWorkspace(projectId: string) {
 }
 
 export async function writeProjectMeta(projectId: string) {
-  const project = getProjectRow(projectId);
-  const branches = db
-    .select()
-    .from(schema.branches)
-    .where(eq(schema.branches.projectId, projectId))
-    .all() as BranchIndexRow[];
-  const workspaces = listWorkspaces(projectId) as WorkspaceIndexRow[];
-  const payload: ProjectMetaPayload = { project, branches, workspaces };
-  await commitCustomRef({
-    projectId,
-    ref: metaRef(projectId),
-    message: "Update project metadata",
-    files: {
-      "project.json": `${JSON.stringify(payload.project, null, 2)}\n`,
-      "branches.jsonl": stringifyJsonl(payload.branches),
-      "workspaces.jsonl": stringifyJsonl(payload.workspaces),
-    },
-  });
+  const payload = readProjectMetaSync(projectId);
+  persistProjectMetaSync(payload);
 }
 
 export function writeProjectMetaSync(projectId: string) {
-  const project = getProjectRow(projectId);
-  const branches = db
-    .select()
-    .from(schema.branches)
-    .where(eq(schema.branches.projectId, projectId))
-    .all() as BranchIndexRow[];
-  const workspaces = listWorkspaces(projectId) as WorkspaceIndexRow[];
-  const payload: ProjectMetaPayload = { project, branches, workspaces };
-  commitCustomRefSync({
+  persistProjectMetaSync(readProjectMetaSync(projectId));
+}
+
+export function touchWorkspaceMeta(workspaceId: string, timestamp = now()) {
+  const workspace = getWorkspace(workspaceId);
+  updateProjectMetaSync(
+    workspace.projectId,
+    (payload) => ({
+      ...payload,
+      project: {
+        ...payload.project,
+        updatedAt: timestamp,
+      },
+      workspaces: payload.workspaces.map((item) =>
+        item.id === workspaceId ? { ...item, updatedAt: timestamp } : item,
+      ),
+    }),
+    "Touch workspace metadata",
+  );
+}
+
+export function touchProjectMeta(projectId: string, timestamp = now()) {
+  updateProjectMetaSync(
     projectId,
-    ref: metaRef(projectId),
-    message: "Update project metadata",
-    files: {
-      "project.json": `${JSON.stringify(payload.project, null, 2)}\n`,
-      "branches.jsonl": stringifyJsonl(payload.branches),
-      "workspaces.jsonl": stringifyJsonl(payload.workspaces),
-    },
-  });
+    (payload) => ({
+      ...payload,
+      project: {
+        ...payload.project,
+        updatedAt: timestamp,
+      },
+    }),
+    "Touch project metadata",
+  );
 }
 
 export async function createWorkspaceForBranch(branchId: string, name?: string) {
@@ -130,43 +116,63 @@ export async function createWorkspaceForBranch(branchId: string, name?: string) 
     });
   }
 
-  db.insert(schema.workspaces)
-    .values({
-      id: workspaceId,
-      projectId: branch.projectId,
-      branchId: branch.id,
-      name: name ?? branch.name,
-      worktreePath,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    } as typeof schema.workspaces.$inferInsert)
-    .run();
-  await writeProjectMeta(branch.projectId);
+  updateProjectMetaSync(
+    branch.projectId,
+    (payload) => ({
+      ...payload,
+      project: {
+        ...payload.project,
+        updatedAt: timestamp,
+      },
+      workspaces: [
+        ...payload.workspaces,
+        {
+          id: workspaceId,
+          projectId: branch.projectId,
+          branchId: branch.id,
+          name: name ?? branch.name,
+          worktreePath,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+    }),
+    "Create workspace metadata",
+  );
   return getWorkspace(workspaceId);
 }
 
 export function createDefaultWorkspace(projectId: string, name = "main") {
   const branch = createBranch({ projectId, name });
-  db.update(schema.projects)
-    .set({ defaultBranchId: branch.id, updatedAt: now() })
-    .where(eq(schema.projects.id, projectId))
-    .run();
   const workspaceId = createId("workspace");
   const worktreePath = getProjectWorktreeDir(projectId, workspaceId);
   mkdirSync(worktreePath, { recursive: true });
   seedEmptyWorktree(worktreePath);
   const timestamp = now();
-  db.insert(schema.workspaces)
-    .values({
-      id: workspaceId,
-      projectId,
-      branchId: branch.id,
-      name,
-      worktreePath,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    } as typeof schema.workspaces.$inferInsert)
-    .run();
+  updateProjectMetaSync(
+    projectId,
+    (payload) => ({
+      ...payload,
+      project: {
+        ...payload.project,
+        defaultBranchId: branch.id,
+        updatedAt: timestamp,
+      },
+      workspaces: [
+        ...payload.workspaces,
+        {
+          id: workspaceId,
+          projectId,
+          branchId: branch.id,
+          name,
+          worktreePath,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+    }),
+    "Create default workspace metadata",
+  );
   const workspace = getWorkspace(workspaceId);
   writeProjectMetaSync(projectId);
   return workspace;

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 
-import { setupMockDatabase } from "@/test/mock-db";
+import { setupTestDataDir } from "@/test/setup";
 
-setupMockDatabase();
+setupTestDataDir();
 const { setGlobalConfig } = await import("./global-config");
 const { getAiAssistantModelSelection, setAiAssistantModelSelection } =
   await import("./ai-assistant-model-selection");

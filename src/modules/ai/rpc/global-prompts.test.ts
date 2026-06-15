@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 
-import { setupMockDatabase } from "@/test/mock-db";
+import { setupTestDataDir } from "@/test/setup";
 
-setupMockDatabase();
+setupTestDataDir();
 
 const promptHandlers = await import("./index");
 const { rpcTags } = await import("@/rpc/tags");

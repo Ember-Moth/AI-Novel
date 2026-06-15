@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { setupMockDatabase } from "@/test/mock-db";
+import { setupTestDataDir } from "@/test/setup";
+import { seedProjectRecord } from "@/test/project";
 
-setupMockDatabase();
+setupTestDataDir();
 
-const { db, schema } = await import("@/db");
 const service = await import("@/modules/workspace/domain");
 const auxHandlers = await import("./aux");
 const { rpcTags } = await import("@/rpc/tags");
@@ -14,14 +14,11 @@ const requestCtx = { req: new Request("http://localhost/api/rpc") } as unknown a
 >[1];
 
 function seedProject(projectId: string) {
-  db.insert(schema.projects)
-    .values({
-      id: projectId,
-      name: `Project ${projectId}`,
-      description: null,
-    })
-    .run();
-  return service.createDefaultWorkspace(projectId);
+  seedProjectRecord(projectId);
+  if (!service.getDefaultWorkspace(projectId)) {
+    service.createDefaultWorkspace(projectId);
+  }
+  return service.getDefaultWorkspace(projectId)!;
 }
 
 test("aux snapshot tree watches the active point snapshot key instead of workspace timeline", async () => {

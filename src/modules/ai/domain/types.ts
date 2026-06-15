@@ -1,8 +1,4 @@
-import type { InferSelectModel } from "drizzle-orm";
-
 import type { ModelMessage } from "ai";
-
-import type { schema } from "@/db";
 import type {
   AiRegistryModelRow as FileRegistryModelRow,
   AiRegistryProviderRow as FileRegistryProviderRow,
@@ -12,10 +8,65 @@ import type {
 export type AiCatalogProviderRow = FileRegistryProviderRow;
 export type AiCatalogModelRow = FileRegistryModelRow;
 export type AiRegistryStateRow = FileRegistryStateRow;
-export type AgentThreadRow = InferSelectModel<typeof schema.agentThreads>;
-export type AgentProjectStateRow = InferSelectModel<typeof schema.agentProjectState>;
-export type AgentThreadNodeRow = InferSelectModel<typeof schema.agentThreadNodes>;
-export type AgentRunRow = InferSelectModel<typeof schema.agentRuns>;
+
+export interface AgentThreadRow {
+  id: string;
+  projectId: string;
+  agentProfile: string;
+  title: string;
+  activeTipNodeId: string | null;
+  archivedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AgentProjectStateRow {
+  id: string;
+  projectId: string;
+  agentProfile: string;
+  activeThreadId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AgentThreadNodeRow {
+  id: string;
+  threadId: string;
+  parentNodeId: string | null;
+  role: string;
+  createdByRunId: string | null;
+  sourceStepId: string | null;
+  sourceKind: string;
+  summaryText: string | null;
+  partsJson: string;
+  createdAt: number;
+}
+
+export interface AgentRunRow {
+  id: string;
+  threadId: string;
+  parentRunId: string | null;
+  parentEventId: string | null;
+  triggerNodeId: string | null;
+  baseTipNodeId: string | null;
+  runMode: string;
+  status: string;
+  agentProfile: string;
+  errorArtifactId: string | null;
+  selectionSnapshotJson: string;
+  contextSnapshotJson: string | null;
+  inputRefsSnapshotJson: string | null;
+  activeToolsJson: string | null;
+  stepCount: number;
+  totalTokens: number | null;
+  lastFinishReason: string | null;
+  errorSummary: string | null;
+  traceUpdatedAt: number | null;
+  startedAt: number;
+  completedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
 
 export interface AiConnectionRow {
   id: string;

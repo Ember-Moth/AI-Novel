@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 
 import { setupMockDatabase } from "@/test/mock-db";
+import { seedProjectRecord } from "@/test/project";
 
 setupMockDatabase();
 
-const { db, schema } = await import("@/db");
 const workspaceDomain = await import("@/modules/workspace/domain");
 const { createAssistantTools } = await import("./assistant-tools");
 const { normalizeAskUserAnswers, normalizeAskUserInput, validateAskUserSubmission } =
@@ -30,13 +30,7 @@ function createRuntimeContext(
 }
 
 function seedProject(projectId: string) {
-  db.insert(schema.projects)
-    .values({
-      id: projectId,
-      name: `Project ${projectId}`,
-      description: null,
-    })
-    .run();
+  seedProjectRecord(projectId);
   return workspaceDomain.createDefaultWorkspace(projectId);
 }
 

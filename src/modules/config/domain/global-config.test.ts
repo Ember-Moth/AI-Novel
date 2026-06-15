@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 
 import { getConfigFilePath } from "@/shared/lib/storage-paths";
-import { setupMockDatabase } from "@/test/mock-db";
+import { setupTestDataDir } from "@/test/setup";
 
-setupMockDatabase();
+setupTestDataDir();
 
 const { deleteGlobalConfig, getGlobalConfig, listGlobalConfigOptions, setGlobalConfig } =
   await import("./global-config");

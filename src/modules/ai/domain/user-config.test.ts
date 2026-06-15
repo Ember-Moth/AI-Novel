@@ -4,9 +4,9 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 import { join } from "node:path";
 
 import { ensureConfigDir } from "@/shared/lib/storage-paths";
-import { setupMockDatabase } from "@/test/mock-db";
+import { setupTestDataDir } from "@/test/setup";
 
-setupMockDatabase();
+setupTestDataDir();
 
 const userConfig = await import("./user-config");
 

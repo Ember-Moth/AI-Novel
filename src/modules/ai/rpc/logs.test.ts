@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 
 import { setupMockDatabase } from "@/test/mock-db";
+import { seedProjectRecord } from "@/test/project";
 
 setupMockDatabase();
 
-const { db, schema } = await import("@/db");
 const logs = await import("@/modules/ai/domain/logs");
 const handlers = await import("./index");
 const { rpcTags } = await import("@/rpc/tags");
@@ -14,13 +14,7 @@ const requestCtx = { req: new Request("http://localhost/api/rpc") } as unknown a
 >[1];
 
 function seedProject(projectId: string) {
-  db.insert(schema.projects)
-    .values({
-      id: projectId,
-      name: `Project ${projectId}`,
-      description: null,
-    })
-    .run();
+  seedProjectRecord(projectId);
 }
 
 test("listProjectThreads watches the project thread tag", async () => {

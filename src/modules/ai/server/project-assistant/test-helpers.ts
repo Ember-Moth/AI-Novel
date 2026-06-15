@@ -1,9 +1,9 @@
 import { setupMockDatabase } from "@/test/mock-db";
+import { seedProjectRecord } from "@/test/project";
 import { PROJECT_ASSISTANT_MAX_STEPS } from "@/modules/ai/domain/types";
 
 setupMockDatabase();
 
-export const { db, schema } = await import("@/db");
 export const logs = await import("@/modules/ai/domain/logs");
 export const { createDefaultWorkspace } = await import("@/modules/workspace/domain");
 export const workspaceDomain = await import("@/modules/workspace/domain");
@@ -47,13 +47,7 @@ export function createDeferred<T>() {
 }
 
 export function seedProject(projectId: string) {
-  db.insert(schema.projects)
-    .values({
-      id: projectId,
-      name: `Project ${projectId}`,
-      description: null,
-    })
-    .run();
+  seedProjectRecord(projectId);
 }
 
 export function seedCustomConnection({

@@ -1,11 +1,15 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 
-import { setupMockDatabase } from "@/test/mock-db";
+import { setupTestDataDir } from "@/test/setup";
+import { seedProjectRecord } from "@/test/project";
+import {
+  listProjectRowsSync,
+  readProjectMetaSync,
+} from "@/modules/workspace/domain/git-storage/project-meta-store";
 
-setupMockDatabase();
+setupTestDataDir();
 
-const { db, schema } = await import("@/db");
 const workspaceService = await import("@/modules/workspace/domain");
 const auxService = await import("@/modules/workspace/domain/aux");
 const { getProjectRepoGitDir, getProjectWorktreeRoot } =
@@ -16,15 +20,12 @@ const requestCtx = { req: new Request("http://localhost/api/rpc") } as unknown a
   typeof projectHandlers.list.handler
 >[1];
 
-function seedProject(projectId: string) {
-  db.insert(schema.projects)
-    .values({
-      id: projectId,
-      name: `Project ${projectId}`,
-      description: null,
-    })
-    .run();
-  return workspaceService.createDefaultWorkspace(projectId);
+async function seedProject(projectId: string) {
+  seedProjectRecord(projectId);
+  if (!workspaceService.getDefaultWorkspace(projectId)) {
+    workspaceService.createDefaultWorkspace(projectId);
+  }
+  return workspaceService.getDefaultWorkspace(projectId)!;
 }
 
 async function deleteProject(projectId: string) {
@@ -33,14 +34,20 @@ async function deleteProject(projectId: string) {
 
 function projectIndexCounts() {
   return {
-    projects: db.select().from(schema.projects).all().length,
-    branches: db.select().from(schema.branches).all().length,
-    workspaces: db.select().from(schema.workspaces).all().length,
+    projects: listProjectRowsSync().length,
+    branches: listProjectRowsSync().reduce(
+      (count, project) => count + readProjectMetaSync(project.id).branches.length,
+      0,
+    ),
+    workspaces: listProjectRowsSync().reduce(
+      (count, project) => count + readProjectMetaSync(project.id).workspaces.length,
+      0,
+    ),
   };
 }
 
 test("project get watches the project tag and returns the project", async () => {
-  seedProject("project_get");
+  await seedProject("project_get");
 
   const result = await projectHandlers.get.handler({ projectId: "project_get" }, requestCtx);
 
@@ -52,8 +59,8 @@ test("project get watches the project tag and returns the project", async () => 
 });
 
 test("setDefaultBranch rejects branches from another project", async () => {
-  seedProject("project_default_a");
-  const workspaceB = seedProject("project_default_b");
+  await seedProject("project_default_a");
+  const workspaceB = await seedProject("project_default_b");
 
   await expect(
     projectHandlers.setDefaultBranch.handler(
@@ -67,7 +74,7 @@ test("setDefaultBranch rejects branches from another project", async () => {
 });
 
 test("setDefaultBranch invalidates project list and detail tags", async () => {
-  const workspace = seedProject("project_default_switch");
+  const workspace = await seedProject("project_default_switch");
   workspaceService.createContentNode({
     workspaceId: workspace.id,
     parentId: null,
@@ -95,17 +102,13 @@ test("setDefaultBranch invalidates project list and detail tags", async () => {
     rpcTags.projectsList(),
     rpcTags.project("project_default_switch"),
   ]);
-  expect(
-    db.query.projects
-      .findFirst({
-        where: (projects, { eq }) => eq(projects.id, "project_default_switch"),
-      })
-      .sync()?.defaultBranchId,
-  ).toBe(featureWorkspace.branchId);
+  expect(readProjectMetaSync("project_default_switch").project.defaultBranchId).toBe(
+    featureWorkspace.branchId,
+  );
 });
 
 test("delete project cascades default workspace roots", async () => {
-  seedProject("project_delete_default");
+  await seedProject("project_delete_default");
 
   const result = await deleteProject("project_delete_default");
 
@@ -119,7 +122,7 @@ test("delete project cascades default workspace roots", async () => {
 });
 
 test("delete project cascades content anchored to timeline points", async () => {
-  const workspace = seedProject("project_delete_content_anchor");
+  const workspace = await seedProject("project_delete_content_anchor");
   const point = workspaceService.createTimelinePoint({
     workspaceId: workspace.id,
     label: "Act I",
@@ -138,7 +141,7 @@ test("delete project cascades content anchored to timeline points", async () => 
 });
 
 test("delete project cascades aux overlay files", async () => {
-  const workspace = seedProject("project_delete_aux_overlay");
+  const workspace = await seedProject("project_delete_aux_overlay");
   const point = workspaceService.createTimelinePoint({
     workspaceId: workspace.id,
     label: "Act I",

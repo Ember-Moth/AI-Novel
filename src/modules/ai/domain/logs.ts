@@ -1,23 +1,32 @@
 import type { ModelMessage } from "ai";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
-import { type DatabaseExecutor, db, schema } from "@/db";
+import {
+  findProjectIdForNodeSync,
+  findProjectIdForRunSync,
+  findProjectIdForThreadSync,
+  readAiIndexSync,
+} from "@/modules/ai/domain/ai-index-store";
 import { getAiAssistantMaxSteps } from "@/modules/config/domain/ai-assistant-options";
 import { createId, invariant, now } from "@/shared/lib/domain";
-
+import {
+  listProjectRowsSync,
+  readProjectMetaSync,
+  updateProjectMetaSync,
+} from "@/modules/workspace/domain/git-storage/project-meta-store";
 import {
   aiRunsRef,
   commitCustomRefSync,
   readFilesAtRefSync,
 } from "@/modules/workspace/domain/git-storage/git-store";
 import { parseJsonl, stringifyJsonl } from "@/modules/workspace/domain/git-storage/jsonl";
+import type { AiIndexPayload } from "./ai-index-store";
 import type {
-  AiRunsMetaPayload,
   AgentArtifactKind,
   AgentArtifactRow,
   AgentArtifactView,
   AgentCandidateGroupView,
   AgentCandidateNodeView,
+  AgentMessagePartRow,
   AgentPartState,
   AgentProjectStateRow,
   AgentProjectStateView,
@@ -35,12 +44,11 @@ import type {
   AgentRunView,
   AssistantInputRefSnapshot,
   AgentThreadNodePartKind,
-  AgentMessagePartRow,
   AgentThreadNodePartView,
-  AgentThreadRole,
   AgentThreadNodeRow,
   AgentThreadNodeSourceKind,
   AgentThreadNodeView,
+  AgentThreadRole,
   AgentThreadRow,
   AgentThreadStateView,
   AgentThreadView,
@@ -137,6 +145,32 @@ interface MaterializeResponseMessagesInput {
   messages: ModelMessage[];
 }
 
+interface ProjectAiStorage {
+  index: AiIndexPayload;
+  files: Record<string, string>;
+}
+
+interface RunTraceCacheFields {
+  selectionSnapshotJson: string;
+  contextSnapshotJson: string | null;
+  inputRefsSnapshotJson: string | null;
+  activeToolsJson: string | null;
+  stepCount: number;
+  totalTokens: number | null;
+  lastFinishReason: string | null;
+  errorSummary: string | null;
+  traceUpdatedAt: number | null;
+}
+
+export interface RunTraceRows {
+  run: AgentRunView;
+  inputRefs: AgentRunInputRefRow[];
+  steps: AgentRunStepRow[];
+  events: AgentRunEventRow[];
+  artifacts: AgentArtifactRow[];
+  childRuns: AgentRunView[];
+}
+
 function trimOptionalString(value: string | null | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -182,11 +216,6 @@ function parseStoredArray<T>(raw: string | null | undefined): T[] {
 
 function stringifyStoredArray<T>(items: readonly T[]) {
   return serializeRequiredJson(items, "缓存数组");
-}
-
-function logAiGitPersistError(label: string, error: unknown) {
-  if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return;
-  console.error(label, error);
 }
 
 function assertThreadRole(role: string): asserts role is AgentThreadRole {
@@ -295,110 +324,6 @@ function assertSourceKind(kind: string): asserts kind is AgentThreadNodeSourceKi
       kind === "edit_rewrite",
     "不支持的节点来源类型。",
   );
-}
-
-function getProjectOrThrow(executor: DatabaseExecutor, projectId: string) {
-  const project = executor
-    .select()
-    .from(schema.projects)
-    .where(eq(schema.projects.id, projectId))
-    .get();
-  invariant(project, "未找到项目。");
-  return project;
-}
-
-function touchProject(executor: DatabaseExecutor, projectId: string) {
-  executor
-    .update(schema.projects)
-    .set({ updatedAt: now() })
-    .where(eq(schema.projects.id, projectId))
-    .run();
-}
-
-function getThreadOrThrow(executor: DatabaseExecutor, threadId: string) {
-  const thread = executor
-    .select()
-    .from(schema.agentThreads)
-    .where(eq(schema.agentThreads.id, threadId))
-    .get();
-  invariant(thread, "未找到 agent thread。");
-  return thread;
-}
-
-function getNodeOrThrow(executor: DatabaseExecutor, nodeId: string) {
-  const node = executor
-    .select()
-    .from(schema.agentThreadNodes)
-    .where(eq(schema.agentThreadNodes.id, nodeId))
-    .get();
-  invariant(node, "未找到 agent 节点。");
-  return node;
-}
-
-function getRunOrThrow(executor: DatabaseExecutor, runId: string) {
-  const run = executor.select().from(schema.agentRuns).where(eq(schema.agentRuns.id, runId)).get();
-  invariant(run, "未找到 agent run。");
-  return run;
-}
-
-function getStepOrThrow(executor: DatabaseExecutor, stepId: string) {
-  const runRows = executor.select().from(schema.agentRuns).all();
-  for (const run of runRows) {
-    const step = readRunTraceRowsFromGit(run).steps.find((entry) => entry.id === stepId);
-    if (step) {
-      return step;
-    }
-  }
-  invariant(false, "未找到 run step。");
-}
-
-function getArtifactOrThrow(executor: DatabaseExecutor, artifactId: string) {
-  const runRows = executor.select().from(schema.agentRuns).all();
-  for (const run of runRows) {
-    const artifact = readRunTraceRowsFromGit(run).artifacts.find(
-      (entry) => entry.id === artifactId,
-    );
-    if (artifact) {
-      return artifact;
-    }
-  }
-  invariant(false, "未找到 artifact。");
-}
-
-function getProjectStateRow(executor: DatabaseExecutor, projectId: string, agentProfile: string) {
-  return executor
-    .select()
-    .from(schema.agentProjectState)
-    .where(
-      and(
-        eq(schema.agentProjectState.projectId, projectId),
-        eq(schema.agentProjectState.agentProfile, agentProfile),
-      ),
-    )
-    .get();
-}
-
-function getNodeRowsByThread(
-  executor: DatabaseExecutor,
-  threadId: string,
-  parentNodeId: string | null,
-) {
-  return executor
-    .select()
-    .from(schema.agentThreadNodes)
-    .where(
-      parentNodeId == null
-        ? and(
-            eq(schema.agentThreadNodes.threadId, threadId),
-            isNull(schema.agentThreadNodes.parentNodeId),
-          )
-        : and(
-            eq(schema.agentThreadNodes.threadId, threadId),
-            eq(schema.agentThreadNodes.parentNodeId, parentNodeId),
-          ),
-    )
-    .orderBy(schema.agentThreadNodes.createdAt)
-    .all();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -803,33 +728,15 @@ function normalizeModelMessage(message: ModelMessage): ModelMessage {
 
 function inferPartKind(rawPart: Record<string, unknown>): AgentThreadNodePartKind {
   const type = rawPart.type;
-  if (type === "text") {
-    return "text";
-  }
-  if (type === "reasoning") {
-    return "reasoning";
-  }
-  if (type === "tool-call") {
-    return "tool-call";
-  }
-  if (type === "tool-result") {
-    return "tool-result";
-  }
-  if (type === "tool-approval-request") {
-    return "tool-approval-request";
-  }
-  if (type === "tool-approval-response") {
-    return "tool-approval-response";
-  }
-  if (type === "tool-error") {
-    return "tool-error";
-  }
-  if (type === "file") {
-    return "file";
-  }
-  if (type === "step-start") {
-    return "step-start";
-  }
+  if (type === "text") return "text";
+  if (type === "reasoning") return "reasoning";
+  if (type === "tool-call") return "tool-call";
+  if (type === "tool-result") return "tool-result";
+  if (type === "tool-approval-request") return "tool-approval-request";
+  if (type === "tool-approval-response") return "tool-approval-response";
+  if (type === "tool-error") return "tool-error";
+  if (type === "file") return "file";
+  if (type === "step-start") return "step-start";
   if (type === "source") {
     return typeof rawPart.url === "string" ? "source-url" : "source-document";
   }
@@ -947,11 +854,6 @@ function projectStoredPartPayload(payload: unknown): unknown {
   return record;
 }
 
-function getNodeModelMessage(executor: DatabaseExecutor, node: AgentThreadNodeRow): ModelMessage {
-  assertThreadRole(node.role);
-  return buildModelMessageFromParts(node.role, listNodePartViews(executor, node.id));
-}
-
 function getMessageContentParts(message: ModelMessage): unknown[] {
   const rawContent = (message as { content?: unknown }).content;
   return typeof rawContent === "string"
@@ -1057,17 +959,16 @@ function mapNodePartRow(row: AgentMessagePartRow): AgentThreadNodePartView {
   };
 }
 
-function listNodePartViews(executor: DatabaseExecutor, nodeId: string) {
-  const node = getNodeOrThrow(executor, nodeId);
+function listNodePartViews(node: AgentThreadNodeRow) {
   return parseStoredArray<AgentMessagePartRow>(node.partsJson)
     .sort((left, right) => left.partIndex - right.partIndex)
     .map(mapNodePartRow);
 }
 
-function mapNodeRow(executor: DatabaseExecutor, row: AgentThreadNodeRow): AgentThreadNodeView {
+function mapNodeRow(row: AgentThreadNodeRow): AgentThreadNodeView {
   assertThreadRole(row.role);
   assertSourceKind(row.sourceKind);
-  const parts = listNodePartViews(executor, row.id);
+  const parts = listNodePartViews(row);
   return {
     id: row.id,
     threadId: row.threadId,
@@ -1081,6 +982,11 @@ function mapNodeRow(executor: DatabaseExecutor, row: AgentThreadNodeRow): AgentT
     parts,
     createdAt: row.createdAt,
   };
+}
+
+function getNodeModelMessage(node: AgentThreadNodeRow): ModelMessage {
+  assertThreadRole(node.role);
+  return buildModelMessageFromParts(node.role, listNodePartViews(node));
 }
 
 function mapArtifactRow(row: AgentArtifactRow): AgentArtifactView {
@@ -1114,10 +1020,9 @@ function mapRunInputRefRow(row: AgentRunInputRefRow): AssistantInputRefSnapshot 
   };
 }
 
-function mapRunRow(executor: DatabaseExecutor, row: AgentRunRow): AgentRunView {
+function mapRunRow(row: AgentRunRow): AgentRunView {
   assertRunMode(row.runMode);
   assertRunStatus(row.status);
-  void executor;
   return {
     id: row.id,
     threadId: row.threadId,
@@ -1166,6 +1071,365 @@ function mapRunStepRow(row: AgentRunStepRow): AgentRunStepView {
   };
 }
 
+function mapRunEventRow(row: AgentRunEventRow): AgentRunEventView {
+  assertEventKind(row.eventKind);
+  return {
+    id: row.id,
+    runId: row.runId,
+    stepId: row.stepId,
+    seq: row.seq,
+    eventKind: row.eventKind,
+    nodeId: row.nodeId,
+    relatedToolCallId: row.relatedToolCallId,
+    relatedRunId: row.relatedRunId,
+    summaryText: row.summaryText,
+    payloadArtifactId: row.payloadArtifactId,
+    createdAt: row.createdAt,
+  };
+}
+
+function sortByCreatedAt<T extends { createdAt: number }>(rows: readonly T[]) {
+  return [...rows].sort((left, right) => left.createdAt - right.createdAt);
+}
+
+function sortByUpdatedDescCreatedDesc<T extends { updatedAt: number; createdAt: number }>(
+  rows: readonly T[],
+) {
+  return [...rows].sort((left, right) => {
+    if (left.updatedAt !== right.updatedAt) {
+      return right.updatedAt - left.updatedAt;
+    }
+    return right.createdAt - left.createdAt;
+  });
+}
+
+function normalizeIndexPayload(index: AiIndexPayload): AiIndexPayload {
+  return {
+    threads: sortByCreatedAt(index.threads),
+    projectState: sortByCreatedAt(index.projectState),
+    nodes: sortByCreatedAt(index.nodes),
+    runs: sortByCreatedAt(index.runs),
+  };
+}
+
+function replaceRowById<T extends { id: string }>(rows: T[], nextRow: T) {
+  const index = rows.findIndex((row) => row.id === nextRow.id);
+  if (index >= 0) {
+    rows[index] = nextRow;
+  } else {
+    rows.push(nextRow);
+  }
+}
+
+function getProjectOrThrow(projectId: string) {
+  return readProjectMetaSync(projectId).project;
+}
+
+function touchProject(projectId: string) {
+  updateProjectMetaSync(
+    projectId,
+    (payload) => ({
+      ...payload,
+      project: {
+        ...payload.project,
+        updatedAt: now(),
+      },
+    }),
+    "Touch project metadata",
+  );
+}
+
+function readAiRunFilesOrEmpty(projectId: string) {
+  try {
+    return readFilesAtRefSync({ projectId, ref: aiRunsRef(projectId) });
+  } catch {
+    return {};
+  }
+}
+
+function readProjectAiStorage(projectId: string): ProjectAiStorage {
+  readProjectMetaSync(projectId);
+  return {
+    index: normalizeIndexPayload(readAiIndexSync(projectId)),
+    files: readAiRunFilesOrEmpty(projectId),
+  };
+}
+
+function writeProjectAiStorage(projectId: string, storage: ProjectAiStorage, message: string) {
+  const index = normalizeIndexPayload(storage.index);
+  const files = {
+    ...storage.files,
+    "threads.jsonl": stringifyJsonl(index.threads),
+    "project-state.jsonl": stringifyJsonl(index.projectState),
+    "nodes.jsonl": stringifyJsonl(index.nodes),
+    "runs.jsonl": stringifyJsonl(index.runs),
+  };
+  commitCustomRefSync({
+    projectId,
+    ref: aiRunsRef(projectId),
+    message,
+    replace: true,
+    files,
+  });
+  return {
+    index,
+    files,
+  } satisfies ProjectAiStorage;
+}
+
+function updateProjectAiStorage<T>(
+  projectId: string,
+  message: string,
+  updater: (_storage: ProjectAiStorage) => T,
+) {
+  const storage = readProjectAiStorage(projectId);
+  const result = updater(storage);
+  writeProjectAiStorage(projectId, storage, message);
+  return result;
+}
+
+function getProjectIdForThreadOrThrow(threadId: string) {
+  const projectId = findProjectIdForThreadSync(threadId);
+  invariant(projectId, "未找到 agent thread。");
+  return projectId;
+}
+
+function getProjectIdForNodeOrThrow(nodeId: string) {
+  const projectId = findProjectIdForNodeSync(nodeId);
+  invariant(projectId, "未找到 agent 节点。");
+  return projectId;
+}
+
+function getProjectIdForRunOrThrow(runId: string) {
+  const projectId = findProjectIdForRunSync(runId);
+  invariant(projectId, "未找到 agent run。");
+  return projectId;
+}
+
+function getThreadOrThrow(index: AiIndexPayload, threadId: string) {
+  const thread = index.threads.find((entry) => entry.id === threadId);
+  invariant(thread, "未找到 agent thread。");
+  return thread;
+}
+
+function getNodeOrThrow(index: AiIndexPayload, nodeId: string) {
+  const node = index.nodes.find((entry) => entry.id === nodeId);
+  invariant(node, "未找到 agent 节点。");
+  return node;
+}
+
+function getRunOrThrow(index: AiIndexPayload, runId: string) {
+  const run = index.runs.find((entry) => entry.id === runId);
+  invariant(run, "未找到 agent run。");
+  return run;
+}
+
+function getProjectStateRow(index: AiIndexPayload, projectId: string, agentProfile: string) {
+  return index.projectState.find(
+    (entry) => entry.projectId === projectId && entry.agentProfile === agentProfile,
+  );
+}
+
+function getNodeRowsByThread(index: AiIndexPayload, threadId: string, parentNodeId: string | null) {
+  return sortByCreatedAt(
+    index.nodes.filter(
+      (entry) => entry.threadId === threadId && entry.parentNodeId === parentNodeId,
+    ),
+  );
+}
+
+function touchThread(index: AiIndexPayload, threadId: string, timestamp = now()) {
+  const thread = getThreadOrThrow(index, threadId);
+  replaceRowById(index.threads, {
+    ...thread,
+    updatedAt: timestamp,
+  });
+}
+
+function upsertProjectState(
+  index: AiIndexPayload,
+  projectId: string,
+  agentProfile: string,
+  activeThreadId: string | null,
+) {
+  getProjectOrThrow(projectId);
+  const stateId = `${projectId}:${agentProfile}`;
+  const timestamp = now();
+  const existing = getProjectStateRow(index, projectId, agentProfile);
+  const next: AgentProjectStateRow = existing
+    ? {
+        ...existing,
+        activeThreadId,
+        updatedAt: timestamp,
+      }
+    : {
+        id: stateId,
+        projectId,
+        agentProfile,
+        activeThreadId,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+  replaceRowById(index.projectState, next);
+  return mapProjectStateRow(next);
+}
+
+function getLatestUnarchivedThreadRow(
+  index: AiIndexPayload,
+  projectId: string,
+  agentProfile: string,
+) {
+  return sortByUpdatedDescCreatedDesc(
+    index.threads.filter(
+      (entry) =>
+        entry.projectId === projectId &&
+        entry.agentProfile === agentProfile &&
+        entry.archivedAt == null,
+    ),
+  )[0];
+}
+
+function buildStoredMessagePartRows(
+  nodeId: string,
+  createdAt: number,
+  message: ModelMessage,
+  extraParts: CreateNodeExtraPartInput[] | undefined,
+) {
+  const messageParts = normalizeMessageParts(message);
+  const normalizedExtraParts = normalizeExtraNodeParts(extraParts ?? [], messageParts.length);
+  return [...messageParts, ...normalizedExtraParts].map((part) => ({
+    id: createId("agent_part"),
+    nodeId,
+    partIndex: part.partIndex,
+    partKind: part.partKind,
+    visibility: part.visibility,
+    state: part.state,
+    providerOptionsJson: serializeOptionalJson(part.providerOptions),
+    providerMetadataJson: serializeOptionalJson(part.providerMetadata),
+    payloadJson: serializeRequiredJson(part.payload, "节点 part"),
+    createdAt,
+  })) satisfies AgentMessagePartRow[];
+}
+
+function insertNode(storage: ProjectAiStorage, input: CreateNodeInput) {
+  const thread = getThreadOrThrow(storage.index, input.threadId);
+  if (input.parentNodeId) {
+    const parent = getNodeOrThrow(storage.index, input.parentNodeId);
+    invariant(parent.threadId === thread.id, "父节点不属于当前 thread。");
+  }
+  if (input.createdByRunId) {
+    const run = getRunOrThrow(storage.index, input.createdByRunId);
+    invariant(run.threadId === thread.id, "节点来源 run 不属于当前 thread。");
+  }
+  if (input.sourceStepId) {
+    const step = getStepOrThrow(input.sourceStepId);
+    const run = getRunOrThrow(storage.index, step.runId);
+    invariant(run.threadId === thread.id, "节点来源 step 不属于当前 thread。");
+  }
+
+  const storedMessage = normalizeModelMessage(input.message);
+  const id = createId("agent_node");
+  const createdAt = now();
+  const row: AgentThreadNodeRow = {
+    id,
+    threadId: thread.id,
+    parentNodeId: input.parentNodeId,
+    role: storedMessage.role,
+    createdByRunId: trimOptionalString(input.createdByRunId),
+    sourceStepId: trimOptionalString(input.sourceStepId),
+    sourceKind: input.sourceKind,
+    summaryText: normalizeSummaryText(input.summaryText) ?? buildMessageSummary(storedMessage),
+    partsJson: stringifyStoredArray(
+      buildStoredMessagePartRows(id, createdAt, storedMessage, input.extraParts),
+    ),
+    createdAt,
+  };
+  storage.index.nodes.push(row);
+  touchThread(storage.index, thread.id);
+  return mapNodeRow(row);
+}
+
+function updateNodePart(
+  storage: ProjectAiStorage,
+  nodeId: string,
+  partIndex: number,
+  {
+    payload,
+    state,
+    providerOptions,
+    providerMetadata,
+  }: {
+    payload: unknown;
+    state: AgentPartState;
+    providerOptions?: unknown;
+    providerMetadata?: unknown;
+  },
+) {
+  const node = getNodeOrThrow(storage.index, nodeId);
+  const rows = parseStoredArray<AgentMessagePartRow>(node.partsJson);
+  const rowIndex = rows.findIndex((row) => row.partIndex === partIndex);
+  invariant(rowIndex >= 0, "未找到节点 part。");
+  rows[rowIndex] = {
+    ...rows[rowIndex]!,
+    state,
+    providerOptionsJson: serializeOptionalJson(providerOptions),
+    providerMetadataJson: serializeOptionalJson(providerMetadata),
+    payloadJson: serializeRequiredJson(payload, "节点 part"),
+  };
+  replaceRowById(storage.index.nodes, {
+    ...node,
+    partsJson: stringifyStoredArray(rows),
+  });
+  touchThread(storage.index, node.threadId);
+}
+
+function appendNodePart(
+  storage: ProjectAiStorage,
+  nodeId: string,
+  part: {
+    partKind: AgentThreadNodePartKind;
+    visibility: AgentVisibility;
+    state: AgentPartState;
+    payload: unknown;
+    providerOptions?: unknown;
+    providerMetadata?: unknown;
+  },
+) {
+  const node = getNodeOrThrow(storage.index, nodeId);
+  const rows = parseStoredArray<AgentMessagePartRow>(node.partsJson);
+  const nextPartIndex = Math.max(-1, ...rows.map((row) => row.partIndex)) + 1;
+  rows.push({
+    id: createId("agent_part"),
+    nodeId,
+    partIndex: nextPartIndex,
+    partKind: part.partKind,
+    visibility: part.visibility,
+    state: part.state,
+    providerOptionsJson: serializeOptionalJson(part.providerOptions),
+    providerMetadataJson: serializeOptionalJson(part.providerMetadata),
+    payloadJson: serializeRequiredJson(part.payload, "节点 part"),
+    createdAt: now(),
+  });
+  replaceRowById(storage.index.nodes, {
+    ...node,
+    partsJson: stringifyStoredArray(rows),
+  });
+  touchThread(storage.index, node.threadId);
+}
+
+function updateNodeSummary(
+  storage: ProjectAiStorage,
+  nodeId: string,
+  summaryText: string | null | undefined,
+) {
+  const node = getNodeOrThrow(storage.index, nodeId);
+  replaceRowById(storage.index.nodes, {
+    ...node,
+    summaryText: normalizeSummaryText(summaryText),
+  });
+  touchThread(storage.index, node.threadId);
+}
+
 function normalizeUsageTotalTokens(usage: unknown): number | null {
   if (!usage || typeof usage !== "object") {
     return null;
@@ -1190,7 +1454,7 @@ function normalizeUsageTotalTokens(usage: unknown): number | null {
   return null;
 }
 
-function summarizeRunTraceRows(rows: RunTraceRows) {
+function summarizeRunTraceRows(rows: RunTraceRows): RunTraceCacheFields {
   const totalTokens = rows.steps.reduce<number | null>((sum, step) => {
     const value = normalizeUsageTotalTokens(parseStoredJson(step.usageJson));
     if (value == null) {
@@ -1213,28 +1477,11 @@ function summarizeRunTraceRows(rows: RunTraceRows) {
     lastFinishReason: lastStep?.finishReason ?? null,
     errorSummary: errorArtifact?.summaryText ?? null,
     traceUpdatedAt: rows.run.updatedAt,
-  } satisfies Partial<typeof schema.agentRuns.$inferInsert>;
+  };
 }
 
 export function buildAgentRunCacheFieldsFromTrace(rows: RunTraceRows) {
   return summarizeRunTraceRows(rows);
-}
-
-function mapRunEventRow(row: AgentRunEventRow): AgentRunEventView {
-  assertEventKind(row.eventKind);
-  return {
-    id: row.id,
-    runId: row.runId,
-    stepId: row.stepId,
-    seq: row.seq,
-    eventKind: row.eventKind,
-    nodeId: row.nodeId,
-    relatedToolCallId: row.relatedToolCallId,
-    relatedRunId: row.relatedRunId,
-    summaryText: row.summaryText,
-    payloadArtifactId: row.payloadArtifactId,
-    createdAt: row.createdAt,
-  };
 }
 
 function normalizeGitStepRow(row: AgentRunStepRow | Record<string, unknown>): AgentRunStepRow {
@@ -1282,120 +1529,28 @@ function normalizeGitArtifactRow(
   };
 }
 
-function buildAiRunsIndexPayload(projectId: string): AiRunsMetaPayload {
-  const threads = db
-    .select()
-    .from(schema.agentThreads)
-    .where(eq(schema.agentThreads.projectId, projectId))
-    .orderBy(schema.agentThreads.createdAt)
-    .all() as AgentThreadRow[];
-  const threadIds = threads.map((thread) => thread.id);
-  const projectState = db
-    .select()
-    .from(schema.agentProjectState)
-    .where(eq(schema.agentProjectState.projectId, projectId))
-    .orderBy(schema.agentProjectState.createdAt)
-    .all() as AgentProjectStateRow[];
-  const nodes =
-    threadIds.length > 0
-      ? (db
-          .select()
-          .from(schema.agentThreadNodes)
-          .where(inArray(schema.agentThreadNodes.threadId, threadIds))
-          .orderBy(schema.agentThreadNodes.createdAt)
-          .all() as AgentThreadNodeRow[])
-      : [];
-
-  return { threads, projectState, nodes };
-}
-
-function persistAiRunsIndexToGit(projectId: string) {
-  const payload = buildAiRunsIndexPayload(projectId);
-  commitCustomRefSync({
-    projectId,
-    ref: aiRunsRef(projectId),
-    message: "Update AI run index",
-    files: {
-      "threads.jsonl": stringifyJsonl(payload.threads),
-      "project-state.jsonl": stringifyJsonl(payload.projectState),
-      "nodes.jsonl": stringifyJsonl(payload.nodes),
-    },
-  });
-}
-
-function scheduleAiRunsIndexPersist(projectId: string) {
-  try {
-    persistAiRunsIndexToGit(projectId);
-  } catch (error) {
-    logAiGitPersistError("Failed to persist AI run index to Git:", error);
-  }
-}
-
-function scheduleAiRunsIndexPersistForThread(threadId: string) {
-  try {
-    const thread = getThreadOrThrow(db, threadId);
-    scheduleAiRunsIndexPersist(thread.projectId);
-  } catch (error) {
-    logAiGitPersistError("Failed to schedule AI run index persistence:", error);
-  }
-}
-
-function scheduleAiRunsIndexPersistForRun(runId: string) {
-  try {
-    const run = getRunOrThrow(db, runId);
-    scheduleAiRunsIndexPersistForThread(run.threadId);
-  } catch (error) {
-    logAiGitPersistError("Failed to schedule AI run index persistence:", error);
-  }
-}
-
-export interface RunTraceRows {
-  run: AgentRunView;
-  inputRefs: AgentRunInputRefRow[];
-  steps: AgentRunStepRow[];
-  events: AgentRunEventRow[];
-  artifacts: AgentArtifactRow[];
-  childRuns: AgentRunView[];
-}
-
-function getRunProjectId(run: AgentRunRow) {
-  return getThreadOrThrow(db, run.threadId).projectId;
-}
-
-function readAiRunFiles(projectId: string) {
-  return readFilesAtRefSync({ projectId, ref: aiRunsRef(projectId) });
-}
-
-function parseRunTraceRowsFromFiles(files: Record<string, string>, run: AgentRunRow): RunTraceRows {
-  const runJson = files[`runs/${run.id}/run.json`];
-  invariant(runJson, "Git AI run trace 不存在。");
-
-  const runView = JSON.parse(runJson) as AgentRunView;
-  const inputRefs = parseJsonl<AgentRunInputRefRow>(files[`runs/${run.id}/input-refs.jsonl`]).sort(
-    (left, right) => left.refIndex - right.refIndex,
-  );
+function parseRunTraceRowsFromStorage(storage: ProjectAiStorage, run: AgentRunRow): RunTraceRows {
+  const runJson = storage.files[`runs/${run.id}/run.json`];
+  const runView = runJson ? (JSON.parse(runJson) as AgentRunView) : mapRunRow(run);
+  const inputRefs = parseJsonl<AgentRunInputRefRow>(
+    storage.files[`runs/${run.id}/input-refs.jsonl`],
+  ).sort((left, right) => left.refIndex - right.refIndex);
   const steps = parseJsonl<AgentRunStepRow | Record<string, unknown>>(
-    files[`runs/${run.id}/steps.jsonl`],
+    storage.files[`runs/${run.id}/steps.jsonl`],
   )
     .map(normalizeGitStepRow)
     .sort((left, right) => left.stepIndex - right.stepIndex);
-  const events = parseJsonl<AgentRunEventRow>(files[`runs/${run.id}/events.jsonl`]).sort(
+  const events = parseJsonl<AgentRunEventRow>(storage.files[`runs/${run.id}/events.jsonl`]).sort(
     (left, right) => left.seq - right.seq,
   );
   const artifacts = parseJsonl<AgentArtifactRow | AgentArtifactView | Record<string, unknown>>(
-    files[`runs/${run.id}/artifacts.jsonl`],
+    storage.files[`runs/${run.id}/artifacts.jsonl`],
   )
     .map(normalizeGitArtifactRow)
     .sort((left, right) => left.createdAt - right.createdAt);
-  const childRuns = discoverGitRunIds(files)
-    .flatMap((childRunId) => {
-      if (childRunId === run.id) return [];
-      const childRunJson = files[`runs/${childRunId}/run.json`];
-      if (!childRunJson) return [];
-      const childRun = JSON.parse(childRunJson) as AgentRunView;
-      return childRun.parentRunId === run.id ? [childRun] : [];
-    })
-    .sort((left, right) => left.createdAt - right.createdAt);
+  const childRuns = sortByCreatedAt(
+    storage.index.runs.filter((entry) => entry.parentRunId === run.id),
+  ).map(mapRunRow);
 
   return {
     run: runView,
@@ -1405,19 +1560,6 @@ function parseRunTraceRowsFromFiles(files: Record<string, string>, run: AgentRun
     artifacts,
     childRuns,
   };
-}
-
-function discoverGitRunIds(files: Record<string, string>) {
-  const runIds = new Set<string>();
-  for (const filepath of Object.keys(files)) {
-    const match = /^runs\/([^/]+)\/run\.json$/.exec(filepath);
-    if (match?.[1]) runIds.add(match[1]);
-  }
-  return [...runIds].sort((left, right) => left.localeCompare(right));
-}
-
-function readRunTraceRowsFromGit(run: AgentRunRow): RunTraceRows {
-  return parseRunTraceRowsFromFiles(readAiRunFiles(getRunProjectId(run)), run);
 }
 
 function mapTraceRows(rows: RunTraceRows): AgentRunTraceView {
@@ -1430,448 +1572,68 @@ function mapTraceRows(rows: RunTraceRows): AgentRunTraceView {
   };
 }
 
-function writeRunTraceRowsToGit(projectId: string, rows: RunTraceRows, message: string) {
-  commitCustomRefSync({
-    projectId,
-    ref: aiRunsRef(projectId),
-    message,
-    files: {
-      [`runs/${rows.run.id}/run.json`]: `${JSON.stringify(rows.run, null, 2)}\n`,
-      [`runs/${rows.run.id}/input-refs.jsonl`]: stringifyJsonl(rows.inputRefs),
-      [`runs/${rows.run.id}/steps.jsonl`]: stringifyJsonl(rows.steps),
-      [`runs/${rows.run.id}/events.jsonl`]: stringifyJsonl(rows.events),
-      [`runs/${rows.run.id}/artifacts.jsonl`]: stringifyJsonl(rows.artifacts),
-      [`runs/${rows.run.id}/child-runs.jsonl`]: stringifyJsonl(rows.childRuns),
-    },
+function applyRunTraceRowsToStorage(storage: ProjectAiStorage, rows: RunTraceRows) {
+  storage.files[`runs/${rows.run.id}/run.json`] = `${JSON.stringify(rows.run, null, 2)}\n`;
+  storage.files[`runs/${rows.run.id}/input-refs.jsonl`] = stringifyJsonl(rows.inputRefs);
+  storage.files[`runs/${rows.run.id}/steps.jsonl`] = stringifyJsonl(rows.steps);
+  storage.files[`runs/${rows.run.id}/events.jsonl`] = stringifyJsonl(rows.events);
+  storage.files[`runs/${rows.run.id}/artifacts.jsonl`] = stringifyJsonl(rows.artifacts);
+  storage.files[`runs/${rows.run.id}/child-runs.jsonl`] = stringifyJsonl(rows.childRuns);
+
+  const cache = buildAgentRunCacheFieldsFromTrace(rows);
+  const current = getRunOrThrow(storage.index, rows.run.id);
+  replaceRowById(storage.index.runs, {
+    ...current,
+    status: rows.run.status,
+    errorArtifactId: rows.run.errorArtifactId,
+    selectionSnapshotJson: cache.selectionSnapshotJson,
+    contextSnapshotJson: cache.contextSnapshotJson,
+    inputRefsSnapshotJson: cache.inputRefsSnapshotJson,
+    activeToolsJson: cache.activeToolsJson,
+    stepCount: cache.stepCount,
+    totalTokens: cache.totalTokens,
+    lastFinishReason: cache.lastFinishReason,
+    errorSummary: cache.errorSummary,
+    traceUpdatedAt: cache.traceUpdatedAt,
+    completedAt: rows.run.completedAt,
+    updatedAt: rows.run.updatedAt,
   });
-  db.update(schema.agentRuns)
-    .set(buildAgentRunCacheFieldsFromTrace(rows))
-    .where(eq(schema.agentRuns.id, rows.run.id))
-    .run();
 }
 
-function updateRunTraceRows(
-  runId: string,
-  message: string,
-  update: (rows: RunTraceRows, run: AgentRunRow) => RunTraceRows,
-) {
-  const run = getRunOrThrow(db, runId);
-  const projectId = getRunProjectId(run);
-  const rows = update(readRunTraceRowsFromGit(run), run);
-  writeRunTraceRowsToGit(projectId, rows, message);
-  return rows;
-}
-
-function upsertProjectState(
-  executor: DatabaseExecutor,
-  projectId: string,
-  agentProfile: string,
-  activeThreadId: string | null,
-) {
-  getProjectOrThrow(executor, projectId);
-  const stateId = `${projectId}:${agentProfile}`;
-  const timestamp = now();
-  const existing = getProjectStateRow(executor, projectId, agentProfile);
-
-  if (existing) {
-    executor
-      .update(schema.agentProjectState)
-      .set({
-        activeThreadId,
-        updatedAt: timestamp,
-      })
-      .where(eq(schema.agentProjectState.id, existing.id))
-      .run();
-  } else {
-    executor
-      .insert(schema.agentProjectState)
-      .values({
-        id: stateId,
-        projectId,
-        agentProfile,
-        activeThreadId,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      })
-      .run();
-  }
-
-  return mapProjectStateRow(getProjectStateRow(executor, projectId, agentProfile)!);
-}
-
-function touchThread(executor: DatabaseExecutor, threadId: string) {
-  executor
-    .update(schema.agentThreads)
-    .set({ updatedAt: now() })
-    .where(eq(schema.agentThreads.id, threadId))
-    .run();
-}
-
-function insertNode(executor: DatabaseExecutor, input: CreateNodeInput) {
-  const thread = getThreadOrThrow(executor, input.threadId);
-  if (input.parentNodeId) {
-    const parent = getNodeOrThrow(executor, input.parentNodeId);
-    invariant(parent.threadId === thread.id, "父节点不属于当前 thread。");
-  }
-  if (input.createdByRunId) {
-    const run = getRunOrThrow(executor, input.createdByRunId);
-    invariant(run.threadId === thread.id, "节点来源 run 不属于当前 thread。");
-  }
-  if (input.sourceStepId) {
-    const step = getStepOrThrow(executor, input.sourceStepId);
-    const run = getRunOrThrow(executor, step.runId);
-    invariant(run.threadId === thread.id, "节点来源 step 不属于当前 thread。");
-  }
-
-  const id = createId("agent_node");
-  const createdAt = now();
-  const storedMessage = normalizeModelMessage(input.message);
-  executor
-    .insert(schema.agentThreadNodes)
-    .values({
-      id,
-      threadId: thread.id,
-      parentNodeId: input.parentNodeId,
-      role: storedMessage.role,
-      createdByRunId: trimOptionalString(input.createdByRunId),
-      sourceStepId: trimOptionalString(input.sourceStepId),
-      sourceKind: input.sourceKind,
-      summaryText: normalizeSummaryText(input.summaryText) ?? buildMessageSummary(storedMessage),
-      createdAt,
-    })
-    .run();
-
-  const messageParts = normalizeMessageParts(storedMessage);
-  const extraParts = normalizeExtraNodeParts(input.extraParts ?? [], messageParts.length);
-  const parts = [...messageParts, ...extraParts];
-  executor
-    .update(schema.agentThreadNodes)
-    .set({
-      partsJson: stringifyStoredArray(
-        parts.map((part) => ({
-          id: createId("agent_part"),
-          nodeId: id,
-          partIndex: part.partIndex,
-          partKind: part.partKind,
-          visibility: part.visibility,
-          state: part.state,
-          providerOptionsJson: serializeOptionalJson(part.providerOptions),
-          providerMetadataJson: serializeOptionalJson(part.providerMetadata),
-          payloadJson: serializeRequiredJson(part.payload, "节点 part"),
-          createdAt,
-        })),
-      ),
-    })
-    .where(eq(schema.agentThreadNodes.id, id))
-    .run();
-
-  touchThread(executor, thread.id);
-  touchProject(executor, thread.projectId);
-  return mapNodeRow(executor, getNodeOrThrow(executor, id));
-}
-
-function updateNodePart(
-  executor: DatabaseExecutor,
-  nodeId: string,
-  partIndex: number,
-  {
-    payload,
-    state,
-    providerOptions,
-    providerMetadata,
-  }: {
-    payload: unknown;
-    state: AgentPartState;
-    providerOptions?: unknown;
-    providerMetadata?: unknown;
-  },
-) {
-  const node = getNodeOrThrow(executor, nodeId);
-  const rows = parseStoredArray<AgentMessagePartRow>(node.partsJson);
-  const index = rows.findIndex((row) => row.partIndex === partIndex);
-  invariant(index >= 0, "未找到节点 part。");
-  const row = rows[index]!;
-  rows[index] = {
-    ...row,
-    state,
-    providerOptionsJson: serializeOptionalJson(providerOptions),
-    providerMetadataJson: serializeOptionalJson(providerMetadata),
-    payloadJson: serializeRequiredJson(payload, "节点 part"),
-  };
-  executor
-    .update(schema.agentThreadNodes)
-    .set({
-      partsJson: stringifyStoredArray(rows),
-    })
-    .where(eq(schema.agentThreadNodes.id, node.id))
-    .run();
-  touchThread(executor, node.threadId);
-}
-
-function appendNodePart(
-  executor: DatabaseExecutor,
-  nodeId: string,
-  part: {
-    partKind: AgentThreadNodePartKind;
-    visibility: AgentVisibility;
-    state: AgentPartState;
-    payload: unknown;
-    providerOptions?: unknown;
-    providerMetadata?: unknown;
-  },
-) {
-  const node = getNodeOrThrow(executor, nodeId);
-  const rows = parseStoredArray<AgentMessagePartRow>(node.partsJson);
-  const latestPartIndex = Math.max(-1, ...rows.map((row) => row.partIndex));
-  const partIndex = latestPartIndex + 1;
-  executor
-    .update(schema.agentThreadNodes)
-    .set({
-      partsJson: stringifyStoredArray([
-        ...rows,
-        {
-          id: createId("agent_part"),
-          nodeId,
-          partIndex,
-          partKind: part.partKind,
-          visibility: part.visibility,
-          state: part.state,
-          providerOptionsJson: serializeOptionalJson(part.providerOptions),
-          providerMetadataJson: serializeOptionalJson(part.providerMetadata),
-          payloadJson: serializeRequiredJson(part.payload, "节点 part"),
-          createdAt: now(),
-        },
-      ]),
-    })
-    .where(eq(schema.agentThreadNodes.id, node.id))
-    .run();
-  touchThread(executor, node.threadId);
-}
-
-function updateNodeSummary(
-  executor: DatabaseExecutor,
-  nodeId: string,
-  summaryText: string | null | undefined,
-) {
-  const node = getNodeOrThrow(executor, nodeId);
-  executor
-    .update(schema.agentThreadNodes)
-    .set({ summaryText: normalizeSummaryText(summaryText) })
-    .where(eq(schema.agentThreadNodes.id, node.id))
-    .run();
-  touchThread(executor, node.threadId);
-}
-
-function getLatestUnarchivedThreadRow(
-  executor: DatabaseExecutor,
-  projectId: string,
-  agentProfile: string,
-) {
-  return executor
-    .select()
-    .from(schema.agentThreads)
-    .where(
-      and(
-        eq(schema.agentThreads.projectId, projectId),
-        eq(schema.agentThreads.agentProfile, agentProfile),
-        isNull(schema.agentThreads.archivedAt),
-      ),
-    )
-    .orderBy(desc(schema.agentThreads.updatedAt), desc(schema.agentThreads.createdAt))
-    .get();
-}
-
-export function listThreads(
-  projectId: string,
-  options?: { agentProfile?: string; archived?: boolean },
-) {
-  getProjectOrThrow(db, projectId);
-  const agentProfile = trimOptionalString(options?.agentProfile);
-  const archived = options?.archived;
-  return db
-    .select()
-    .from(schema.agentThreads)
-    .where(
-      and(
-        eq(schema.agentThreads.projectId, projectId),
-        agentProfile ? eq(schema.agentThreads.agentProfile, agentProfile) : undefined,
-        archived == null
-          ? undefined
-          : archived
-            ? sql`${schema.agentThreads.archivedAt} IS NOT NULL`
-            : isNull(schema.agentThreads.archivedAt),
-      ),
-    )
-    .orderBy(desc(schema.agentThreads.updatedAt), desc(schema.agentThreads.createdAt))
-    .all()
-    .map(mapThreadRow);
-}
-
-export function getProjectState(projectId: string, agentProfile = PROJECT_ASSISTANT_AGENT_PROFILE) {
-  getProjectOrThrow(db, projectId);
-  const row = getProjectStateRow(db, projectId, agentProfile);
-  return row ? mapProjectStateRow(row) : null;
-}
-
-export function resolveActiveThread(
-  projectId: string,
-  agentProfile = PROJECT_ASSISTANT_AGENT_PROFILE,
-) {
-  return db.transaction((tx) => {
-    getProjectOrThrow(tx, projectId);
-    const state = getProjectStateRow(tx, projectId, agentProfile);
-
-    if (state?.activeThreadId) {
-      const activeThread = tx
-        .select()
-        .from(schema.agentThreads)
-        .where(eq(schema.agentThreads.id, state.activeThreadId))
-        .get();
-      if (
-        activeThread &&
-        activeThread.projectId === projectId &&
-        activeThread.agentProfile === agentProfile &&
-        activeThread.archivedAt == null
-      ) {
-        return mapThreadRow(activeThread);
+function getStepOrThrow(stepId: string) {
+  for (const project of listProjectRowsSync()) {
+    const storage = readProjectAiStorage(project.id);
+    for (const run of storage.index.runs) {
+      const step = parseRunTraceRowsFromStorage(storage, run).steps.find(
+        (entry) => entry.id === stepId,
+      );
+      if (step) {
+        return step;
       }
     }
-
-    const fallback = getLatestUnarchivedThreadRow(tx, projectId, agentProfile);
-    upsertProjectState(tx, projectId, agentProfile, fallback?.id ?? null);
-    return fallback ? mapThreadRow(fallback) : null;
-  });
-}
-
-export function createThread(input: CreateThreadInput) {
-  const result = db.transaction((tx) => {
-    getProjectOrThrow(tx, input.projectId);
-    const agentProfile = trimOptionalString(input.agentProfile) ?? PROJECT_ASSISTANT_AGENT_PROFILE;
-    const existingCount = tx
-      .select({ id: schema.agentThreads.id })
-      .from(schema.agentThreads)
-      .where(
-        and(
-          eq(schema.agentThreads.projectId, input.projectId),
-          eq(schema.agentThreads.agentProfile, agentProfile),
-        ),
-      )
-      .all().length;
-    const timestamp = now();
-    const id = createId("agent_thread");
-    tx.insert(schema.agentThreads)
-      .values({
-        id,
-        projectId: input.projectId,
-        agentProfile,
-        title: normalizeThreadTitle(input.title, `新会话 ${existingCount + 1}`),
-        activeTipNodeId: null,
-        archivedAt: null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      })
-      .run();
-    upsertProjectState(tx, input.projectId, agentProfile, id);
-    touchProject(tx, input.projectId);
-    return mapThreadRow(getThreadOrThrow(tx, id));
-  });
-  scheduleAiRunsIndexPersist(result.projectId);
-  return result;
-}
-
-export function renameThread(threadId: string, title: string) {
-  const result = db.transaction((tx) => {
-    const thread = getThreadOrThrow(tx, threadId);
-    const normalizedTitle = trimOptionalString(title);
-    invariant(normalizedTitle, "名称不能为空。");
-    tx.update(schema.agentThreads)
-      .set({
-        title: normalizedTitle,
-        updatedAt: now(),
-      })
-      .where(eq(schema.agentThreads.id, threadId))
-      .run();
-    touchProject(tx, thread.projectId);
-    return mapThreadRow(getThreadOrThrow(tx, threadId));
-  });
-  scheduleAiRunsIndexPersist(result.projectId);
-  return result;
-}
-
-export function setActiveThread(projectId: string, threadId: string) {
-  const result = db.transaction((tx) => {
-    const thread = getThreadOrThrow(tx, threadId);
-    invariant(thread.projectId === projectId, "thread 不属于当前项目。");
-    invariant(thread.archivedAt == null, "不能激活已归档 thread。");
-    upsertProjectState(tx, projectId, thread.agentProfile, thread.id);
-    return mapThreadRow(thread);
-  });
-  scheduleAiRunsIndexPersist(projectId);
-  return result;
-}
-
-export function archiveThread(threadId: string, archived: boolean) {
-  const result = db.transaction((tx) => {
-    const thread = getThreadOrThrow(tx, threadId);
-    tx.update(schema.agentThreads)
-      .set({
-        archivedAt: archived ? now() : null,
-        updatedAt: now(),
-      })
-      .where(eq(schema.agentThreads.id, threadId))
-      .run();
-    const updated = getThreadOrThrow(tx, threadId);
-    const state = getProjectStateRow(tx, thread.projectId, thread.agentProfile);
-    if (archived && state?.activeThreadId === threadId) {
-      const fallback = getLatestUnarchivedThreadRow(tx, thread.projectId, thread.agentProfile);
-      upsertProjectState(tx, thread.projectId, thread.agentProfile, fallback?.id ?? null);
-    }
-    if (!archived && !state?.activeThreadId) {
-      upsertProjectState(tx, thread.projectId, thread.agentProfile, threadId);
-    }
-    touchProject(tx, thread.projectId);
-    return mapThreadRow(updated);
-  });
-  scheduleAiRunsIndexPersist(result.projectId);
-  return result;
-}
-
-export function resolveThreadPath(threadId: string, tipNodeId?: string | null) {
-  const thread = getThreadOrThrow(db, threadId);
-  const currentTipId = trimOptionalString(tipNodeId) ?? thread.activeTipNodeId;
-  if (!currentTipId) {
-    return [] as AgentThreadNodeView[];
   }
+  invariant(false, "未找到 run step。");
+}
 
-  const chain: AgentThreadNodeRow[] = [];
-  const seen = new Set<string>();
-  let currentId: string | null = currentTipId;
-
-  while (currentId) {
-    invariant(!seen.has(currentId), "thread 节点链存在循环。");
-    seen.add(currentId);
-    const row = getNodeOrThrow(db, currentId);
-    invariant(row.threadId === thread.id, "thread 引用了其他会话的节点。");
-    chain.push(row);
-    currentId = row.parentNodeId;
+function getArtifactOrThrow(artifactId: string) {
+  for (const project of listProjectRowsSync()) {
+    const storage = readProjectAiStorage(project.id);
+    for (const run of storage.index.runs) {
+      const artifact = parseRunTraceRowsFromStorage(storage, run).artifacts.find(
+        (entry) => entry.id === artifactId,
+      );
+      if (artifact) {
+        return artifact;
+      }
+    }
   }
-
-  return chain.reverse().map((row) => mapNodeRow(db, row));
+  invariant(false, "未找到 artifact。");
 }
 
-export function buildThreadModelMessages(threadId: string, tipNodeId?: string | null) {
-  return resolveThreadPath(threadId, tipNodeId).map((node) => node.message);
-}
-
-function resolveCandidateLeafTip(
-  executor: DatabaseExecutor,
-  threadId: string,
-  candidateNodeId: string,
-): string {
+function resolveCandidateLeafTip(index: AiIndexPayload, threadId: string, candidateNodeId: string) {
   let currentId = candidateNodeId;
-
   while (true) {
-    const children = getNodeRowsByThread(executor, threadId, currentId);
+    const children = getNodeRowsByThread(index, threadId, currentId);
     if (children.length !== 1) {
       return currentId;
     }
@@ -1879,21 +1641,11 @@ function resolveCandidateLeafTip(
   }
 }
 
-export function getNodeCandidates(parentNodeId: string) {
-  const parent = getNodeOrThrow(db, parentNodeId);
-  return getNodeRowsByThread(db, parent.threadId, parentNodeId).map(
-    (row): AgentCandidateNodeView => ({
-      id: row.id,
-      tipNodeId: resolveCandidateLeafTip(db, row.threadId, row.id),
-      role: row.role as AgentThreadRole,
-      summaryText: row.summaryText,
-      createdAt: row.createdAt,
-      createdByRunId: row.createdByRunId,
-    }),
-  );
-}
-
-function buildCandidateGroups(threadId: string, activePath: AgentThreadNodeView[]) {
+function buildCandidateGroups(
+  index: AiIndexPayload,
+  threadId: string,
+  activePath: AgentThreadNodeView[],
+) {
   const activeNodeByParent = new Map<string | null, string>();
   activePath.forEach((node) => {
     activeNodeByParent.set(node.parentNodeId, node.id);
@@ -1901,7 +1653,7 @@ function buildCandidateGroups(threadId: string, activePath: AgentThreadNodeView[
 
   const groups: AgentCandidateGroupView[] = [];
   for (const [parentNodeId, activeNodeId] of activeNodeByParent.entries()) {
-    const candidates = getNodeRowsByThread(db, threadId, parentNodeId);
+    const candidates = getNodeRowsByThread(index, threadId, parentNodeId);
     if (candidates.length <= 1) {
       continue;
     }
@@ -1910,7 +1662,7 @@ function buildCandidateGroups(threadId: string, activePath: AgentThreadNodeView[
       activeNodeId,
       nodes: candidates.map((row) => ({
         id: row.id,
-        tipNodeId: resolveCandidateLeafTip(db, row.threadId, row.id),
+        tipNodeId: resolveCandidateLeafTip(index, row.threadId, row.id),
         role: row.role as AgentThreadRole,
         summaryText: row.summaryText,
         createdAt: row.createdAt,
@@ -1921,9 +1673,13 @@ function buildCandidateGroups(threadId: string, activePath: AgentThreadNodeView[
   return groups;
 }
 
-function buildRunSummaries(threadId: string, activePath: AgentThreadNodeView[]) {
+function buildRunSummaries(
+  index: AiIndexPayload,
+  threadId: string,
+  activePath: AgentThreadNodeView[],
+) {
   const activeNodeIds = new Set(activePath.map((node) => node.id));
-  const activeIndexByNodeId = new Map(activePath.map((node, index) => [node.id, index]));
+  const activeIndexByNodeId = new Map(activePath.map((node, entryIndex) => [node.id, entryIndex]));
   const includedRunIds = new Set(
     activePath.flatMap((node) => (node.createdByRunId ? [node.createdByRunId] : [])),
   );
@@ -1935,12 +1691,7 @@ function buildRunSummaries(threadId: string, activePath: AgentThreadNodeView[]) 
     }
   });
 
-  const runRows = db
-    .select()
-    .from(schema.agentRuns)
-    .where(eq(schema.agentRuns.threadId, threadId))
-    .orderBy(schema.agentRuns.createdAt)
-    .all();
+  const runRows = sortByCreatedAt(index.runs.filter((row) => row.threadId === threadId));
   const relevantRunRows = runRows.filter((row) => {
     if (includedRunIds.has(row.id)) {
       return true;
@@ -1952,14 +1703,13 @@ function buildRunSummaries(threadId: string, activePath: AgentThreadNodeView[]) 
       row.status === "waiting_for_input"
     );
   });
-  const relevantRuns = relevantRunRows.map((row) => mapRunRow(db, row));
+  const relevantRuns = relevantRunRows.map(mapRunRow);
 
   if (relevantRuns.length === 0) {
     return [] as AgentRunSummaryView[];
   }
 
   const continuedByRunId = new Map<string, string>();
-
   relevantRuns.forEach((row) => {
     if (row.parentRunId && row.runMode === "continue") {
       continuedByRunId.set(row.parentRunId, row.id);
@@ -2017,80 +1767,253 @@ function buildRunSummaries(threadId: string, activePath: AgentThreadNodeView[]) 
     });
 }
 
+export function listThreads(
+  projectId: string,
+  options?: { agentProfile?: string; archived?: boolean },
+) {
+  getProjectOrThrow(projectId);
+  const storage = readProjectAiStorage(projectId);
+  const agentProfile = trimOptionalString(options?.agentProfile);
+  const archived = options?.archived;
+  return sortByUpdatedDescCreatedDesc(
+    storage.index.threads.filter(
+      (row) =>
+        row.projectId === projectId &&
+        (agentProfile ? row.agentProfile === agentProfile : true) &&
+        (archived == null ? true : archived ? row.archivedAt != null : row.archivedAt == null),
+    ),
+  ).map(mapThreadRow);
+}
+
+export function getProjectState(projectId: string, agentProfile = PROJECT_ASSISTANT_AGENT_PROFILE) {
+  getProjectOrThrow(projectId);
+  const row = getProjectStateRow(readProjectAiStorage(projectId).index, projectId, agentProfile);
+  return row ? mapProjectStateRow(row) : null;
+}
+
+export function resolveActiveThread(
+  projectId: string,
+  agentProfile = PROJECT_ASSISTANT_AGENT_PROFILE,
+) {
+  getProjectOrThrow(projectId);
+  const storage = readProjectAiStorage(projectId);
+  const state = getProjectStateRow(storage.index, projectId, agentProfile);
+
+  if (state?.activeThreadId) {
+    const activeThread = storage.index.threads.find((row) => row.id === state.activeThreadId);
+    if (
+      activeThread &&
+      activeThread.projectId === projectId &&
+      activeThread.agentProfile === agentProfile &&
+      activeThread.archivedAt == null
+    ) {
+      return mapThreadRow(activeThread);
+    }
+  }
+
+  const fallback = getLatestUnarchivedThreadRow(storage.index, projectId, agentProfile);
+  updateProjectAiStorage(projectId, "Resolve AI active thread", (mutableStorage) => {
+    upsertProjectState(mutableStorage.index, projectId, agentProfile, fallback?.id ?? null);
+  });
+  return fallback ? mapThreadRow(fallback) : null;
+}
+
+export function createThread(input: CreateThreadInput) {
+  const result = updateProjectAiStorage(input.projectId, "Create AI thread", (storage) => {
+    getProjectOrThrow(input.projectId);
+    const agentProfile = trimOptionalString(input.agentProfile) ?? PROJECT_ASSISTANT_AGENT_PROFILE;
+    const existingCount = storage.index.threads.filter(
+      (row) => row.projectId === input.projectId && row.agentProfile === agentProfile,
+    ).length;
+    const timestamp = now();
+    const row: AgentThreadRow = {
+      id: createId("agent_thread"),
+      projectId: input.projectId,
+      agentProfile,
+      title: normalizeThreadTitle(input.title, `新会话 ${existingCount + 1}`),
+      activeTipNodeId: null,
+      archivedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    storage.index.threads.push(row);
+    upsertProjectState(storage.index, input.projectId, agentProfile, row.id);
+    return mapThreadRow(row);
+  });
+  touchProject(input.projectId);
+  return result;
+}
+
+export function renameThread(threadId: string, title: string) {
+  const projectId = getProjectIdForThreadOrThrow(threadId);
+  const result = updateProjectAiStorage(projectId, `Rename AI thread ${threadId}`, (storage) => {
+    const thread = getThreadOrThrow(storage.index, threadId);
+    const normalizedTitle = trimOptionalString(title);
+    invariant(normalizedTitle, "名称不能为空。");
+    const updated: AgentThreadRow = {
+      ...thread,
+      title: normalizedTitle,
+      updatedAt: now(),
+    };
+    replaceRowById(storage.index.threads, updated);
+    return mapThreadRow(updated);
+  });
+  touchProject(projectId);
+  return result;
+}
+
+export function setActiveThread(projectId: string, threadId: string) {
+  const result = updateProjectAiStorage(projectId, "Set AI active thread", (storage) => {
+    const thread = getThreadOrThrow(storage.index, threadId);
+    invariant(thread.projectId === projectId, "thread 不属于当前项目。");
+    invariant(thread.archivedAt == null, "不能激活已归档 thread。");
+    upsertProjectState(storage.index, projectId, thread.agentProfile, thread.id);
+    return mapThreadRow(thread);
+  });
+  return result;
+}
+
+export function archiveThread(threadId: string, archived: boolean) {
+  const projectId = getProjectIdForThreadOrThrow(threadId);
+  const result = updateProjectAiStorage(projectId, `Archive AI thread ${threadId}`, (storage) => {
+    const thread = getThreadOrThrow(storage.index, threadId);
+    const updated: AgentThreadRow = {
+      ...thread,
+      archivedAt: archived ? now() : null,
+      updatedAt: now(),
+    };
+    replaceRowById(storage.index.threads, updated);
+    const state = getProjectStateRow(storage.index, thread.projectId, thread.agentProfile);
+    if (archived && state?.activeThreadId === threadId) {
+      const fallback = getLatestUnarchivedThreadRow(
+        storage.index,
+        thread.projectId,
+        thread.agentProfile,
+      );
+      upsertProjectState(
+        storage.index,
+        thread.projectId,
+        thread.agentProfile,
+        fallback?.id ?? null,
+      );
+    }
+    if (!archived && !state?.activeThreadId) {
+      upsertProjectState(storage.index, thread.projectId, thread.agentProfile, threadId);
+    }
+    return mapThreadRow(updated);
+  });
+  touchProject(projectId);
+  return result;
+}
+
+export function resolveThreadPath(threadId: string, tipNodeId?: string | null) {
+  const projectId = getProjectIdForThreadOrThrow(threadId);
+  const storage = readProjectAiStorage(projectId);
+  const thread = getThreadOrThrow(storage.index, threadId);
+  const currentTipId = trimOptionalString(tipNodeId) ?? thread.activeTipNodeId;
+  if (!currentTipId) {
+    return [] as AgentThreadNodeView[];
+  }
+
+  const chain: AgentThreadNodeRow[] = [];
+  const seen = new Set<string>();
+  let currentId: string | null = currentTipId;
+
+  while (currentId) {
+    invariant(!seen.has(currentId), "thread 节点链存在循环。");
+    seen.add(currentId);
+    const row = getNodeOrThrow(storage.index, currentId);
+    invariant(row.threadId === thread.id, "thread 引用了其他会话的节点。");
+    chain.push(row);
+    currentId = row.parentNodeId;
+  }
+
+  return chain.reverse().map(mapNodeRow);
+}
+
+export function buildThreadModelMessages(threadId: string, tipNodeId?: string | null) {
+  return resolveThreadPath(threadId, tipNodeId).map((node) => node.message);
+}
+
+export function getNodeCandidates(parentNodeId: string) {
+  const projectId = getProjectIdForNodeOrThrow(parentNodeId);
+  const storage = readProjectAiStorage(projectId);
+  const parent = getNodeOrThrow(storage.index, parentNodeId);
+  return getNodeRowsByThread(storage.index, parent.threadId, parentNodeId).map(
+    (row): AgentCandidateNodeView => ({
+      id: row.id,
+      tipNodeId: resolveCandidateLeafTip(storage.index, row.threadId, row.id),
+      role: row.role as AgentThreadRole,
+      summaryText: row.summaryText,
+      createdAt: row.createdAt,
+      createdByRunId: row.createdByRunId,
+    }),
+  );
+}
+
 export function listLatestRuns(threadId: string, limit = 10) {
-  getThreadOrThrow(db, threadId);
-  return db
-    .select()
-    .from(schema.agentRuns)
-    .where(eq(schema.agentRuns.threadId, threadId))
-    .orderBy(desc(schema.agentRuns.createdAt))
-    .limit(limit)
-    .all()
-    .map((row) => mapRunRow(db, row));
+  const projectId = getProjectIdForThreadOrThrow(threadId);
+  const storage = readProjectAiStorage(projectId);
+  getThreadOrThrow(storage.index, threadId);
+  return [...storage.index.runs]
+    .filter((row) => row.threadId === threadId)
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .slice(0, limit)
+    .map(mapRunRow);
 }
 
 export function getLatestRunForTriggerNode(threadId: string, triggerNodeId: string) {
-  getThreadOrThrow(db, threadId);
+  const projectId = getProjectIdForThreadOrThrow(threadId);
+  const storage = readProjectAiStorage(projectId);
+  getThreadOrThrow(storage.index, threadId);
   return (
-    db
-      .select()
-      .from(schema.agentRuns)
-      .where(
-        and(
-          eq(schema.agentRuns.threadId, threadId),
-          eq(schema.agentRuns.triggerNodeId, triggerNodeId),
-        ),
-      )
-      .orderBy(desc(schema.agentRuns.createdAt))
-      .limit(1)
-      .all()
-      .map((row) => mapRunRow(db, row))[0] ?? null
+    [...storage.index.runs]
+      .filter((row) => row.threadId === threadId && row.triggerNodeId === triggerNodeId)
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .map(mapRunRow)[0] ?? null
   );
 }
 
 export function getThreadView(threadId: string): AgentThreadStateView {
-  const thread = getThreadOrThrow(db, threadId);
+  const projectId = getProjectIdForThreadOrThrow(threadId);
+  const storage = readProjectAiStorage(projectId);
+  const thread = getThreadOrThrow(storage.index, threadId);
   const activePath = resolveThreadPath(thread.id);
   return {
     thread: mapThreadRow(thread),
     activePath,
-    candidateGroups: buildCandidateGroups(thread.id, activePath),
+    candidateGroups: buildCandidateGroups(storage.index, thread.id, activePath),
     latestRuns: listLatestRuns(thread.id),
-    runSummaries: buildRunSummaries(thread.id, activePath),
+    runSummaries: buildRunSummaries(storage.index, thread.id, activePath),
   };
 }
 
 export function hasPendingRun(threadId: string) {
-  getThreadOrThrow(db, threadId);
-  const row = db
-    .select({ id: schema.agentRuns.id })
-    .from(schema.agentRuns)
-    .where(
-      and(
-        eq(schema.agentRuns.threadId, threadId),
-        sql`${schema.agentRuns.status} IN ('queued', 'running', 'waiting_for_input')`,
-      ),
-    )
-    .get();
-  return row != null;
+  const projectId = getProjectIdForThreadOrThrow(threadId);
+  const storage = readProjectAiStorage(projectId);
+  getThreadOrThrow(storage.index, threadId);
+  return storage.index.runs.some(
+    (row) =>
+      row.threadId === threadId &&
+      (row.status === "queued" || row.status === "running" || row.status === "waiting_for_input"),
+  );
 }
 
 export function selectActiveTip(threadId: string, tipNodeId: string) {
-  const result = db.transaction((tx) => {
-    const thread = getThreadOrThrow(tx, threadId);
-    const node = getNodeOrThrow(tx, tipNodeId);
+  const projectId = getProjectIdForThreadOrThrow(threadId);
+  const result = updateProjectAiStorage(projectId, "Select AI thread tip", (storage) => {
+    const thread = getThreadOrThrow(storage.index, threadId);
+    const node = getNodeOrThrow(storage.index, tipNodeId);
     invariant(node.threadId === thread.id, "候选节点不属于当前 thread。");
-    tx.update(schema.agentThreads)
-      .set({
-        activeTipNodeId: node.id,
-        updatedAt: now(),
-      })
-      .where(eq(schema.agentThreads.id, thread.id))
-      .run();
-    touchProject(tx, thread.projectId);
-    return mapThreadRow(getThreadOrThrow(tx, thread.id));
+    const updated: AgentThreadRow = {
+      ...thread,
+      activeTipNodeId: node.id,
+      updatedAt: now(),
+    };
+    replaceRowById(storage.index.threads, updated);
+    return mapThreadRow(updated);
   });
-  scheduleAiRunsIndexPersist(result.projectId);
+  touchProject(projectId);
   return result;
 }
 
@@ -2101,24 +2024,24 @@ export function appendUserNode(input: {
   sourceKind?: Extract<AgentThreadNodeSourceKind, "user_input" | "edit_rewrite">;
   extraParts?: CreateNodeExtraPartInput[];
 }) {
-  const result = db.transaction((tx) => {
-    const node = insertNode(tx, {
+  const projectId = getProjectIdForThreadOrThrow(input.threadId);
+  const result = updateProjectAiStorage(projectId, "Append AI user node", (storage) => {
+    const node = insertNode(storage, {
       threadId: input.threadId,
       parentNodeId: input.parentNodeId,
       message: input.message,
       sourceKind: input.sourceKind ?? "user_input",
       extraParts: input.extraParts,
     });
-    tx.update(schema.agentThreads)
-      .set({
-        activeTipNodeId: node.id,
-        updatedAt: now(),
-      })
-      .where(eq(schema.agentThreads.id, input.threadId))
-      .run();
+    const thread = getThreadOrThrow(storage.index, input.threadId);
+    replaceRowById(storage.index.threads, {
+      ...thread,
+      activeTipNodeId: node.id,
+      updatedAt: now(),
+    });
     return node;
   });
-  scheduleAiRunsIndexPersistForThread(input.threadId);
+  touchProject(projectId);
   return result;
 }
 
@@ -2128,47 +2051,75 @@ export function createReplacementNode(input: {
   message: ModelMessage;
   extraParts?: CreateNodeExtraPartInput[];
 }) {
-  const result = db.transaction((tx) => {
-    const node = getNodeOrThrow(tx, input.nodeId);
+  const projectId = getProjectIdForThreadOrThrow(input.threadId);
+  const result = updateProjectAiStorage(projectId, "Create AI replacement node", (storage) => {
+    const node = getNodeOrThrow(storage.index, input.nodeId);
     invariant(node.threadId === input.threadId, "待修改节点不属于当前 thread。");
-    const replacement = insertNode(tx, {
+    const replacement = insertNode(storage, {
       threadId: input.threadId,
       parentNodeId: node.parentNodeId,
       message: input.message,
       sourceKind: "edit_rewrite",
       extraParts: input.extraParts,
     });
-    tx.update(schema.agentThreads)
-      .set({
-        activeTipNodeId: replacement.id,
-        updatedAt: now(),
-      })
-      .where(eq(schema.agentThreads.id, input.threadId))
-      .run();
+    const thread = getThreadOrThrow(storage.index, input.threadId);
+    replaceRowById(storage.index.threads, {
+      ...thread,
+      activeTipNodeId: replacement.id,
+      updatedAt: now(),
+    });
     return replacement;
   });
-  scheduleAiRunsIndexPersistForThread(input.threadId);
+  touchProject(projectId);
   return result;
 }
 
 export function createRun(input: CreateRunInput) {
-  const result = db.transaction((tx) => {
-    const thread = getThreadOrThrow(tx, input.threadId);
+  const projectId = getProjectIdForThreadOrThrow(input.threadId);
+  const result = updateProjectAiStorage(projectId, "Create AI run", (storage) => {
+    const thread = getThreadOrThrow(storage.index, input.threadId);
     const status = input.status ?? "running";
     if (input.parentRunId) {
-      const parentRun = getRunOrThrow(tx, input.parentRunId);
+      const parentRun = getRunOrThrow(storage.index, input.parentRunId);
       invariant(parentRun.threadId === thread.id, "父 run 不属于当前 thread。");
     }
     if (input.triggerNodeId) {
-      const triggerNode = getNodeOrThrow(tx, input.triggerNodeId);
+      const triggerNode = getNodeOrThrow(storage.index, input.triggerNodeId);
       invariant(triggerNode.threadId === thread.id, "触发节点不属于当前 thread。");
     }
     if (input.baseTipNodeId) {
-      const baseTipNode = getNodeOrThrow(tx, input.baseTipNodeId);
+      const baseTipNode = getNodeOrThrow(storage.index, input.baseTipNodeId);
       invariant(baseTipNode.threadId === thread.id, "base tip 不属于当前 thread。");
     }
     const id = createId("agent_run");
     const timestamp = now();
+    const row: AgentRunRow = {
+      id,
+      threadId: thread.id,
+      parentRunId: trimOptionalString(input.parentRunId),
+      parentEventId: trimOptionalString(input.parentEventId),
+      triggerNodeId: trimOptionalString(input.triggerNodeId),
+      baseTipNodeId: trimOptionalString(input.baseTipNodeId),
+      runMode: input.runMode,
+      status,
+      agentProfile: input.agentProfile,
+      errorArtifactId: null,
+      selectionSnapshotJson: serializeRequiredJson(input.selectionSnapshot ?? {}, "run 选择快照"),
+      contextSnapshotJson: serializeOptionalJson(input.contextSnapshot ?? null),
+      inputRefsSnapshotJson: serializeOptionalJson(input.inputRefsSnapshot ?? null),
+      activeToolsJson: serializeOptionalJson(input.activeTools ? [...input.activeTools] : null),
+      stepCount: 0,
+      totalTokens: null,
+      lastFinishReason: null,
+      errorSummary: null,
+      traceUpdatedAt: timestamp,
+      startedAt: timestamp,
+      completedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    storage.index.runs.push(row);
+    touchThread(storage.index, thread.id, timestamp);
     const inputRefs: AgentRunInputRefRow[] = (input.inputRefsSnapshot ?? []).map(
       (ref, refIndex) => ({
         id: createId("agent_run_ref"),
@@ -2192,92 +2143,52 @@ export function createRun(input: CreateRunInput) {
         updatedAt: timestamp,
       }),
     );
-    tx.insert(schema.agentRuns)
-      .values({
-        id,
-        threadId: thread.id,
-        parentRunId: trimOptionalString(input.parentRunId),
-        parentEventId: trimOptionalString(input.parentEventId),
-        triggerNodeId: trimOptionalString(input.triggerNodeId),
-        baseTipNodeId: trimOptionalString(input.baseTipNodeId),
-        runMode: input.runMode,
-        status,
-        agentProfile: input.agentProfile,
-        errorArtifactId: null,
-        selectionSnapshotJson: serializeRequiredJson(input.selectionSnapshot ?? {}, "run 选择快照"),
-        contextSnapshotJson: serializeOptionalJson(input.contextSnapshot ?? null),
-        inputRefsSnapshotJson: serializeOptionalJson(input.inputRefsSnapshot ?? null),
-        activeToolsJson: serializeOptionalJson(input.activeTools ? [...input.activeTools] : null),
-        stepCount: 0,
-        totalTokens: null,
-        lastFinishReason: null,
-        errorSummary: null,
-        traceUpdatedAt: timestamp,
-        startedAt: timestamp,
-        completedAt: null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      })
-      .run();
-    touchThread(tx, thread.id);
-    touchProject(tx, thread.projectId);
-    return {
-      projectId: thread.projectId,
-      inputRefs,
-      run: getRunOrThrow(tx, id),
+    const runView: AgentRunView = {
+      id: row.id,
+      threadId: row.threadId,
+      parentRunId: row.parentRunId,
+      parentEventId: row.parentEventId,
+      triggerNodeId: row.triggerNodeId,
+      baseTipNodeId: row.baseTipNodeId,
+      runMode: row.runMode as AgentRunMode,
+      status: row.status as AgentRunStatus,
+      agentProfile: row.agentProfile,
       selectionSnapshot: input.selectionSnapshot ?? {},
       contextSnapshot: input.contextSnapshot ?? null,
+      inputRefsSnapshot: inputRefs.map(mapRunInputRefRow),
       activeTools: input.activeTools ? [...input.activeTools] : null,
+      errorArtifactId: null,
+      startedAt: row.startedAt,
+      completedAt: row.completedAt,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
-  });
-  const runView: AgentRunView = {
-    id: result.run.id,
-    threadId: result.run.threadId,
-    parentRunId: result.run.parentRunId,
-    parentEventId: result.run.parentEventId,
-    triggerNodeId: result.run.triggerNodeId,
-    baseTipNodeId: result.run.baseTipNodeId,
-    runMode: result.run.runMode as AgentRunMode,
-    status: result.run.status as AgentRunStatus,
-    agentProfile: result.run.agentProfile,
-    selectionSnapshot: result.selectionSnapshot,
-    contextSnapshot: result.contextSnapshot,
-    inputRefsSnapshot: result.inputRefs.map(mapRunInputRefRow),
-    activeTools: result.activeTools,
-    errorArtifactId: result.run.errorArtifactId,
-    startedAt: result.run.startedAt,
-    completedAt: result.run.completedAt,
-    createdAt: result.run.createdAt,
-    updatedAt: result.run.updatedAt,
-  };
-  writeRunTraceRowsToGit(
-    result.projectId,
-    {
+    applyRunTraceRowsToStorage(storage, {
       run: runView,
-      inputRefs: result.inputRefs,
+      inputRefs,
       steps: [],
       events: [],
       artifacts: [],
       childRuns: [],
-    },
-    `Update AI run ${result.run.id}`,
-  );
-  scheduleAiRunsIndexPersistForThread(result.run.threadId);
-  return runView;
+    });
+    return runView;
+  });
+  touchProject(projectId);
+  return result;
 }
 
 export function createArtifact(input: CreateArtifactInput) {
-  const result = db.transaction((tx) => {
-    invariant(input.runId || input.stepId, "artifact 必须关联 run 或 step。");
-    const runId = trimOptionalString(input.runId) ?? getStepOrThrow(tx, input.stepId!).runId;
-    const run = getRunOrThrow(tx, runId);
+  invariant(input.runId || input.stepId, "artifact 必须关联 run 或 step。");
+  const runId = trimOptionalString(input.runId) ?? getStepOrThrow(input.stepId!).runId;
+  const projectId = getProjectIdForRunOrThrow(runId);
+  return updateProjectAiStorage(projectId, `Update AI run ${runId}`, (storage) => {
+    const run = getRunOrThrow(storage.index, runId);
     if (input.stepId) {
-      const step = getStepOrThrow(tx, input.stepId);
+      const step = getStepOrThrow(input.stepId);
       invariant(step.runId === run.id, "artifact step 不属于当前 run。");
     }
-    const id = createId("agent_artifact");
     const artifact: AgentArtifactRow = {
-      id,
+      id: createId("agent_artifact"),
       runId: run.id,
       stepId: trimOptionalString(input.stepId),
       artifactKind: input.artifactKind,
@@ -2287,32 +2198,29 @@ export function createArtifact(input: CreateArtifactInput) {
       summaryText: normalizeSummaryText(input.summaryText),
       createdAt: now(),
     };
-    tx.update(schema.agentRuns)
-      .set({ updatedAt: now() })
-      .where(eq(schema.agentRuns.id, run.id))
-      .run();
-    return { runId: run.id, artifact };
+    const rows = parseRunTraceRowsFromStorage(storage, run);
+    rows.artifacts.push(artifact);
+    rows.run = {
+      ...rows.run,
+      updatedAt: now(),
+    };
+    applyRunTraceRowsToStorage(storage, rows);
+    return mapArtifactRow(artifact);
   });
-  if (result.runId) {
-    updateRunTraceRows(result.runId, `Update AI run ${result.runId}`, (rows) => ({
-      ...rows,
-      artifacts: [...rows.artifacts, result.artifact],
-      run: { ...rows.run, updatedAt: now() },
-    }));
-    scheduleAiRunsIndexPersistForRun(result.runId);
-  }
-  return mapArtifactRow(result.artifact);
 }
 
 export function createRunStep(input: CreateRunStepInput) {
-  const result = db.transaction((tx) => {
-    const run = getRunOrThrow(tx, input.runId);
-    const id = createId("agent_step");
+  const projectId = getProjectIdForRunOrThrow(input.runId);
+  return updateProjectAiStorage(projectId, `Update AI run ${input.runId}`, (storage) => {
+    const run = getRunOrThrow(storage.index, input.runId);
+    const rows = parseRunTraceRowsFromStorage(storage, run);
+    invariant(
+      !rows.steps.some((step) => step.stepIndex === input.stepIndex),
+      "run step 序号已存在。",
+    );
     const timestamp = now();
-    const steps = readRunTraceRowsFromGit(run).steps;
-    invariant(!steps.some((step) => step.stepIndex === input.stepIndex), "run step 序号已存在。");
     const step: AgentRunStepRow = {
-      id,
+      id: createId("agent_step"),
       runId: run.id,
       stepIndex: input.stepIndex,
       provider: input.provider,
@@ -2330,68 +2238,38 @@ export function createRunStep(input: CreateRunStepInput) {
       completedAt: timestamp,
       createdAt: timestamp,
     };
-    tx.update(schema.agentRuns)
-      .set({ updatedAt: timestamp })
-      .where(eq(schema.agentRuns.id, run.id))
-      .run();
+    rows.steps.push(step);
+    rows.run = {
+      ...rows.run,
+      updatedAt: timestamp,
+    };
+    applyRunTraceRowsToStorage(storage, rows);
     return mapRunStepRow(step);
   });
-  updateRunTraceRows(result.runId, `Update AI run ${result.runId}`, (rows) => ({
-    ...rows,
-    steps: [
-      ...rows.steps,
-      {
-        id: result.id,
-        runId: result.runId,
-        stepIndex: result.stepIndex,
-        provider: result.provider,
-        modelId: result.modelId,
-        finishReason: result.finishReason,
-        rawFinishReason: result.rawFinishReason,
-        systemJson: serializeOptionalJson(result.system),
-        preparedMessagesArtifactId: result.preparedMessagesArtifactId,
-        responseMessagesArtifactId: result.responseMessagesArtifactId,
-        requestBodyArtifactId: result.requestBodyArtifactId,
-        responseBodyArtifactId: result.responseBodyArtifactId,
-        providerMetadataArtifactId: result.providerMetadataArtifactId,
-        usageJson: serializeOptionalJson(result.usage),
-        startedAt: result.startedAt,
-        completedAt: result.completedAt,
-        createdAt: result.createdAt,
-      },
-    ],
-    run: { ...rows.run, updatedAt: now() },
-  }));
-  scheduleAiRunsIndexPersistForRun(result.runId);
-  return result;
-}
-
-function nextRunEventSeq(runId: string) {
-  const run = getRunOrThrow(db, runId);
-  const latestSeq = Math.max(0, ...readRunTraceRowsFromGit(run).events.map((event) => event.seq));
-  return latestSeq + 1;
 }
 
 export function appendRunEvent(input: CreateRunEventInput) {
-  const result = db.transaction((tx) => {
-    const run = getRunOrThrow(tx, input.runId);
+  const projectId = getProjectIdForRunOrThrow(input.runId);
+  return updateProjectAiStorage(projectId, `Append AI run event ${input.runId}`, (storage) => {
+    const run = getRunOrThrow(storage.index, input.runId);
     if (input.stepId) {
-      const step = getStepOrThrow(tx, input.stepId);
+      const step = getStepOrThrow(input.stepId);
       invariant(step.runId === run.id, "事件 step 不属于当前 run。");
     }
     if (input.nodeId) {
-      const node = getNodeOrThrow(tx, input.nodeId);
+      const node = getNodeOrThrow(storage.index, input.nodeId);
       invariant(node.threadId === run.threadId, "事件节点不属于当前 run 所在 thread。");
     }
     if (input.relatedRunId) {
-      getRunOrThrow(tx, input.relatedRunId);
+      getRunOrThrow(storage.index, input.relatedRunId);
     }
-    const id = createId("agent_event");
+    const rows = parseRunTraceRowsFromStorage(storage, run);
+    const nextSeq = Math.max(0, ...rows.events.map((event) => event.seq)) + 1;
     const event: AgentRunEventRow = {
-      id,
+      id: createId("agent_event"),
       runId: run.id,
       stepId: trimOptionalString(input.stepId),
-      seq: nextRunEventSeq(run.id),
+      seq: nextSeq,
       eventKind: input.eventKind,
       nodeId: trimOptionalString(input.nodeId),
       relatedToolCallId: trimOptionalString(input.relatedToolCallId),
@@ -2400,45 +2278,46 @@ export function appendRunEvent(input: CreateRunEventInput) {
       payloadArtifactId: trimOptionalString(input.payloadArtifactId),
       createdAt: now(),
     };
-    tx.update(schema.agentRuns)
-      .set({ updatedAt: now() })
-      .where(eq(schema.agentRuns.id, run.id))
-      .run();
-    return event;
+    rows.events.push(event);
+    rows.run = {
+      ...rows.run,
+      updatedAt: now(),
+    };
+    applyRunTraceRowsToStorage(storage, rows);
+    return mapRunEventRow(event);
   });
-  updateRunTraceRows(input.runId, `Append AI run event ${input.runId}`, (rows) => ({
-    ...rows,
-    events: [...rows.events, result],
-    run: { ...rows.run, updatedAt: now() },
-  }));
-  return mapRunEventRow(result);
 }
 
 export function materializeResponseMessages(input: MaterializeResponseMessagesInput) {
-  const result = db.transaction((tx) => {
-    const thread = getThreadOrThrow(tx, input.threadId);
-    let parentNodeId = input.parentNodeId;
-    const nodes: AgentThreadNodeView[] = [];
+  const projectId = getProjectIdForThreadOrThrow(input.threadId);
+  const result = updateProjectAiStorage(
+    projectId,
+    "Materialize AI response messages",
+    (storage) => {
+      const thread = getThreadOrThrow(storage.index, input.threadId);
+      let parentNodeId = input.parentNodeId;
+      const nodes: AgentThreadNodeView[] = [];
 
-    input.messages.forEach((message) => {
-      const node = insertNode(tx, {
-        threadId: thread.id,
-        parentNodeId,
-        message,
-        sourceKind: message.role === "tool" ? "tool_result" : "model_response",
-        createdByRunId: input.runId,
-        sourceStepId: input.stepId,
+      input.messages.forEach((message) => {
+        const node = insertNode(storage, {
+          threadId: thread.id,
+          parentNodeId,
+          message,
+          sourceKind: message.role === "tool" ? "tool_result" : "model_response",
+          createdByRunId: input.runId,
+          sourceStepId: input.stepId,
+        });
+        parentNodeId = node.id;
+        nodes.push(node);
       });
-      parentNodeId = node.id;
-      nodes.push(node);
-    });
 
-    return {
-      nodes,
-      tipNodeId: parentNodeId,
-    };
-  });
-  scheduleAiRunsIndexPersistForThread(input.threadId);
+      return {
+        nodes,
+        tipNodeId: parentNodeId,
+      };
+    },
+  );
+  touchProject(projectId);
   return result;
 }
 
@@ -2448,8 +2327,9 @@ export function createStreamingAssistantNode(input: {
   runId: string;
   stepId?: string | null;
 }) {
-  const result = db.transaction((tx) => {
-    const node = insertNode(tx, {
+  const projectId = getProjectIdForThreadOrThrow(input.threadId);
+  const result = updateProjectAiStorage(projectId, "Create streaming assistant node", (storage) => {
+    const node = insertNode(storage, {
       threadId: input.threadId,
       parentNodeId: input.parentNodeId,
       message: {
@@ -2461,24 +2341,24 @@ export function createStreamingAssistantNode(input: {
       sourceStepId: trimOptionalString(input.stepId),
       summaryText: "助手回复",
     });
-    tx.update(schema.agentThreads)
-      .set({
-        activeTipNodeId: node.id,
-        updatedAt: now(),
-      })
-      .where(eq(schema.agentThreads.id, input.threadId))
-      .run();
+    const thread = getThreadOrThrow(storage.index, input.threadId);
+    replaceRowById(storage.index.threads, {
+      ...thread,
+      activeTipNodeId: node.id,
+      updatedAt: now(),
+    });
     return node;
   });
-  scheduleAiRunsIndexPersistForThread(input.threadId);
+  touchProject(projectId);
   return result;
 }
 
 export function appendAssistantTextDelta(input: { nodeId: string; delta: string }) {
-  const result = db.transaction((tx) => {
-    const node = getNodeOrThrow(tx, input.nodeId);
+  const projectId = getProjectIdForNodeOrThrow(input.nodeId);
+  return updateProjectAiStorage(projectId, "Append assistant text delta", (storage) => {
+    const node = getNodeOrThrow(storage.index, input.nodeId);
     invariant(node.role === "assistant", "只能向 assistant 节点追加文本。");
-    const message = getNodeModelMessage(tx, node);
+    const message = getNodeModelMessage(node);
     const content = getMessageContentParts(message);
 
     let textPartIndex = content.findIndex(
@@ -2494,23 +2374,23 @@ export function appendAssistantTextDelta(input: { nodeId: string; delta: string 
       textPartIndex = content.length - 1;
     }
 
-    const existingPart = content[textPartIndex];
+    const existingPart = content[textPartIndex] as Record<string, unknown>;
     const nextPart = {
-      ...(existingPart as Record<string, unknown>),
+      ...existingPart,
       type: "text",
-      text: `${String(Reflect.get(existingPart as Record<string, unknown>, "text") ?? "")}${input.delta}`,
+      text: `${String(Reflect.get(existingPart, "text") ?? "")}${input.delta}`,
       state: "streaming",
     };
 
     if (hadExistingTextPart) {
-      updateNodePart(tx, node.id, textPartIndex, {
+      updateNodePart(storage, node.id, textPartIndex, {
         payload: nextPart,
         state: "streaming",
         providerOptions: Reflect.get(nextPart, "providerOptions"),
         providerMetadata: Reflect.get(nextPart, "providerMetadata"),
       });
     } else {
-      appendNodePart(tx, node.id, {
+      appendNodePart(storage, node.id, {
         partKind: "text",
         visibility: "public",
         state: "streaming",
@@ -2520,33 +2400,31 @@ export function appendAssistantTextDelta(input: { nodeId: string; delta: string 
       });
     }
     updateNodeSummary(
-      tx,
+      storage,
       node.id,
       buildMessageSummary({ ...message, content: [nextPart] } as ModelMessage),
     );
-    return mapNodeRow(tx, getNodeOrThrow(tx, node.id));
+    return mapNodeRow(getNodeOrThrow(storage.index, node.id));
   });
-  scheduleAiRunsIndexPersistForThread(result.threadId);
-  return result;
 }
 
 export function appendAssistantReasoningPart(input: {
   nodeId: string;
   providerMetadata?: unknown;
 }) {
-  const result = db.transaction((tx) => {
-    const node = getNodeOrThrow(tx, input.nodeId);
+  const projectId = getProjectIdForNodeOrThrow(input.nodeId);
+  return updateProjectAiStorage(projectId, "Append assistant reasoning part", (storage) => {
+    const node = getNodeOrThrow(storage.index, input.nodeId);
     invariant(node.role === "assistant", "只能向 assistant 节点追加 reasoning。");
-    const message = getNodeModelMessage(tx, node);
-    const content = getMessageContentParts(message);
+    const message = getNodeModelMessage(node);
+    const partIndex = getMessageContentParts(message).length;
     const nextPart = {
       type: "reasoning",
       text: "",
       state: "streaming",
       ...(input.providerMetadata == null ? {} : { providerMetadata: input.providerMetadata }),
     };
-    const partIndex = content.length;
-    appendNodePart(tx, node.id, {
+    appendNodePart(storage, node.id, {
       partKind: "reasoning",
       visibility: "hidden",
       state: "streaming",
@@ -2555,12 +2433,10 @@ export function appendAssistantReasoningPart(input: {
       providerMetadata: input.providerMetadata,
     });
     return {
-      node: mapNodeRow(tx, getNodeOrThrow(tx, node.id)),
+      node: mapNodeRow(getNodeOrThrow(storage.index, node.id)),
       partIndex,
     };
   });
-  scheduleAiRunsIndexPersistForThread(result.node.threadId);
-  return result;
 }
 
 export function appendAssistantReasoningDelta(input: {
@@ -2569,10 +2445,11 @@ export function appendAssistantReasoningDelta(input: {
   delta: string;
   providerMetadata?: unknown;
 }) {
-  const result = db.transaction((tx) => {
-    const node = getNodeOrThrow(tx, input.nodeId);
+  const projectId = getProjectIdForNodeOrThrow(input.nodeId);
+  return updateProjectAiStorage(projectId, "Append assistant reasoning delta", (storage) => {
+    const node = getNodeOrThrow(storage.index, input.nodeId);
     invariant(node.role === "assistant", "只能向 assistant 节点追加 reasoning。");
-    const message = getNodeModelMessage(tx, node);
+    const message = getNodeModelMessage(node);
     const content = getMessageContentParts(message);
     const existingPart = content[input.partIndex];
     invariant(existingPart && typeof existingPart === "object", "未找到 reasoning part。");
@@ -2580,7 +2457,6 @@ export function appendAssistantReasoningDelta(input: {
       Reflect.get(existingPart as Record<string, unknown>, "type") === "reasoning",
       "目标 part 不是 reasoning。",
     );
-
     const nextPart = {
       ...(existingPart as Record<string, unknown>),
       type: "reasoning",
@@ -2588,32 +2464,30 @@ export function appendAssistantReasoningDelta(input: {
       state: "streaming",
       ...(input.providerMetadata == null ? {} : { providerMetadata: input.providerMetadata }),
     };
-
-    updateNodePart(tx, node.id, input.partIndex, {
+    updateNodePart(storage, node.id, input.partIndex, {
       payload: nextPart,
       state: "streaming",
       providerOptions: Reflect.get(nextPart, "providerOptions"),
       providerMetadata: input.providerMetadata ?? Reflect.get(nextPart, "providerMetadata"),
     });
-    return mapNodeRow(tx, getNodeOrThrow(tx, node.id));
+    return mapNodeRow(getNodeOrThrow(storage.index, node.id));
   });
-  scheduleAiRunsIndexPersistForThread(result.threadId);
-  return result;
 }
 
 export function appendAssistantToolCallPart(input: {
   nodeId: string;
   toolCall: Record<string, unknown>;
 }) {
-  const result = db.transaction((tx) => {
-    const node = getNodeOrThrow(tx, input.nodeId);
+  const projectId = getProjectIdForNodeOrThrow(input.nodeId);
+  return updateProjectAiStorage(projectId, "Append assistant tool call part", (storage) => {
+    const node = getNodeOrThrow(storage.index, input.nodeId);
     invariant(node.role === "assistant", "只能向 assistant 节点追加工具调用。");
-    const message = getNodeModelMessage(tx, node);
+    const message = getNodeModelMessage(node);
     const nextPart = {
       type: "tool-call",
       ...input.toolCall,
     };
-    appendNodePart(tx, node.id, {
+    appendNodePart(storage, node.id, {
       partKind: "tool-call",
       visibility: "internal",
       state: "done",
@@ -2622,24 +2496,23 @@ export function appendAssistantToolCallPart(input: {
       providerMetadata: Reflect.get(nextPart, "providerMetadata"),
     });
     updateNodeSummary(
-      tx,
+      storage,
       node.id,
       buildMessageSummary({ ...message, content: [nextPart] } as ModelMessage),
     );
-    return mapNodeRow(tx, getNodeOrThrow(tx, node.id));
+    return mapNodeRow(getNodeOrThrow(storage.index, node.id));
   });
-  scheduleAiRunsIndexPersistForThread(result.threadId);
-  return result;
 }
 
 export function appendAssistantToolApprovalRequestPart(input: {
   nodeId: string;
   approvalRequest: Record<string, unknown>;
 }) {
-  const result = db.transaction((tx) => {
-    const node = getNodeOrThrow(tx, input.nodeId);
+  const projectId = getProjectIdForNodeOrThrow(input.nodeId);
+  return updateProjectAiStorage(projectId, "Append assistant approval request part", (storage) => {
+    const node = getNodeOrThrow(storage.index, input.nodeId);
     invariant(node.role === "assistant", "只能向 assistant 节点追加工具审批请求。");
-    const message = getNodeModelMessage(tx, node);
+    const message = getNodeModelMessage(node);
     const approvalId = Reflect.get(input.approvalRequest, "approvalId");
     const toolCallId = Reflect.get(input.approvalRequest, "toolCallId");
     invariant(typeof approvalId === "string", "approvalId 不能为空。");
@@ -2649,7 +2522,7 @@ export function appendAssistantToolApprovalRequestPart(input: {
       approvalId,
       toolCallId,
     };
-    appendNodePart(tx, node.id, {
+    appendNodePart(storage, node.id, {
       partKind: "tool-approval-request",
       visibility: "internal",
       state: "done",
@@ -2658,14 +2531,12 @@ export function appendAssistantToolApprovalRequestPart(input: {
       providerMetadata: Reflect.get(input.approvalRequest, "providerMetadata"),
     });
     updateNodeSummary(
-      tx,
+      storage,
       node.id,
       buildMessageSummary({ ...message, content: [nextPart] } as ModelMessage),
     );
-    return mapNodeRow(tx, getNodeOrThrow(tx, node.id));
+    return mapNodeRow(getNodeOrThrow(storage.index, node.id));
   });
-  scheduleAiRunsIndexPersistForThread(result.threadId);
-  return result;
 }
 
 export function createStreamingToolResultNode(input: {
@@ -2675,28 +2546,32 @@ export function createStreamingToolResultNode(input: {
   stepId?: string | null;
   toolResult: Record<string, unknown>;
 }) {
-  const result = db.transaction((tx) => {
-    const node = insertNode(tx, {
-      threadId: input.threadId,
-      parentNodeId: input.parentNodeId,
-      message: {
-        role: "tool",
-        content: [{ type: "tool-result", ...input.toolResult }],
-      } as unknown as ModelMessage,
-      sourceKind: "tool_result",
-      createdByRunId: input.runId,
-      sourceStepId: trimOptionalString(input.stepId),
-    });
-    tx.update(schema.agentThreads)
-      .set({
+  const projectId = getProjectIdForThreadOrThrow(input.threadId);
+  const result = updateProjectAiStorage(
+    projectId,
+    "Create streaming tool result node",
+    (storage) => {
+      const node = insertNode(storage, {
+        threadId: input.threadId,
+        parentNodeId: input.parentNodeId,
+        message: {
+          role: "tool",
+          content: [{ type: "tool-result", ...input.toolResult }],
+        } as unknown as ModelMessage,
+        sourceKind: "tool_result",
+        createdByRunId: input.runId,
+        sourceStepId: trimOptionalString(input.stepId),
+      });
+      const thread = getThreadOrThrow(storage.index, input.threadId);
+      replaceRowById(storage.index.threads, {
+        ...thread,
         activeTipNodeId: node.id,
         updatedAt: now(),
-      })
-      .where(eq(schema.agentThreads.id, input.threadId))
-      .run();
-    return node;
-  });
-  scheduleAiRunsIndexPersistForThread(input.threadId);
+      });
+      return node;
+    },
+  );
+  touchProject(projectId);
   return result;
 }
 
@@ -2710,34 +2585,39 @@ export function createToolApprovalResponseNode(input: {
     reason?: string;
   };
 }) {
-  const result = db.transaction((tx) => {
-    const node = insertNode(tx, {
-      threadId: input.threadId,
-      parentNodeId: input.parentNodeId,
-      message: {
-        role: "tool",
-        content: [{ type: "tool-approval-response", ...input.approvalResponse }],
-      } as unknown as ModelMessage,
-      sourceKind: "tool_result",
-      createdByRunId: input.runId,
-    });
-    tx.update(schema.agentThreads)
-      .set({
+  const projectId = getProjectIdForThreadOrThrow(input.threadId);
+  const result = updateProjectAiStorage(
+    projectId,
+    "Create tool approval response node",
+    (storage) => {
+      const node = insertNode(storage, {
+        threadId: input.threadId,
+        parentNodeId: input.parentNodeId,
+        message: {
+          role: "tool",
+          content: [{ type: "tool-approval-response", ...input.approvalResponse }],
+        } as unknown as ModelMessage,
+        sourceKind: "tool_result",
+        createdByRunId: input.runId,
+      });
+      const thread = getThreadOrThrow(storage.index, input.threadId);
+      replaceRowById(storage.index.threads, {
+        ...thread,
         activeTipNodeId: node.id,
         updatedAt: now(),
-      })
-      .where(eq(schema.agentThreads.id, input.threadId))
-      .run();
-    return node;
-  });
-  scheduleAiRunsIndexPersistForThread(input.threadId);
+      });
+      return node;
+    },
+  );
+  touchProject(projectId);
   return result;
 }
 
 export function markThreadNodePartsDone(nodeId: string) {
-  const result = db.transaction((tx) => {
-    const node = getNodeOrThrow(tx, nodeId);
-    const message = getNodeModelMessage(tx, node);
+  const projectId = getProjectIdForNodeOrThrow(nodeId);
+  return updateProjectAiStorage(projectId, "Mark thread node parts done", (storage) => {
+    const node = getNodeOrThrow(storage.index, nodeId);
+    const message = getNodeModelMessage(node);
     const parts = parseStoredArray<AgentMessagePartRow>(node.partsJson);
     const nextParts = parts.map((part) => {
       if (part.state !== "streaming") {
@@ -2754,36 +2634,31 @@ export function markThreadNodePartsDone(nodeId: string) {
         payloadJson: serializeRequiredJson(payload, "节点 part"),
       };
     });
-    tx.update(schema.agentThreadNodes)
-      .set({ partsJson: stringifyStoredArray(nextParts) })
-      .where(eq(schema.agentThreadNodes.id, node.id))
-      .run();
-    updateNodeSummary(tx, node.id, buildMessageSummary(message));
-    return mapNodeRow(tx, getNodeOrThrow(tx, node.id));
+    replaceRowById(storage.index.nodes, {
+      ...node,
+      partsJson: stringifyStoredArray(nextParts),
+    });
+    updateNodeSummary(storage, node.id, buildMessageSummary(message));
+    return mapNodeRow(getNodeOrThrow(storage.index, node.id));
   });
-  scheduleAiRunsIndexPersistForThread(result.threadId);
-  return result;
 }
 
 export function assignThreadNodeSourceStepIds(nodeIds: string[], stepId: string) {
   if (nodeIds.length === 0) {
     return;
   }
-
-  const threadIds = db.transaction((tx) => {
-    getStepOrThrow(tx, stepId);
-    const touchedThreadIds = new Set<string>();
+  const step = getStepOrThrow(stepId);
+  const projectId = getProjectIdForRunOrThrow(step.runId);
+  updateProjectAiStorage(projectId, "Assign thread node source step ids", (storage) => {
+    getRunOrThrow(storage.index, step.runId);
     nodeIds.forEach((nodeId) => {
-      const node = getNodeOrThrow(tx, nodeId);
-      touchedThreadIds.add(node.threadId);
-      tx.update(schema.agentThreadNodes)
-        .set({ sourceStepId: stepId })
-        .where(eq(schema.agentThreadNodes.id, nodeId))
-        .run();
+      const node = getNodeOrThrow(storage.index, nodeId);
+      replaceRowById(storage.index.nodes, {
+        ...node,
+        sourceStepId: stepId,
+      });
     });
-    return [...touchedThreadIds];
   });
-  threadIds.forEach(scheduleAiRunsIndexPersistForThread);
 }
 
 export function updateRunStep(input: {
@@ -2797,14 +2672,15 @@ export function updateRunStep(input: {
   providerMetadataArtifactId?: string | null;
   usage?: unknown;
 }) {
-  const result = db.transaction((tx) => {
-    const step = getStepOrThrow(tx, input.stepId);
-    const run = getRunOrThrow(tx, step.runId);
-    const steps = readRunTraceRowsFromGit(run).steps;
-    const stepIndex = steps.findIndex((entry) => entry.id === step.id);
-    invariant(stepIndex >= 0, "未找到 run step。");
+  const step = getStepOrThrow(input.stepId);
+  const projectId = getProjectIdForRunOrThrow(step.runId);
+  return updateProjectAiStorage(projectId, `Update AI run ${step.runId}`, (storage) => {
+    const run = getRunOrThrow(storage.index, step.runId);
+    const rows = parseRunTraceRowsFromStorage(storage, run);
+    const index = rows.steps.findIndex((entry) => entry.id === step.id);
+    invariant(index >= 0, "未找到 run step。");
     const nextStep: AgentRunStepRow = {
-      ...step,
+      ...rows.steps[index]!,
       finishReason: trimOptionalString(input.finishReason),
       rawFinishReason: trimOptionalString(input.rawFinishReason),
       preparedMessagesArtifactId: trimOptionalString(input.preparedMessagesArtifactId),
@@ -2815,237 +2691,110 @@ export function updateRunStep(input: {
       usageJson: serializeOptionalJson(input.usage),
       completedAt: now(),
     };
-    tx.update(schema.agentRuns)
-      .set({ updatedAt: now() })
-      .where(eq(schema.agentRuns.id, run.id))
-      .run();
+    rows.steps[index] = nextStep;
+    rows.run = {
+      ...rows.run,
+      updatedAt: now(),
+    };
+    applyRunTraceRowsToStorage(storage, rows);
     return mapRunStepRow(nextStep);
   });
-  updateRunTraceRows(result.runId, `Update AI run ${result.runId}`, (rows) => ({
-    ...rows,
-    steps: rows.steps.map((step) =>
-      step.id === result.id
-        ? {
-            id: result.id,
-            runId: result.runId,
-            stepIndex: result.stepIndex,
-            provider: result.provider,
-            modelId: result.modelId,
-            finishReason: result.finishReason,
-            rawFinishReason: result.rawFinishReason,
-            systemJson: serializeOptionalJson(result.system),
-            preparedMessagesArtifactId: result.preparedMessagesArtifactId,
-            responseMessagesArtifactId: result.responseMessagesArtifactId,
-            requestBodyArtifactId: result.requestBodyArtifactId,
-            responseBodyArtifactId: result.responseBodyArtifactId,
-            providerMetadataArtifactId: result.providerMetadataArtifactId,
-            usageJson: serializeOptionalJson(result.usage),
-            startedAt: result.startedAt,
-            completedAt: result.completedAt,
-            createdAt: result.createdAt,
-          }
-        : step,
-    ),
-    run: { ...rows.run, updatedAt: now() },
-  }));
-  scheduleAiRunsIndexPersistForRun(result.runId);
-  return result;
+}
+
+function updateRunStatus(
+  runId: string,
+  status: AgentRunStatus,
+  {
+    completedAt,
+    errorArtifactId,
+  }: {
+    completedAt: number | null;
+    errorArtifactId?: string | null;
+  },
+) {
+  const projectId = getProjectIdForRunOrThrow(runId);
+  return updateProjectAiStorage(projectId, `Update AI run ${runId}`, (storage) => {
+    const run = getRunOrThrow(storage.index, runId);
+    const rows = parseRunTraceRowsFromStorage(storage, run);
+    rows.run = {
+      ...rows.run,
+      status,
+      errorArtifactId: errorArtifactId === undefined ? rows.run.errorArtifactId : errorArtifactId,
+      completedAt,
+      updatedAt: now(),
+    };
+    applyRunTraceRowsToStorage(storage, rows);
+    return rows.run;
+  });
 }
 
 export function markRunSucceeded(runId: string) {
-  const result = db.transaction((tx) => {
-    const run = getRunOrThrow(tx, runId);
-    tx.update(schema.agentRuns)
-      .set({
-        status: "succeeded",
-        completedAt: now(),
-        updatedAt: now(),
-      })
-      .where(eq(schema.agentRuns.id, run.id))
-      .run();
-    return getRunOrThrow(tx, run.id);
-  });
-  const status = result.status;
-  assertRunStatus(status);
-  updateRunTraceRows(result.id, `Update AI run ${result.id}`, (rows) => ({
-    ...rows,
-    run: {
-      ...rows.run,
-      status,
-      completedAt: result.completedAt,
-      updatedAt: result.updatedAt,
-    },
-  }));
-  scheduleAiRunsIndexPersistForRun(result.id);
-  return getRunTrace(result.id).run;
+  return updateRunStatus(runId, "succeeded", { completedAt: now() });
 }
 
 export function markRunWaitingForInput(runId: string) {
-  const result = db.transaction((tx) => {
-    const run = getRunOrThrow(tx, runId);
-    tx.update(schema.agentRuns)
-      .set({
-        status: "waiting_for_input",
-        completedAt: null,
-        updatedAt: now(),
-      })
-      .where(eq(schema.agentRuns.id, run.id))
-      .run();
-    return getRunOrThrow(tx, run.id);
-  });
-  const status = result.status;
-  assertRunStatus(status);
-  updateRunTraceRows(result.id, `Update AI run ${result.id}`, (rows) => ({
-    ...rows,
-    run: {
-      ...rows.run,
-      status,
-      completedAt: result.completedAt,
-      updatedAt: result.updatedAt,
-    },
-  }));
-  scheduleAiRunsIndexPersistForRun(result.id);
-  return getRunTrace(result.id).run;
+  return updateRunStatus(runId, "waiting_for_input", { completedAt: null });
 }
 
 export function markRunRunning(runId: string) {
-  const result = db.transaction((tx) => {
-    const run = getRunOrThrow(tx, runId);
-    tx.update(schema.agentRuns)
-      .set({
-        status: "running",
-        completedAt: null,
-        updatedAt: now(),
-      })
-      .where(eq(schema.agentRuns.id, run.id))
-      .run();
-    return getRunOrThrow(tx, run.id);
-  });
-  const status = result.status;
-  assertRunStatus(status);
-  updateRunTraceRows(result.id, `Update AI run ${result.id}`, (rows) => ({
-    ...rows,
-    run: {
-      ...rows.run,
-      status,
-      completedAt: result.completedAt,
-      updatedAt: result.updatedAt,
-    },
-  }));
-  scheduleAiRunsIndexPersistForRun(result.id);
-  return getRunTrace(result.id).run;
+  return updateRunStatus(runId, "running", { completedAt: null });
 }
 
 export function markRunFailed(runId: string, errorArtifactId?: string | null) {
-  const result = db.transaction((tx) => {
-    const run = getRunOrThrow(tx, runId);
-    if (errorArtifactId) {
-      getArtifactOrThrow(tx, errorArtifactId);
-    }
-    tx.update(schema.agentRuns)
-      .set({
-        status: "failed",
-        errorArtifactId: trimOptionalString(errorArtifactId),
-        completedAt: now(),
-        updatedAt: now(),
-      })
-      .where(eq(schema.agentRuns.id, run.id))
-      .run();
-    return getRunOrThrow(tx, run.id);
+  if (errorArtifactId) {
+    getArtifactOrThrow(errorArtifactId);
+  }
+  return updateRunStatus(runId, "failed", {
+    completedAt: now(),
+    errorArtifactId: trimOptionalString(errorArtifactId),
   });
-  const status = result.status;
-  assertRunStatus(status);
-  updateRunTraceRows(result.id, `Update AI run ${result.id}`, (rows) => ({
-    ...rows,
-    run: {
-      ...rows.run,
-      status,
-      errorArtifactId: result.errorArtifactId,
-      completedAt: result.completedAt,
-      updatedAt: result.updatedAt,
-    },
-  }));
-  scheduleAiRunsIndexPersistForRun(result.id);
-  return getRunTrace(result.id).run;
 }
 
 export function markRunCancelled(runId: string) {
-  const result = db.transaction((tx) => {
-    const run = getRunOrThrow(tx, runId);
-    tx.update(schema.agentRuns)
-      .set({
-        status: "cancelled",
-        completedAt: now(),
-        updatedAt: now(),
-      })
-      .where(eq(schema.agentRuns.id, run.id))
-      .run();
-    return getRunOrThrow(tx, run.id);
-  });
-  const status = result.status;
-  assertRunStatus(status);
-  updateRunTraceRows(result.id, `Update AI run ${result.id}`, (rows) => ({
-    ...rows,
-    run: {
-      ...rows.run,
-      status,
-      completedAt: result.completedAt,
-      updatedAt: result.updatedAt,
-    },
-  }));
-  scheduleAiRunsIndexPersistForRun(result.id);
-  return getRunTrace(result.id).run;
+  return updateRunStatus(runId, "cancelled", { completedAt: now() });
 }
 
 export function updateRunContextSnapshot(
   runId: string,
   contextSnapshot: ProjectAssistantContextSnapshot | null,
 ) {
-  const result = db.transaction((tx) => {
-    const run = getRunOrThrow(tx, runId);
-    tx.update(schema.agentRuns)
-      .set({ updatedAt: now() })
-      .where(eq(schema.agentRuns.id, run.id))
-      .run();
-    return getRunOrThrow(tx, run.id);
-  });
-  updateRunTraceRows(result.id, `Update AI run ${result.id}`, (rows) => ({
-    ...rows,
-    run: {
+  const projectId = getProjectIdForRunOrThrow(runId);
+  return updateProjectAiStorage(projectId, `Update AI run ${runId}`, (storage) => {
+    const run = getRunOrThrow(storage.index, runId);
+    const rows = parseRunTraceRowsFromStorage(storage, run);
+    rows.run = {
       ...rows.run,
       contextSnapshot,
-      updatedAt: result.updatedAt,
-    },
-  }));
-  scheduleAiRunsIndexPersistForRun(result.id);
-  return getRunTrace(result.id).run;
+      updatedAt: now(),
+    };
+    applyRunTraceRowsToStorage(storage, rows);
+    return rows.run;
+  });
 }
 
 export function getRunTrace(runId: string): AgentRunTraceView {
-  const run = getRunOrThrow(db, runId);
-  return mapTraceRows(readRunTraceRowsFromGit(run));
+  const projectId = getProjectIdForRunOrThrow(runId);
+  const storage = readProjectAiStorage(projectId);
+  const run = getRunOrThrow(storage.index, runId);
+  return mapTraceRows(parseRunTraceRowsFromStorage(storage, run));
 }
 
 export function getRunStepResponseBody(stepId: string): unknown | null {
-  const step = getStepOrThrow(db, stepId);
+  const step = getStepOrThrow(stepId);
   if (!step.responseBodyArtifactId) {
     return null;
   }
-  const run = getRunOrThrow(db, step.runId);
-  const artifact = readRunTraceRowsFromGit(run).artifacts.find(
-    (entry) => entry.id === step.responseBodyArtifactId,
-  );
+  const trace = getRunTrace(step.runId);
+  const artifact = trace.artifacts.find((entry) => entry.id === step.responseBodyArtifactId);
   invariant(artifact, "未找到 artifact。");
-  return JSON.parse(artifact.contentJson) as unknown;
+  return artifact.content;
 }
 
 export function listChildRuns(runId: string) {
-  getRunOrThrow(db, runId);
-  return db
-    .select()
-    .from(schema.agentRuns)
-    .where(eq(schema.agentRuns.parentRunId, runId))
-    .orderBy(schema.agentRuns.createdAt)
-    .all()
-    .map((row) => mapRunRow(db, row));
+  const projectId = getProjectIdForRunOrThrow(runId);
+  const storage = readProjectAiStorage(projectId);
+  getRunOrThrow(storage.index, runId);
+  return sortByCreatedAt(storage.index.runs.filter((row) => row.parentRunId === runId)).map(
+    mapRunRow,
+  );
 }

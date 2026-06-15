@@ -1,17 +1,15 @@
-import { eq } from "drizzle-orm";
 import { expect, test } from "bun:test";
 
 import { setupMockDatabase } from "@/test/mock-db";
+import { seedProjectRecord } from "@/test/project";
+import { readProjectMetaSync } from "@/modules/workspace/domain/git-storage/project-meta-store";
 
 setupMockDatabase();
 
-const { db, schema } = await import("@/db");
 const service = await import("./index");
 
 function seedProject(projectId: string) {
-  db.insert(schema.projects)
-    .values({ id: projectId, name: `Project ${projectId}`, description: null })
-    .run();
+  seedProjectRecord(projectId);
   return service.createDefaultWorkspace(projectId);
 }
 
@@ -19,12 +17,8 @@ test("default workspace creates a default branch and links project", async () =>
   const workspace = seedProject("proj_default");
   expect(workspace.branchId).toBeTruthy();
 
-  const project = db
-    .select()
-    .from(schema.projects)
-    .where(eq(schema.projects.id, "proj_default"))
-    .get();
-  expect(project?.defaultBranchId).toBe(workspace.branchId);
+  const project = readProjectMetaSync("proj_default").project;
+  expect(project.defaultBranchId).toBe(workspace.branchId);
 
   const branch = service.getBranch(workspace.branchId);
   expect(branch.name).toBe("main");

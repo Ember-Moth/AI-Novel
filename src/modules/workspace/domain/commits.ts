@@ -1,11 +1,9 @@
-import { eq } from "drizzle-orm";
-
-import { db, schema } from "@/db";
 import { invariant, now } from "@/shared/lib/domain";
 
 import { getBranch } from "./branches";
 import { addAllAndCommit, checkoutCommitToWorktree, listLog } from "./git-storage/git-store";
-import { getWorkspace, getWorkspaceForBranchId, writeProjectMeta } from "./lifecycle";
+import { readProjectMetaSync, updateProjectMetaSync } from "./git-storage/project-meta-store";
+import { getWorkspace, getWorkspaceForBranchId } from "./lifecycle";
 
 export interface CommitParentRow {
   commitId: string;
@@ -50,15 +48,26 @@ export async function createCommit(input: {
     parents: parents.length ? parents : undefined,
   });
   const timestamp = now();
-  db.update(schema.branches)
-    .set({ headCommitId: oid, updatedAt: timestamp })
-    .where(eq(schema.branches.id, branch.id))
-    .run();
-  db.update(schema.projects)
-    .set({ updatedAt: timestamp })
-    .where(eq(schema.projects.id, branch.projectId))
-    .run();
-  await writeProjectMeta(branch.projectId);
+  updateProjectMetaSync(
+    branch.projectId,
+    (payload) => ({
+      ...payload,
+      project: {
+        ...payload.project,
+        updatedAt: timestamp,
+      },
+      branches: payload.branches.map((item) =>
+        item.id === branch.id
+          ? {
+              ...item,
+              headCommitId: oid,
+              updatedAt: timestamp,
+            }
+          : item,
+      ),
+    }),
+    "Update branch head",
+  );
   return await getCommit(oid, branch.projectId);
 }
 
@@ -73,11 +82,7 @@ export async function checkoutCommit(input: { workspaceId: string; commitId: str
 }
 
 export async function getCommit(commitId: string, projectId: string): Promise<CommitRow> {
-  const branches = db
-    .select()
-    .from(schema.branches)
-    .where(eq(schema.branches.projectId, projectId))
-    .all() as Array<{ ref: string }>;
+  const branches = readProjectMetaSync(projectId).branches.map((branch) => ({ ref: branch.ref }));
   for (const branch of branches) {
     const commits = await listLog({ projectId, ref: branch.ref });
     const found = commits.find((entry) => entry.oid === commitId);

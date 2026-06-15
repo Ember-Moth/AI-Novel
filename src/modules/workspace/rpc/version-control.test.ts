@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { setupMockDatabase } from "@/test/mock-db";
+import { setupTestDataDir } from "@/test/setup";
+import { seedProjectRecord } from "@/test/project";
 
-setupMockDatabase();
+setupTestDataDir();
 
-const { db, schema } = await import("@/db");
 const service = await import("@/modules/workspace/domain");
 const { rpcTags } = await import("@/rpc/tags");
 const branchHandlers = await import("./branches");
@@ -14,10 +14,11 @@ const requestCtx = { req: new Request("http://localhost/api/rpc") } as unknown a
 >[1];
 
 function seedProject(projectId: string) {
-  db.insert(schema.projects)
-    .values({ id: projectId, name: `Project ${projectId}`, description: null })
-    .run();
-  return service.createDefaultWorkspace(projectId);
+  seedProjectRecord(projectId);
+  if (!service.getDefaultWorkspace(projectId)) {
+    service.createDefaultWorkspace(projectId);
+  }
+  return service.getDefaultWorkspace(projectId)!;
 }
 
 test("branch list watches the project branches tag and includes the default branch", async () => {
@@ -106,7 +107,7 @@ test("commit checkout invalidates the workspace content views", async () => {
     parentId: null,
     title: "One",
   });
-  const commit = await await service.createCommit({ branchId: workspace.branchId, message: "one" });
+  const commit = await service.createCommit({ branchId: workspace.branchId, message: "one" });
 
   const result = await commitHandlers.checkout.handler(
     { workspaceId: workspace.id, commitId: commit.id },
@@ -147,13 +148,13 @@ test("commit history returns the mainline newest first", async () => {
     parentId: null,
     title: "One",
   });
-  const c1 = await await service.createCommit({ branchId: workspace.branchId, message: "one" });
+  const c1 = await service.createCommit({ branchId: workspace.branchId, message: "one" });
   service.createContentNode({
     workspaceId: workspace.id,
     parentId: null,
     title: "Two",
   });
-  const c2 = await await service.createCommit({ branchId: workspace.branchId, message: "two" });
+  const c2 = await service.createCommit({ branchId: workspace.branchId, message: "two" });
 
   const result = await commitHandlers.history.handler({ branchId: workspace.branchId }, requestCtx);
 
