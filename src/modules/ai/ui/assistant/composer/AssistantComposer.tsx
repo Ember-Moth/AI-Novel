@@ -38,7 +38,7 @@ export function AssistantComposer({
   onTextChange,
   onPayloadChange,
   isBusy,
-  initialValue,
+  value,
 }: {
   disabled: boolean;
   placeholder: string;
@@ -46,9 +46,9 @@ export function AssistantComposer({
   onTextChange?: (_text: string) => void;
   onPayloadChange?: (_payload: AssistantComposerSubmitPayload) => void;
   isBusy: boolean;
-  initialValue?: string;
+  value?: string;
 }) {
-  const initialValueRef = useRef(initialValue ?? "");
+  const initialValueRef = useRef(value ?? "");
   const initialConfig = useMemo(
     () => ({
       namespace: "AssistantComposer",
@@ -76,6 +76,7 @@ export function AssistantComposer({
         onSubmit={onSubmit}
         onTextChange={onTextChange}
         onPayloadChange={onPayloadChange}
+        value={value ?? ""}
       />
     </LexicalComposer>
   );
@@ -88,6 +89,7 @@ function AssistantComposerInner({
   onSubmit,
   onTextChange,
   onPayloadChange,
+  value,
 }: {
   disabled: boolean;
   isBusy: boolean;
@@ -95,6 +97,7 @@ function AssistantComposerInner({
   onSubmit: (_payload: AssistantComposerSubmitPayload) => boolean;
   onTextChange?: (_text: string) => void;
   onPayloadChange?: (_payload: AssistantComposerSubmitPayload) => void;
+  value: string;
 }) {
   const [editor] = useLexicalComposerContext();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -190,9 +193,27 @@ function AssistantComposerInner({
           onPayloadChange?.(payload);
         }}
       />
+      <AssistantComposerValueSyncPlugin value={value} />
       <AssistantPromptTypeaheadPlugin onOpenChange={setTypeaheadOpen} disabled={disabled} />
     </div>
   );
+}
+
+function AssistantComposerValueSyncPlugin({ value }: { value: string }) {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    const currentValue = compileAssistantComposerState(editor.getEditorState()).text;
+    if (currentValue === value) {
+      return;
+    }
+
+    editor.update(() => {
+      seedEditorText(value);
+    });
+  }, [editor, value]);
+
+  return null;
 }
 
 class AssistantPromptOption extends MenuOption {

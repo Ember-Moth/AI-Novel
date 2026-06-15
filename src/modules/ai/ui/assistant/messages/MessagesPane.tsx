@@ -3,10 +3,13 @@ import { AnimatePresence, motion } from "motion/react";
 
 import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
 
-import { shouldAnimateMessageMount } from "../aiSidebarModel";
+import { getMessagesViewportSessionKey, shouldAnimateMessageMount } from "../aiSidebarModel";
 import { AiMarkdown } from "../AiMarkdown";
-import { shouldRenderPendingStreamBlocks } from "../runtime/streamOverlay";
-import type { AiAssistantController } from "../runtime/useAiAssistantController";
+import { useAssistantDerivedState } from "../runtime/assistantStateModel";
+import {
+  shouldRenderPendingStreamBlocks,
+  type AssistantStreamOverlay,
+} from "../runtime/streamOverlay";
 import { MessageItem } from "./MessageItem";
 import { ReasoningTraceCard } from "./ReasoningTraceCard";
 import { RunSummaryRow } from "./RunSummaryRow";
@@ -17,7 +20,7 @@ function isViewportNearBottom(viewport: HTMLElement) {
   return viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 24;
 }
 
-function buildStreamRunSummary(overlay: AiAssistantController["activeStream"]) {
+function buildStreamRunSummary(overlay: AssistantStreamOverlay | null) {
   if (overlay == null) {
     return null;
   }
@@ -40,53 +43,49 @@ function getReasoningTraceText(
   return matchedEntry?.text ?? "";
 }
 
-export function MessagesPane({
-  controller,
-  sessionKey,
-}: {
-  controller: AiAssistantController;
-  sessionKey: string;
-}) {
+export function MessagesPane() {
+  const derived = useAssistantDerivedState();
   const viewportRef = useRef<HTMLElement | null>(null);
   const [expandedToolTraceKeys, setExpandedToolTraceKeys] = useState<Set<string>>(new Set());
   const [expandedReasoningKeys, setExpandedReasoningKeys] = useState<Set<string>>(new Set());
   const [expandedRunSummaryKeys, setExpandedRunSummaryKeys] = useState<Set<string>>(new Set());
   const [shouldStickToBottom, setShouldStickToBottom] = useState(true);
   const streamedAssistantMessageIdsRef = useRef<Set<string>>(new Set());
-  const previousThreadIdRef = useRef(controller.activeThreadId);
-  const prevMessagesLengthRef = useRef(controller.messages.length);
+  const previousThreadIdRef = useRef(derived.activeThreadId);
+  const prevMessagesLengthRef = useRef(derived.messages.length);
+  const sessionKey = getMessagesViewportSessionKey(derived.activeThreadId);
   const pendingSendSummary =
-    controller.activeStream?.kind === "send" ||
-    controller.activeStream?.kind === "continue" ||
-    controller.activeStream?.kind === "tool-input"
-      ? buildStreamRunSummary(controller.activeStream)
+    derived.activeStream?.kind === "send" ||
+    derived.activeStream?.kind === "continue" ||
+    derived.activeStream?.kind === "tool-input"
+      ? buildStreamRunSummary(derived.activeStream)
       : null;
-  const visibleMessages = controller.messages.flatMap((message, index) =>
+  const visibleMessages = derived.messages.flatMap((message, index) =>
     message.role === "tool" ? [] : [{ message, index }],
   );
 
   useEffect(() => {
-    if (previousThreadIdRef.current === controller.activeThreadId) {
+    if (previousThreadIdRef.current === derived.activeThreadId) {
       return;
     }
 
-    previousThreadIdRef.current = controller.activeThreadId;
+    previousThreadIdRef.current = derived.activeThreadId;
     setShouldStickToBottom(true);
-    prevMessagesLengthRef.current = controller.messages.length;
+    prevMessagesLengthRef.current = derived.messages.length;
     setExpandedToolTraceKeys(new Set());
     setExpandedReasoningKeys(new Set());
     setExpandedRunSummaryKeys(new Set());
-  }, [controller.activeThreadId, controller.messages.length]);
+  }, [derived.activeThreadId, derived.messages.length]);
 
   useEffect(() => {
     streamedAssistantMessageIdsRef.current.clear();
-  }, [controller.activeThreadId]);
+  }, [derived.activeThreadId]);
 
   useEffect(() => {
-    controller.activeStream?.blocks.forEach((block) => {
+    derived.activeStream?.blocks.forEach((block) => {
       streamedAssistantMessageIdsRef.current.add(block.assistantNodeId);
     });
-  }, [controller.activeStream]);
+  }, [derived.activeStream]);
 
   useEffect(() => {
     if (!shouldStickToBottom) {
@@ -98,12 +97,12 @@ export function MessagesPane({
       return;
     }
 
-    const currentLength = controller.messages.length;
+    const currentLength = derived.messages.length;
     const prevLength = prevMessagesLengthRef.current;
     prevMessagesLengthRef.current = currentLength;
 
-    const isStreaming = controller.activeStream != null;
-    const isSending = controller.pendingAction != null;
+    const isStreaming = derived.activeStream != null;
+    const isSending = derived.pendingAction != null;
     const isMessagesGrowing = currentLength > prevLength;
 
     if (!isStreaming && !isSending && !isMessagesGrowing) {
@@ -114,7 +113,7 @@ export function MessagesPane({
       viewport.scrollTop = viewport.scrollHeight;
     });
     return () => cancelAnimationFrame(frameId);
-  }, [controller.activeStream, controller.messages, controller.pendingAction, shouldStickToBottom]);
+  }, [derived.activeStream, derived.messages, derived.pendingAction, shouldStickToBottom]);
 
   useLayoutEffect(() => {
     let frameId = 0;
@@ -202,7 +201,7 @@ export function MessagesPane({
       >
         <div className="flex min-h-full flex-col gap-2 px-3.5 py-2 select-text">
           <AnimatePresence initial={false} mode="popLayout">
-            {controller.assistantStateIsInitialLoading && controller.showEmptyState ? (
+            {derived.assistantStateIsInitialLoading && derived.showEmptyState ? (
               <motion.div
                 key="loading-state"
                 className="rounded-md border border-border bg-sidebar-background px-3 py-2 text-[12px] text-foreground-muted"
@@ -215,7 +214,7 @@ export function MessagesPane({
               </motion.div>
             ) : null}
 
-            {controller.showEmptyState ? (
+            {derived.showEmptyState ? (
               <motion.div
                 key="empty-state"
                 className="rounded-md border border-border bg-sidebar-background px-3 py-2"
@@ -227,11 +226,11 @@ export function MessagesPane({
                 <div className="mb-2 flex items-center gap-2 text-[12px] text-foreground-muted">
                   <span className="icon-[material-symbols--auto-awesome] text-sm text-accent-foreground" />
                   <span>
-                    {controller.activeThreadId ? "这个会话还没有对话内容" : "还没有当前会话"}
+                    {derived.activeThreadId ? "这个会话还没有对话内容" : "还没有当前会话"}
                   </span>
                 </div>
                 <p className="text-[12px] leading-5 text-foreground-muted">
-                  {controller.activeThreadId
+                  {derived.activeThreadId
                     ? "选择模型后可以直接开始对话。"
                     : "先新建一个会话，或从上方切换到已有会话。"}
                 </p>
@@ -241,7 +240,6 @@ export function MessagesPane({
             {visibleMessages.map(({ message, index }) => (
               <MessageItem
                 key={message.id}
-                controller={controller}
                 message={message}
                 index={index}
                 expandedReasoningKeys={expandedReasoningKeys}
@@ -260,14 +258,14 @@ export function MessagesPane({
           </AnimatePresence>
 
           <AnimatePresence initial={false}>
-            {controller.pendingAction?.kind === "send" ||
-            controller.pendingAction?.kind === "continue" ||
-            controller.pendingAction?.kind === "tool-input" ? (
+            {derived.pendingAction?.kind === "send" ||
+            derived.pendingAction?.kind === "continue" ||
+            derived.pendingAction?.kind === "tool-input" ? (
               <motion.div
                 key={
-                  controller.pendingAction.kind === "send"
+                  derived.pendingAction.kind === "send"
                     ? "pending-send"
-                    : controller.pendingAction.kind === "continue"
+                    : derived.pendingAction.kind === "continue"
                       ? "pending-continue"
                       : "pending-tool-input"
                 }
@@ -276,18 +274,18 @@ export function MessagesPane({
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
               >
-                {controller.pendingAction.kind === "send" ? (
+                {derived.pendingAction.kind === "send" ? (
                   <div className="flex justify-end">
                     <UserMessageBubble
-                      text={controller.pendingAction.text}
-                      mentions={controller.pendingAction.mentions}
+                      text={derived.pendingAction.text}
+                      mentions={derived.pendingAction.mentions}
                     />
                   </div>
                 ) : null}
-                {shouldRenderPendingStreamBlocks(controller.activeStream)
-                  ? controller.activeStream.blocks.map((block, blockIndex) => (
+                {shouldRenderPendingStreamBlocks(derived.activeStream)
+                  ? derived.activeStream.blocks.map((block, blockIndex) => (
                       <motion.div
-                        key={`${controller.activeStream?.kind}-stream-block:${block.assistantNodeId}:${blockIndex}`}
+                        key={`${derived.activeStream?.kind}-stream-block:${block.assistantNodeId}:${blockIndex}`}
                         className="flex flex-col gap-1.5"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -297,7 +295,7 @@ export function MessagesPane({
                           entry.kind === "text" ? (
                             block.assistantText.trim().length > 0 ? (
                               <div
-                                key={`${controller.activeStream?.kind}-stream:${block.assistantNodeId}:text`}
+                                key={`${derived.activeStream?.kind}-stream:${block.assistantNodeId}:text`}
                                 className="text-foreground"
                               >
                                 <AiMarkdown
@@ -309,15 +307,15 @@ export function MessagesPane({
                             ) : null
                           ) : (
                             <ReasoningTraceCard
-                              key={`${controller.activeStream?.kind}-stream:${block.assistantNodeId}:${entry.id}`}
+                              key={`${derived.activeStream?.kind}-stream:${block.assistantNodeId}:${entry.id}`}
                               reasoningText={getReasoningTraceText(block.reasoningTrace, entry.id)}
                               isStreaming
                               expanded={expandedReasoningKeys.has(
-                                `${controller.activeStream?.kind}-stream:${block.assistantNodeId}:${entry.id}`,
+                                `${derived.activeStream?.kind}-stream:${block.assistantNodeId}:${entry.id}`,
                               )}
                               onToggle={() =>
                                 toggleReasoning(
-                                  `${controller.activeStream?.kind}-stream:${block.assistantNodeId}:${entry.id}`,
+                                  `${derived.activeStream?.kind}-stream:${block.assistantNodeId}:${entry.id}`,
                                 )
                               }
                             />
@@ -326,7 +324,7 @@ export function MessagesPane({
                         {block.toolTrace.length > 0 ? (
                           <div className="flex flex-col gap-1">
                             {block.toolTrace.map((entry, entryIndex) => {
-                              const key = `${controller.activeStream?.kind}-stream:${block.assistantNodeId}:${entry.toolCallId ?? entry.toolName}:${entryIndex}`;
+                              const key = `${derived.activeStream?.kind}-stream:${block.assistantNodeId}:${entry.toolCallId ?? entry.toolName}:${entryIndex}`;
                               return (
                                 <ToolTraceCard
                                   key={key}

@@ -1,9 +1,11 @@
 import { motion } from "motion/react";
 
-import type { AgentRunSummaryView } from "@/modules/ai/domain/types";
+import type { AgentRunSummaryView, AgentThreadNodeView } from "@/modules/ai/domain/types";
 
 import { AiMarkdown } from "../AiMarkdown";
-import type { AiAssistantController } from "../runtime/useAiAssistantController";
+import { useAssistantDerivedState } from "../runtime/assistantStateModel";
+import { type AssistantStreamOverlay } from "../runtime/streamOverlay";
+import { useAssistantRuntime } from "../runtime/useAiAssistantRuntime";
 import { AskUserInlineCard } from "./AskUserInlineCard";
 import { getAssistantAskUserEntries } from "./askUserModel";
 import {
@@ -30,7 +32,7 @@ function getReasoningTraceText(
   return matchedEntry?.text ?? "";
 }
 
-function buildStreamRunSummary(overlay: AiAssistantController["activeStream"]) {
+function buildStreamRunSummary(overlay: AssistantStreamOverlay | null) {
   if (overlay == null) {
     return null;
   }
@@ -73,7 +75,6 @@ function ToolTraceList({
 }
 
 export function MessageItem({
-  controller,
   message,
   index,
   expandedReasoningKeys,
@@ -84,8 +85,7 @@ export function MessageItem({
   onToggleRunSummary,
   onToggleToolTrace,
 }: {
-  controller: AiAssistantController;
-  message: AiAssistantController["messages"][number];
+  message: AgentThreadNodeView;
   index: number;
   expandedReasoningKeys: ReadonlySet<string>;
   expandedRunSummaryKeys: ReadonlySet<string>;
@@ -95,24 +95,25 @@ export function MessageItem({
   onToggleRunSummary: (_key: string) => void;
   onToggleToolTrace: (_key: string) => void;
 }) {
+  const runtime = useAssistantRuntime();
+  const derived = useAssistantDerivedState();
   const text = getMessageText(message);
   const refDisplays = getAssistantRefDisplays(message);
   const assistantContentBlocks = getAssistantContentBlocks(message);
-  const askUserEntries = getAssistantAskUserEntries(controller.messages, index);
-  const toolTrace = getAssistantToolTrace(controller.messages, index).filter(
+  const askUserEntries = getAssistantAskUserEntries(derived.messages, index);
+  const toolTrace = getAssistantToolTrace(derived.messages, index).filter(
     (entry) => entry.toolName !== "ask_user",
   );
   const isUser = message.role === "user";
   const showMessageBubble = isUser || text.trim().length > 0 || refDisplays.length > 0;
-  const candidateGroup = controller.getCandidateGroupForNode(message);
+  const candidateGroup = derived.getCandidateGroupForNode(message);
   const streamOverlayForMessage =
-    controller.activeStream?.kind === "retry" &&
-    controller.activeStream.triggerNodeId === message.id
-      ? controller.activeStream
+    derived.activeStream?.kind === "retry" && derived.activeStream.triggerNodeId === message.id
+      ? derived.activeStream
       : null;
   const streamSummaryForMessage = buildStreamRunSummary(streamOverlayForMessage);
-  const persistedSummaries = getRunSummaryByDisplayNode(controller.runSummaries, message.id).filter(
-    (summary) => summary.runId !== controller.activeStream?.runId,
+  const persistedSummaries = getRunSummaryByDisplayNode(derived.runSummaries, message.id).filter(
+    (summary) => summary.runId !== derived.activeStream?.runId,
   );
 
   return (
@@ -152,20 +153,20 @@ export function MessageItem({
         <div className="flex flex-col gap-1.5">
           {askUserEntries.map((entry) => {
             const submittedAnswers =
-              entry.answers ?? controller.submittedToolInputAnswers[entry.toolCallId] ?? null;
+              entry.answers ?? derived.submittedToolInputAnswers[entry.toolCallId] ?? null;
             return (
               <AskUserInlineCard
                 key={entry.toolCallId}
                 entry={entry}
                 submittedAnswers={submittedAnswers}
-                isSubmitting={controller.submittingToolInputToolCallId === entry.toolCallId}
+                isSubmitting={derived.submittingToolInputToolCallId === entry.toolCallId}
                 canSubmit={
-                  controller.isWaitingForInput &&
+                  derived.isWaitingForInput &&
                   submittedAnswers == null &&
-                  controller.pendingRun?.id != null
+                  derived.pendingRun?.id != null
                 }
                 onSubmit={(answers) =>
-                  void controller.handleSubmitToolInput(entry.toolCallId, answers)
+                  void runtime.actions.handleSubmitToolInput(entry.toolCallId, answers)
                 }
               />
             );
@@ -237,8 +238,8 @@ export function MessageItem({
               <motion.button
                 key={candidate.id}
                 type="button"
-                disabled={active || controller.isThreadBusy}
-                onClick={() => void controller.handleSelectCandidate(candidate.tipNodeId)}
+                disabled={active || derived.isThreadBusy}
+                onClick={() => void runtime.actions.handleSelectCandidate(candidate.tipNodeId)}
                 className={`rounded-md border px-2 py-1 text-[11px] leading-4 ${
                   active
                     ? "border-accent-foreground bg-accent-foreground/10 text-accent-foreground"
@@ -281,7 +282,7 @@ export function MessageItem({
         const retryTriggerNodeId = summary.triggerNodeId;
         const canRetry =
           summary.status === "failed" &&
-          controller.retryableRun?.id === summary.runId &&
+          derived.retryableRun?.id === summary.runId &&
           message.id === summary.displayNodeId;
 
         return (
@@ -299,17 +300,17 @@ export function MessageItem({
               durationMs={summary.durationMs}
               errorMessage={summary.errorMessage}
               canRetry={canRetry}
-              isRetrying={canRetry && controller.isRetrying}
+              isRetrying={canRetry && derived.isRetrying}
               onRetry={
                 canRetry && retryTriggerNodeId
-                  ? () => void controller.handleRetry(retryTriggerNodeId)
+                  ? () => void runtime.actions.handleRetry(retryTriggerNodeId)
                   : undefined
               }
               needsContinuation={summary.needsContinuation}
-              isContinuing={summary.needsContinuation && controller.isContinuing}
+              isContinuing={summary.needsContinuation && derived.isContinuing}
               onContinue={
                 summary.needsContinuation
-                  ? () => void controller.handleContinueRun(summary.runId)
+                  ? () => void runtime.actions.handleContinueRun(summary.runId)
                   : undefined
               }
               continuedByRunId={summary.continuedByRunId}

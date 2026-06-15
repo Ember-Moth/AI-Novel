@@ -1,16 +1,20 @@
+import { ScopeProvider } from "bunshi/react";
+
 import type {
   ProjectAssistantContextSnapshot,
   TimelineSelectionUpdatedEvent,
   WorkspaceRefreshRequestedEvent,
 } from "@/modules/ai/domain/types";
 
-import { getMessagesViewportSessionKey } from "./aiSidebarModel";
 import { ComposerPane } from "./composer/ComposerPane";
 import { AiAssistantSheetLayout } from "./layout/AiAssistantSheetLayout";
 import { useAssistantSheetLayout } from "./layout/useAssistantSheetLayout";
 import { MessagesPane } from "./messages/MessagesPane";
+import { AssistantScope } from "./runtime/assistantStore";
+import { useAssistantDerivedState } from "./runtime/assistantStateModel";
+import { AiAssistantRuntimeProvider, useAssistantRuntime } from "./runtime/useAiAssistantRuntime";
+import { AssistantModelSelectionProvider } from "./runtime/useAssistantModelSelection";
 import { SessionPane } from "./sessions/SessionPane";
-import { useAiAssistantController } from "./runtime/useAiAssistantController";
 
 export { getMessagesViewportSessionKey, shouldAnimateMessageMount } from "./aiSidebarModel";
 
@@ -25,7 +29,24 @@ export function AiSidebar({
     _event: WorkspaceRefreshRequestedEvent | TimelineSelectionUpdatedEvent,
   ) => void;
 }) {
-  const controller = useAiAssistantController(projectId, onWorkspaceRefreshRequested, context);
+  return (
+    <ScopeProvider scope={AssistantScope} value={projectId}>
+      <AssistantModelSelectionProvider>
+        <AiAssistantRuntimeProvider
+          projectId={projectId}
+          context={context}
+          onWorkspaceRefreshRequested={onWorkspaceRefreshRequested}
+        >
+          <AiSidebarContent />
+        </AiAssistantRuntimeProvider>
+      </AssistantModelSelectionProvider>
+    </ScopeProvider>
+  );
+}
+
+function AiSidebarContent() {
+  const runtime = useAssistantRuntime();
+  const derived = useAssistantDerivedState();
   const layout = useAssistantSheetLayout({
     defaultState: "peek",
   });
@@ -39,8 +60,8 @@ export function AiSidebar({
         </span>
         <button
           type="button"
-          onClick={() => void controller.handleCreateThread()}
-          disabled={controller.isThreadMutating}
+          onClick={() => void runtime.actions.handleCreateThread()}
+          disabled={derived.isThreadMutating}
           className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
         >
           <span className="icon-[material-symbols--add]" />
@@ -52,22 +73,15 @@ export function AiSidebar({
         layout={layout}
         sessionPane={
           <SessionPane
-            controller={controller}
-            onActivate={(threadId) => {
+            onActivate={() => {
               if (layout.sheetState === "expanded") {
                 layout.setSheetState("peek");
               }
-              void controller.handleActivateThread(threadId);
             }}
           />
         }
-        messagesViewportPane={
-          <MessagesPane
-            controller={controller}
-            sessionKey={getMessagesViewportSessionKey(controller.activeThreadId)}
-          />
-        }
-        composerPane={<ComposerPane controller={controller} />}
+        messagesViewportPane={<MessagesPane />}
+        composerPane={<ComposerPane />}
       />
     </aside>
   );

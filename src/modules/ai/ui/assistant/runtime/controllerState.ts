@@ -31,6 +31,8 @@ export type PendingAssistantAction =
       toolCallId: string;
     };
 
+export const DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND = true;
+
 export const EMPTY_ASSISTANT_STATE: AssistantState = {
   thread: null,
   activePath: [],

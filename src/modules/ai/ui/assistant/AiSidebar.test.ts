@@ -9,10 +9,12 @@ import { getMessagesViewportSessionKey, shouldAnimateMessageMount } from "./aiSi
 import {
   buildProjectAssistantRetryActiveTools,
   buildProjectAssistantSendActiveTools,
+} from "./runtime/activeTools";
+import { DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND } from "./runtime/controllerState";
+import {
   buildSessionRows,
-  DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND,
   resolveExpectedActiveThreadAfterArchiveToggle,
-} from "./useAiAssistantController";
+} from "./sessions/sessionListModel";
 import {
   applyStreamEvent,
   applyAssistantStreamEvent,
