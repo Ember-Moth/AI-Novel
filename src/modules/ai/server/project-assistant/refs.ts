@@ -3,7 +3,7 @@ import type {
   AssistantInputRefSnapshot,
   AssistantMentionInput,
 } from "@/modules/ai/domain/types";
-import { getGlobalPromptFromConfig } from "@/modules/ai/domain/user-config";
+import * as userConfig from "@/modules/ai/domain/user-config";
 import { createId, invariant } from "@/shared/lib/domain";
 
 export function resolveAssistantInputRefs(
@@ -20,7 +20,7 @@ export function resolveAssistantInputRefs(
     const targetId = mention.targetId.trim();
     invariant(targetId.length > 0, "Prompt 引用目标不能为空。");
 
-    const prompt = getGlobalPromptFromConfig(targetId);
+    const prompt = userConfig.globalPrompts.get(targetId);
     invariant(prompt, "引用的 Prompt 不存在。");
     invariant(prompt.isEnabled, "引用的 Prompt 已被禁用。");
 

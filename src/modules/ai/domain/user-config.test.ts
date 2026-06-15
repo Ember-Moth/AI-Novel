@@ -35,28 +35,25 @@ function getDisabledPromptConfigFilePath(id: string) {
 }
 
 test("user config files default to empty lists when missing", () => {
-  expect(userConfig.listGlobalPromptsFromConfig()).toEqual([]);
-  expect(userConfig.listAiConnectionsFromConfig()).toEqual([]);
+  expect(userConfig.globalPrompts.list()).toEqual([]);
+  expect(userConfig.aiConnections.list()).toEqual([]);
 });
 
 test("prompt config persists create update and delete operations", () => {
-  userConfig.insertGlobalPromptToConfig(prompt("prompt_a", "Alpha"));
-  userConfig.insertGlobalPromptToConfig(prompt("prompt_b", "Beta"));
+  userConfig.globalPrompts.insert(prompt("prompt_a", "Alpha"));
+  userConfig.globalPrompts.insert(prompt("prompt_b", "Beta"));
 
-  expect(userConfig.listGlobalPromptsFromConfig().map((item) => item.name)).toEqual([
-    "Alpha",
-    "Beta",
-  ]);
+  expect(userConfig.globalPrompts.list().map((item) => item.name)).toEqual(["Alpha", "Beta"]);
 
-  userConfig.updateGlobalPromptInConfig("prompt_a", {
+  userConfig.globalPrompts.update("prompt_a", {
     content: "Updated",
     updatedAt: 2,
   });
-  const updatedPrompt = userConfig.getGlobalPromptFromConfig("prompt_a");
+  const updatedPrompt = userConfig.globalPrompts.get("prompt_a");
   expect(updatedPrompt?.content).toBe("Updated");
 
-  userConfig.deleteGlobalPromptFromConfig("prompt_b");
-  expect(userConfig.listGlobalPromptsFromConfig().map((item) => item.id)).toEqual(["prompt_a"]);
+  userConfig.globalPrompts.remove("prompt_b");
+  expect(userConfig.globalPrompts.list().map((item) => item.id)).toEqual(["prompt_a"]);
 
   const promptFiles = readdirSync(getPromptsConfigDir()).filter((name) => name.endsWith(".md"));
   expect(promptFiles).toEqual(["prompt_a.md"]);
@@ -76,18 +73,18 @@ test("prompt config persists create update and delete operations", () => {
 });
 
 test("prompt enabled state is stored in the filename suffix", () => {
-  userConfig.insertGlobalPromptToConfig({ ...prompt("prompt_a", "Alpha"), isEnabled: false });
+  userConfig.globalPrompts.insert({ ...prompt("prompt_a", "Alpha"), isEnabled: false });
 
   expect(existsSync(getPromptConfigFilePath("prompt_a"))).toBe(false);
   expect(existsSync(getDisabledPromptConfigFilePath("prompt_a"))).toBe(true);
-  expect(userConfig.getGlobalPromptFromConfig("prompt_a")?.isEnabled).toBe(false);
+  expect(userConfig.globalPrompts.get("prompt_a")?.isEnabled).toBe(false);
 
-  userConfig.updateGlobalPromptInConfig("prompt_a", { isEnabled: true });
+  userConfig.globalPrompts.update("prompt_a", { isEnabled: true });
   expect(existsSync(getPromptConfigFilePath("prompt_a"))).toBe(true);
   expect(existsSync(getDisabledPromptConfigFilePath("prompt_a"))).toBe(false);
-  expect(userConfig.getGlobalPromptFromConfig("prompt_a")?.isEnabled).toBe(true);
+  expect(userConfig.globalPrompts.get("prompt_a")?.isEnabled).toBe(true);
 
-  userConfig.updateGlobalPromptInConfig("prompt_a", { isEnabled: false });
+  userConfig.globalPrompts.update("prompt_a", { isEnabled: false });
   expect(existsSync(getPromptConfigFilePath("prompt_a"))).toBe(false);
   expect(existsSync(getDisabledPromptConfigFilePath("prompt_a"))).toBe(true);
 
@@ -99,7 +96,7 @@ test("prompt enabled state is stored in the filename suffix", () => {
 });
 
 test("ai connection config persists connections overrides and custom models", () => {
-  userConfig.insertAiConnectionToConfig({
+  userConfig.aiConnections.insert({
     id: "conn_a",
     kind: "custom",
     name: "Connection A",
@@ -112,7 +109,7 @@ test("ai connection config persists connections overrides and custom models", ()
     createdAt: 1,
     updatedAt: 1,
   });
-  userConfig.insertCustomModelToConfig({
+  userConfig.aiConnections.insertCustomModel({
     id: "model_a",
     connectionId: "conn_a",
     modelId: "gpt-test",
@@ -129,7 +126,7 @@ test("ai connection config persists connections overrides and custom models", ()
     createdAt: 1,
     updatedAt: 1,
   });
-  userConfig.setCatalogModelOverrideInConfig({
+  userConfig.aiConnections.setCatalogModelOverride({
     id: "override_a",
     connectionId: "conn_a",
     catalogModelId: "openai:gpt-test",
@@ -138,23 +135,23 @@ test("ai connection config persists connections overrides and custom models", ()
     updatedAt: 1,
   });
 
-  expect(userConfig.getAiConnectionFromConfig("conn_a")?.apiKey).toBe("sk-test");
-  expect(userConfig.listCustomModelsForConnectionFromConfig("conn_a")).toHaveLength(1);
-  expect(userConfig.listCatalogOverridesForConnectionFromConfig("conn_a")).toHaveLength(1);
+  expect(userConfig.aiConnections.get("conn_a")?.apiKey).toBe("sk-test");
+  expect(userConfig.aiConnections.listCustomModelsForConnection("conn_a")).toHaveLength(1);
+  expect(userConfig.aiConnections.listCatalogOverridesForConnection("conn_a")).toHaveLength(1);
 
-  userConfig.deleteAiConnectionFromConfig("conn_a");
-  expect(userConfig.getAiConnectionFromConfig("conn_a")).toBeNull();
-  expect(userConfig.listCustomModelsForConnectionFromConfig("conn_a")).toEqual([]);
-  expect(userConfig.listCatalogOverridesForConnectionFromConfig("conn_a")).toEqual([]);
+  userConfig.aiConnections.remove("conn_a");
+  expect(userConfig.aiConnections.get("conn_a")).toBeNull();
+  expect(userConfig.aiConnections.listCustomModelsForConnection("conn_a")).toEqual([]);
+  expect(userConfig.aiConnections.listCatalogOverridesForConnection("conn_a")).toEqual([]);
 });
 
 test("invalid prompt directory file throws and is not overwritten", () => {
-  userConfig.insertGlobalPromptToConfig(prompt("prompt_a", "Alpha"));
+  userConfig.globalPrompts.insert(prompt("prompt_a", "Alpha"));
   writeFileSync(getPromptConfigFilePath("prompt_a"), "{not-front-matter", "utf8");
 
-  expect(() => userConfig.listGlobalPromptsFromConfig()).toThrow("不是有效 Prompt Markdown");
+  expect(() => userConfig.globalPrompts.list()).toThrow("不是有效 Prompt Markdown");
   expect(() =>
-    userConfig.updateGlobalPromptInConfig("prompt_a", {
+    userConfig.globalPrompts.update("prompt_a", {
       content: "Updated",
       updatedAt: 2,
     }),
@@ -165,9 +162,9 @@ test("invalid prompt directory file throws and is not overwritten", () => {
 test("multiple file-backed writes keep all records", async () => {
   await Promise.all(
     Array.from({ length: 20 }, async (_, index) => {
-      userConfig.insertGlobalPromptToConfig(prompt(`prompt_${index}`, `Prompt ${index}`));
+      userConfig.globalPrompts.insert(prompt(`prompt_${index}`, `Prompt ${index}`));
     }),
   );
 
-  expect(userConfig.listGlobalPromptsFromConfig()).toHaveLength(20);
+  expect(userConfig.globalPrompts.list()).toHaveLength(20);
 });

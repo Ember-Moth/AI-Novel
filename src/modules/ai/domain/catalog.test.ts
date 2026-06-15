@@ -142,7 +142,7 @@ test("registry connections resolve active catalog models, apply overrides, and r
   await syncAiCatalogFromPayload(payloadV1);
 
   const timestamp = Date.now();
-  userConfig.insertAiConnectionToConfig({
+  userConfig.aiConnections.insert({
     id: "conn_openai",
     kind: "registry",
     name: "OpenAI Main",
@@ -164,7 +164,7 @@ test("registry connections resolve active catalog models, apply overrides, and r
   expect(initialModels[0]?.origin).toBe("catalog");
   expect(initialModels[0]?.isEnabled).toBe(true);
 
-  userConfig.setCatalogModelOverrideInConfig({
+  userConfig.aiConnections.setCatalogModelOverride({
     id: "ovr_gpt4o",
     connectionId: "conn_openai",
     catalogModelId: "openai:gpt-4o",
@@ -179,10 +179,10 @@ test("registry connections resolve active catalog models, apply overrides, and r
   });
   expect(overriddenModels[0]?.isEnabled).toBe(false);
 
-  const connection = userConfig.getAiConnectionFromConfig("conn_openai")!;
+  const connection = userConfig.aiConnections.get("conn_openai")!;
   expect(() => assertConnectionSupportsCustomModel(connection, "gpt-4o")).toThrow();
 
-  userConfig.insertCustomModelToConfig({
+  userConfig.aiConnections.insertCustomModel({
     id: "cmodel_story",
     connectionId: "conn_openai",
     modelId: "story-specialist",

@@ -51,25 +51,7 @@ import type {
   ProjectAssistantToolName,
 } from "@/modules/ai/domain/types";
 import { PROJECT_ASSISTANT_WRITE_TOOL_NAMES } from "@/modules/ai/domain/types";
-import {
-  deleteAiConnectionFromConfig,
-  deleteCatalogModelOverrideFromConfig,
-  deleteCustomModelFromConfig,
-  deleteGlobalPromptFromConfig,
-  findGlobalPromptByNameFromConfig,
-  getAiConnectionFromConfig,
-  getCustomModelFromConfig,
-  getGlobalPromptFromConfig,
-  insertAiConnectionToConfig,
-  insertCustomModelToConfig,
-  insertGlobalPromptToConfig,
-  listAiConnectionsFromConfig,
-  listGlobalPromptsFromConfig,
-  setCatalogModelOverrideInConfig,
-  updateAiConnectionInConfig,
-  updateCustomModelInConfig,
-  updateGlobalPromptInConfig,
-} from "@/modules/ai/domain/user-config";
+import * as userConfig from "@/modules/ai/domain/user-config";
 import { assertRpcFound } from "@/rpc/errors";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
 import { getDefaultWorkspace } from "@/modules/workspace/domain";
@@ -303,7 +285,7 @@ function sanitizeDescription(description: string | null | undefined): string | n
 }
 
 function assertGlobalPromptNameAvailable(name: string, excludeId?: string) {
-  const existing = findGlobalPromptByNameFromConfig(name);
+  const existing = userConfig.globalPrompts.findByName(name);
   invariant(!existing || existing.id === excludeId, "Prompt 名称已存在。");
 }
 
@@ -500,7 +482,7 @@ export const listCatalogModels = query<
 
 export const listGlobalPrompts = query<void, GlobalPromptRow[], RpcTagList>({
   watch: () => [rpcTags.aiGlobalPrompts()],
-  handler: () => listGlobalPromptsFromConfig(),
+  handler: () => userConfig.globalPrompts.list(),
 });
 
 export const createGlobalPrompt = mutation<CreateGlobalPromptInput, GlobalPromptRow, RpcTagList>({
@@ -520,14 +502,14 @@ export const createGlobalPrompt = mutation<CreateGlobalPromptInput, GlobalPrompt
       updatedAt: timestamp,
     };
 
-    return insertGlobalPromptToConfig(values);
+    return userConfig.globalPrompts.insert(values);
   },
 });
 
 export const updateGlobalPrompt = mutation<UpdateGlobalPromptInput, GlobalPromptRow, RpcTagList>({
   invalidate: () => [rpcTags.aiGlobalPrompts()],
   handler: (input) => {
-    const existing = getGlobalPromptFromConfig(input.id);
+    const existing = userConfig.globalPrompts.get(input.id);
     assertRpcFound(existing, "未找到 Prompt。");
 
     const name = input.name != null ? sanitizeName(input.name) : existing.name;
@@ -544,7 +526,7 @@ export const updateGlobalPrompt = mutation<UpdateGlobalPromptInput, GlobalPrompt
       updatedAt: now(),
     };
 
-    const updated = updateGlobalPromptInConfig(input.id, nextValues);
+    const updated = userConfig.globalPrompts.update(input.id, nextValues);
     assertRpcFound(updated, "未找到 Prompt。");
     return updated;
   },
@@ -553,16 +535,16 @@ export const updateGlobalPrompt = mutation<UpdateGlobalPromptInput, GlobalPrompt
 export const deleteGlobalPrompt = mutation<{ id: string }, { id: string }, RpcTagList>({
   invalidate: () => [rpcTags.aiGlobalPrompts()],
   handler: ({ id }) => {
-    const existing = getGlobalPromptFromConfig(id);
+    const existing = userConfig.globalPrompts.get(id);
     assertRpcFound(existing, "未找到 Prompt。");
-    deleteGlobalPromptFromConfig(id);
+    userConfig.globalPrompts.remove(id);
     return { id };
   },
 });
 
 export const listConnections = query<void, AiConnectionRow[], RpcTagList>({
   watch: () => [rpcTags.aiConnections()],
-  handler: () => listAiConnectionsFromConfig(),
+  handler: () => userConfig.aiConnections.list(),
 });
 
 export const listEnabledConnectionModels = query<
@@ -575,7 +557,8 @@ export const listEnabledConnectionModels = query<
     ...result.map(({ connection }) => rpcTags.aiConnectionModels(connection.id)),
   ],
   handler: () => {
-    const connections = listAiConnectionsFromConfig()
+    const connections = userConfig.aiConnections
+      .list()
       .filter((connection) => connection.isEnabled)
       .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -590,13 +573,13 @@ export const createConnection = mutation<CreateConnectionInput, AiConnectionRow,
   invalidate: () => [rpcTags.aiConnections()],
   handler: (input) => {
     const values = buildConnectionInsert(input);
-    return insertAiConnectionToConfig(values);
+    return userConfig.aiConnections.insert(values);
   },
 });
 
 export const updateConnection = mutation<UpdateConnectionInput, AiConnectionRow, RpcTagList>(
   (input, ctx) => {
-    const existing = getAiConnectionFromConfig(input.id);
+    const existing = userConfig.aiConnections.get(input.id);
     assertRpcFound(existing, "未找到 AI 连接。");
 
     const timestamp = now();
@@ -650,7 +633,7 @@ export const updateConnection = mutation<UpdateConnectionInput, AiConnectionRow,
       nextValues.apiKey = nextApiKey;
     }
 
-    const updated = updateAiConnectionInConfig(input.id, nextValues);
+    const updated = userConfig.aiConnections.update(input.id, nextValues);
     assertRpcFound(updated, "未找到 AI 连接。");
     invalidateConnectionsList(ctx, input.id);
     return updated;
@@ -658,7 +641,7 @@ export const updateConnection = mutation<UpdateConnectionInput, AiConnectionRow,
 );
 
 export const deleteConnection = mutation<{ id: string }, void, RpcTagList>(({ id }, ctx) => {
-  deleteAiConnectionFromConfig(id);
+  userConfig.aiConnections.remove(id);
   invalidateConnectionsList(ctx, id);
 });
 
@@ -680,7 +663,7 @@ export const setCatalogModelEnabled = mutation<
   AiResolvedModelView[],
   RpcTagList
 >(({ connectionId, catalogModelId, enabled }, ctx) => {
-  const connection = getAiConnectionFromConfig(connectionId);
+  const connection = userConfig.aiConnections.get(connectionId);
   assertRpcFound(connection, "未找到 AI 连接。");
   invariant(connection.kind === "registry", "只有模型目录连接可以启用或停用目录模型。");
 
@@ -689,10 +672,10 @@ export const setCatalogModelEnabled = mutation<
   invariant(catalogModel.providerId === connection.catalogProviderId, "该目录模型不属于当前连接。");
 
   if (enabled) {
-    deleteCatalogModelOverrideFromConfig(connectionId, catalogModelId);
+    userConfig.aiConnections.deleteCatalogModelOverride(connectionId, catalogModelId);
   } else {
     const timestamp = now();
-    setCatalogModelOverrideInConfig({
+    userConfig.aiConnections.setCatalogModelOverride({
       id: createId("ovr"),
       connectionId,
       catalogModelId,
@@ -711,14 +694,14 @@ export const createCustomModel = mutation<
   CustomModelRow,
   RpcTagList
 >(({ connectionId, ...input }, ctx) => {
-  const connection = getAiConnectionFromConfig(connectionId);
+  const connection = userConfig.aiConnections.get(connectionId);
   assertRpcFound(connection, "未找到 AI 连接。");
 
   const values = normalizeCustomModelInput(input);
   assertConnectionSupportsCustomModel(connection, values.modelId);
 
   const timestamp = now();
-  const model = insertCustomModelToConfig({
+  const model = userConfig.aiConnections.insertCustomModel({
     id: createId("cmodel"),
     connectionId,
     ...values,
@@ -735,10 +718,10 @@ export const updateCustomModel = mutation<
   CustomModelRow,
   RpcTagList
 >(({ id, ...input }, ctx) => {
-  const existing = getCustomModelFromConfig(id);
+  const existing = userConfig.aiConnections.getCustomModel(id);
   assertRpcFound(existing, "未找到自定义模型。");
 
-  const connection = getAiConnectionFromConfig(existing.connectionId);
+  const connection = userConfig.aiConnections.get(existing.connectionId);
   assertRpcFound(connection, "未找到 AI 连接。");
 
   const values = normalizeCustomModelInput({
@@ -758,7 +741,7 @@ export const updateCustomModel = mutation<
     assertConnectionSupportsCustomModel(connection, values.modelId);
   }
 
-  const updated = updateCustomModelInConfig(id, { ...values, updatedAt: now() });
+  const updated = userConfig.aiConnections.updateCustomModel(id, { ...values, updatedAt: now() });
   assertRpcFound(updated, "未找到自定义模型。");
 
   invalidateConnection(ctx, existing.connectionId);
@@ -766,9 +749,9 @@ export const updateCustomModel = mutation<
 });
 
 export const deleteCustomModel = mutation<{ id: string }, void, RpcTagList>(({ id }, ctx) => {
-  const model = getCustomModelFromConfig(id);
+  const model = userConfig.aiConnections.getCustomModel(id);
   assertRpcFound(model, "未找到自定义模型。");
-  deleteCustomModelFromConfig(id);
+  userConfig.aiConnections.deleteCustomModel(id);
   invalidateConnection(ctx, model.connectionId);
 });
 

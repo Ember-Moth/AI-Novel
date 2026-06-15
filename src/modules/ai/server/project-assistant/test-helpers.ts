@@ -65,7 +65,7 @@ export function seedCustomConnection({
   supportsToolUse?: boolean;
 }) {
   const timestamp = Date.now();
-  userConfig.insertAiConnectionToConfig({
+  userConfig.aiConnections.insert({
     id: connectionId,
     kind: "custom",
     name: "Primary Connection",
@@ -78,7 +78,7 @@ export function seedCustomConnection({
     createdAt: timestamp,
     updatedAt: timestamp,
   });
-  userConfig.insertCustomModelToConfig({
+  userConfig.aiConnections.insertCustomModel({
     id: modelRowId,
     connectionId,
     modelId,
@@ -167,7 +167,7 @@ export function seedOpenAiConnection({
   supportsToolUse?: boolean;
 }) {
   const timestamp = Date.now();
-  userConfig.insertAiConnectionToConfig({
+  userConfig.aiConnections.insert({
     id: connectionId,
     kind: "custom",
     name: "OpenAI Connection",
@@ -180,7 +180,7 @@ export function seedOpenAiConnection({
     createdAt: timestamp,
     updatedAt: timestamp,
   });
-  userConfig.insertCustomModelToConfig({
+  userConfig.aiConnections.insertCustomModel({
     id: modelRowId,
     connectionId,
     modelId,

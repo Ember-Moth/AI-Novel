@@ -30,7 +30,7 @@ function seedPrompt(input: {
   updatedAt?: number;
 }) {
   const timestamp = Date.now();
-  return userConfig.insertGlobalPromptToConfig({
+  return userConfig.globalPrompts.insert({
     id: input.id,
     name: input.name,
     description: input.description ?? null,
@@ -395,7 +395,7 @@ test("retryProjectAssistantMessage reuses original prompt ref snapshots", async 
       },
     ],
   });
-  userConfig.updateGlobalPromptInConfig("prompt_retry_refs", {
+  userConfig.globalPrompts.update("prompt_retry_refs", {
     name: "重试引用新版",
     content: "新版 Prompt 内容。",
     updatedAt: 200,
@@ -932,7 +932,7 @@ test("continueProjectAssistantRun reuses parent prompt ref snapshots", async () 
     ],
     activeTools: ["read_file"],
   });
-  userConfig.updateGlobalPromptInConfig("prompt_continue_refs", {
+  userConfig.globalPrompts.update("prompt_continue_refs", {
     name: "继续引用新版",
     content: "继续新版 Prompt 内容。",
     updatedAt: 200,

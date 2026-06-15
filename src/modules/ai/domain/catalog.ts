@@ -9,11 +9,7 @@ import type {
   AiConnectionRow,
   AiResolvedModelView,
 } from "@/modules/ai/domain/types";
-import {
-  getAiConnectionFromConfig,
-  listCatalogOverridesForConnectionFromConfig,
-  listCustomModelsForConnectionFromConfig,
-} from "@/modules/ai/domain/user-config";
+import * as userConfig from "@/modules/ai/domain/user-config";
 import {
   findModelByProviderAndModelId,
   listModels,
@@ -186,14 +182,14 @@ export function listResolvedModelsForConnection({
   connectionId: string;
   includeDisabled?: boolean;
 }): AiResolvedModelView[] {
-  const connection = getAiConnectionFromConfig(connectionId);
+  const connection = userConfig.aiConnections.get(connectionId);
   invariant(connection, "未找到 AI 连接。");
 
   const resolved: AiResolvedModelView[] = [];
 
   if (connection.kind === "registry" && connection.catalogProviderId) {
     const catalogModels = listModelsByProvider(connection.catalogProviderId, { activeOnly: true });
-    const overrides = listCatalogOverridesForConnectionFromConfig(connectionId);
+    const overrides = userConfig.aiConnections.listCatalogOverridesForConnection(connectionId);
     const overrideMap = new Map(overrides.map((override) => [override.catalogModelId, override]));
 
     for (const model of catalogModels) {
@@ -224,7 +220,7 @@ export function listResolvedModelsForConnection({
     }
   }
 
-  const customModels = listCustomModelsForConnectionFromConfig(connectionId);
+  const customModels = userConfig.aiConnections.listCustomModelsForConnection(connectionId);
   for (const model of customModels) {
     if (!includeDisabled && !model.isEnabled) continue;
     resolved.push({

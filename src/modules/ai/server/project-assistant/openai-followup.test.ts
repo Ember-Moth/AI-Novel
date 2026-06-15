@@ -274,7 +274,7 @@ test("openai follow-up send uses previous response id and only sends incremental
     modelRowId: "cmodel_openai_followup",
   });
   const timestamp = Date.now();
-  userConfig.insertGlobalPromptToConfig({
+  userConfig.globalPrompts.insert({
     id: "prompt_openai_followup",
     name: "追问扩写",
     description: null,

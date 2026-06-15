@@ -16,7 +16,7 @@ import {
   PROJECT_ASSISTANT_TOOL_NAMES,
 } from "@/modules/ai/domain/types";
 import { listResolvedModelsForConnection } from "@/modules/ai/domain/catalog";
-import { getAiConnectionFromConfig } from "@/modules/ai/domain/user-config";
+import * as userConfig from "@/modules/ai/domain/user-config";
 import {
   getAiAssistantModelSelection,
   type AiAssistantModelSelection,
@@ -289,7 +289,7 @@ export function resolveProjectAssistantModelSelection(
   const storedSelection = readStoredSelection();
   invariant(storedSelection, "请先在 AI 助手里选择连接和模型。");
 
-  const connection = getAiConnectionFromConfig(storedSelection.connectionId);
+  const connection = userConfig.aiConnections.get(storedSelection.connectionId);
   invariant(connection, "未找到已选择的 AI 连接。");
   invariant(connection.isEnabled, "已选择的 AI 连接已被停用。");
 
@@ -338,7 +338,7 @@ export function resolveProjectAssistantModelSelectionFromSnapshot(
   const customModelId = normalizeOptionalString(snapshotRecord.customModelId);
   invariant(connectionId, "原 run 缺少连接信息，无法继续。");
 
-  const connection = getAiConnectionFromConfig(connectionId);
+  const connection = userConfig.aiConnections.get(connectionId);
   invariant(connection, "原 run 使用的 AI 连接已不存在，无法继续。");
   invariant(connection.isEnabled, "原 run 使用的 AI 连接已停用，无法继续。");
 
