@@ -13,40 +13,46 @@ import type {
   ProjectAssistantContextSnapshot,
 } from "../types";
 import {
-  applyRunTraceRowsToStorage,
   buildAgentRunCacheFieldsFromTrace,
   getArtifactOrThrow,
-  getNodeOrThrow,
-  getProjectIdForRunOrThrow,
-  getProjectIdForThreadOrThrow,
-  getRunOrThrow,
   getStepOrThrow,
-  getThreadOrThrow,
+  mapTraceRows,
+  parseRunTraceRowsFromStorage,
+  applyRunTraceRowsToStorage,
+} from "./trace-store";
+import {
   mapArtifactRow,
   mapRunEventRow,
   mapRunInputRefRow,
   mapRunRow,
   mapRunStepRow,
-  mapTraceRows,
-  parseRunTraceRowsFromStorage,
-  readProjectAiStorage,
+} from "./mappers";
+import {
   serializeOptionalJson,
   serializeRequiredJson,
   sortByCreatedAt,
-  touchProject,
-  touchThread,
   trimOptionalString,
-  updateProjectAiStorage,
   type CreateArtifactInput,
   type CreateRunEventInput,
   type CreateRunInput,
   type CreateRunStepInput,
   type ProjectAiStorage,
-} from "./core";
+} from "./shared";
+import {
+  getNodeOrThrow,
+  getProjectIdForRunOrThrow,
+  getProjectIdForThreadOrThrow,
+  getRunOrThrow,
+  getThreadOrThrow,
+  readProjectAiStorage,
+  touchProject,
+  touchThread,
+  updateProjectAiStorage,
+} from "./storage";
 import { createId } from "@/shared/lib/domain";
 
 export { buildAgentRunCacheFieldsFromTrace };
-export type { RunTraceRows } from "./core";
+export type { RunTraceRows } from "./shared";
 
 export function createRun(input: CreateRunInput) {
   const projectId = getProjectIdForThreadOrThrow(input.threadId);
