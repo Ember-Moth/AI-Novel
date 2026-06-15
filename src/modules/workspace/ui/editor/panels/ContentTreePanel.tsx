@@ -26,6 +26,7 @@ import type { ContentTreeNodeVM } from "@/modules/workspace/ui/editor/model/type
 import { cn } from "@/shared/lib/cn";
 
 const CONTENT_ROW_SELECTOR = "[data-row-id]";
+const CONTENT_PANEL_DROP_ZONE_ATTRIBUTE = "data-content-panel-drop-zone";
 type ContentDropIntent = ContentMoveIntent;
 type ContentBoundaryIntent = ContentMoveIntent & {
   position: Exclude<ContentDropPosition, "inside">;
@@ -296,7 +297,6 @@ export function ContentTreePanel({
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropIntent, setDropIntent] = useState<ContentDropIntent | null>(null);
   const [dropIndicatorRect, setDropIndicatorRect] = useState<DropIndicatorRect | null>(null);
-  const [panelMinHeight, setPanelMinHeight] = useState<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const subtreeIdsRef = useRef<Set<string>>(new Set());
   const panelNodeMap = useMemo(() => buildPanelNodeMap(tree), [tree]);
@@ -325,23 +325,15 @@ export function ContentTreePanel({
   );
 
   useLayoutEffect(() => {
-    const panelElement = panelRef.current;
-    const viewportElement = panelElement?.closest(".simplebar-content")?.parentElement;
-    if (!(panelElement instanceof HTMLElement) || !(viewportElement instanceof HTMLElement)) {
-      setPanelMinHeight(null);
+    const simplebarElement = panelRef.current?.closest(".scrollbar-panel");
+    if (!(simplebarElement instanceof HTMLElement)) {
       return;
     }
 
-    const updateMinHeight = () => {
-      setPanelMinHeight(viewportElement.clientHeight);
+    simplebarElement.setAttribute(CONTENT_PANEL_DROP_ZONE_ATTRIBUTE, "");
+    return () => {
+      simplebarElement.removeAttribute(CONTENT_PANEL_DROP_ZONE_ATTRIBUTE);
     };
-
-    updateMinHeight();
-    const observer = new ResizeObserver(() => {
-      updateMinHeight();
-    });
-    observer.observe(viewportElement);
-    return () => observer.disconnect();
   }, []);
 
   useLayoutEffect(() => {
@@ -422,51 +414,35 @@ export function ContentTreePanel({
     const source = document.elementFromPoint(point.x, point.y);
     const row = source?.closest(CONTENT_ROW_SELECTOR);
 
-    if (!(row instanceof HTMLElement)) {
-      return findBlankAreaDropIntent(nodeId, point);
+    if (row instanceof HTMLElement) {
+      const targetId = row.dataset.rowId;
+      if (!targetId || targetId === nodeId || subtreeIdsRef.current.has(targetId)) {
+        return null;
+      }
+
+      const position = dropPositionFromPointer(point.y, row);
+      const nextIntent = { nodeId, targetId, position };
+      const resolved = resolveContentMove({
+        tree,
+        parentMap: panelParentMap,
+        nodeMap: panelNodeMap,
+        ...nextIntent,
+      });
+
+      return resolved ? nextIntent : null;
     }
 
-    const targetId = row.dataset.rowId;
-    if (!targetId || targetId === nodeId || subtreeIdsRef.current.has(targetId)) {
-      return null;
+    const panelDropZone = source?.closest(`[${CONTENT_PANEL_DROP_ZONE_ATTRIBUTE}]`);
+    if (panelDropZone instanceof HTMLElement) {
+      return findRootEndDropIntent(nodeId);
     }
 
-    const position = dropPositionFromPointer(point.y, row);
-    const nextIntent = { nodeId, targetId, position };
-    const resolved = resolveContentMove({
-      tree,
-      parentMap: panelParentMap,
-      nodeMap: panelNodeMap,
-      ...nextIntent,
-    });
-
-    return resolved ? nextIntent : null;
+    return null;
   };
 
-  const findBlankAreaDropIntent = (nodeId: string, point: { x: number; y: number }) => {
-    const panelElement = panelRef.current;
+  const findRootEndDropIntent = (nodeId: string) => {
     const lastTopLevelNode = tree.at(-1);
-    if (!panelElement || !lastTopLevelNode) {
-      return null;
-    }
-
-    const panelRect = panelElement.getBoundingClientRect();
-    if (
-      point.x < panelRect.left ||
-      point.x > panelRect.right ||
-      point.y < panelRect.top ||
-      point.y > panelRect.bottom
-    ) {
-      return null;
-    }
-
-    const visibleRows = panelElement.querySelectorAll(CONTENT_ROW_SELECTOR);
-    const lastVisibleRow = visibleRows.item(visibleRows.length - 1);
-    if (!(lastVisibleRow instanceof HTMLElement)) {
-      return null;
-    }
-
-    if (point.y < lastVisibleRow.getBoundingClientRect().bottom) {
+    if (!lastTopLevelNode) {
       return null;
     }
 
@@ -532,12 +508,7 @@ export function ContentTreePanel({
   );
 
   return (
-    <div
-      ref={panelRef}
-      className="relative min-h-full pb-2"
-      style={panelMinHeight == null ? undefined : { minHeight: panelMinHeight }}
-      aria-busy={isPending}
-    >
+    <div ref={panelRef} className="relative min-h-full pb-2" aria-busy={isPending}>
       <RefreshOverlay active={isPending} />
       <div
         inert={isPending}

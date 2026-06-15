@@ -25,6 +25,7 @@ import type { AuxTreeNodeVM } from "@/modules/workspace/ui/editor/model/types";
 import { cn } from "@/shared/lib/cn";
 
 const AUX_ROW_SELECTOR = "[data-row-id]";
+const AUX_PANEL_DROP_ZONE_ATTRIBUTE = "data-aux-panel-drop-zone";
 type AuxDropIndicatorTarget = { mode: "node"; nodeId: string } | { mode: "root" };
 
 type DropIndicatorRect = {
@@ -398,7 +399,6 @@ export function AuxTreePanel({
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropIntent, setDropIntent] = useState<AuxHierarchyMoveIntent | null>(null);
   const [dropIndicatorRect, setDropIndicatorRect] = useState<DropIndicatorRect | null>(null);
-  const [panelMinHeight, setPanelMinHeight] = useState<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const subtreeIdsRef = useRef<Set<string>>(new Set());
   const panelNodeMap = useMemo(() => buildPanelNodeMap(tree), [tree]);
@@ -413,23 +413,15 @@ export function AuxTreePanel({
   );
 
   useLayoutEffect(() => {
-    const panelElement = panelRef.current;
-    const viewportElement = panelElement?.closest(".simplebar-content")?.parentElement;
-    if (!(panelElement instanceof HTMLElement) || !(viewportElement instanceof HTMLElement)) {
-      setPanelMinHeight(null);
+    const simplebarElement = panelRef.current?.closest(".scrollbar-panel");
+    if (!(simplebarElement instanceof HTMLElement)) {
       return;
     }
 
-    const updateMinHeight = () => {
-      setPanelMinHeight(viewportElement.clientHeight);
+    simplebarElement.setAttribute(AUX_PANEL_DROP_ZONE_ATTRIBUTE, "");
+    return () => {
+      simplebarElement.removeAttribute(AUX_PANEL_DROP_ZONE_ATTRIBUTE);
     };
-
-    updateMinHeight();
-    const observer = new ResizeObserver(() => {
-      updateMinHeight();
-    });
-    observer.observe(viewportElement);
-    return () => observer.disconnect();
   }, []);
 
   useLayoutEffect(() => {
@@ -495,55 +487,35 @@ export function AuxTreePanel({
     const source = document.elementFromPoint(point.x, point.y);
     const row = source?.closest(AUX_ROW_SELECTOR);
 
-    if (!(row instanceof HTMLElement)) {
-      return findBlankAreaDropIntent(nodeId, point);
+    if (row instanceof HTMLElement) {
+      const targetId = row.dataset.rowId;
+      if (!targetId || targetId === nodeId || subtreeIdsRef.current.has(targetId)) {
+        return null;
+      }
+      const targetNode = panelNodeMap.get(targetId);
+      if (targetNode?.overlayStatus === "deleted") {
+        return null;
+      }
+
+      const nextIntent = { nodeId, targetId };
+      const resolved = resolveAuxHierarchyMove({
+        parentMap: panelParentMap,
+        nodeMap: panelNodeMap,
+        auxRootPath: rootId,
+        ...nextIntent,
+      });
+      return resolved ? nextIntent : null;
     }
 
-    const targetId = row.dataset.rowId;
-    if (!targetId || targetId === nodeId || subtreeIdsRef.current.has(targetId)) {
-      return null;
-    }
-    const targetNode = panelNodeMap.get(targetId);
-    if (targetNode?.overlayStatus === "deleted") {
-      return null;
+    const panelDropZone = source?.closest(`[${AUX_PANEL_DROP_ZONE_ATTRIBUTE}]`);
+    if (panelDropZone instanceof HTMLElement) {
+      return findRootDropIntent(nodeId);
     }
 
-    const nextIntent = { nodeId, targetId };
-    const resolved = resolveAuxHierarchyMove({
-      parentMap: panelParentMap,
-      nodeMap: panelNodeMap,
-      auxRootPath: rootId,
-      ...nextIntent,
-    });
-    return resolved ? nextIntent : null;
+    return null;
   };
 
-  const findBlankAreaDropIntent = (nodeId: string, point: { x: number; y: number }) => {
-    const panelElement = panelRef.current;
-    if (!panelElement) {
-      return null;
-    }
-
-    const panelRect = panelElement.getBoundingClientRect();
-    if (
-      point.x < panelRect.left ||
-      point.x > panelRect.right ||
-      point.y < panelRect.top ||
-      point.y > panelRect.bottom
-    ) {
-      return null;
-    }
-
-    const visibleRows = panelElement.querySelectorAll(AUX_ROW_SELECTOR);
-    const lastVisibleRow = visibleRows.item(visibleRows.length - 1);
-    if (!(lastVisibleRow instanceof HTMLElement)) {
-      return null;
-    }
-
-    if (point.y < lastVisibleRow.getBoundingClientRect().bottom) {
-      return null;
-    }
-
+  const findRootDropIntent = (nodeId: string) => {
     const nextIntent = {
       nodeId,
       targetId: null,
@@ -610,12 +582,7 @@ export function AuxTreePanel({
   );
 
   return (
-    <div
-      ref={panelRef}
-      className="relative min-h-full pb-2"
-      style={panelMinHeight == null ? undefined : { minHeight: panelMinHeight }}
-      aria-busy={isPending}
-    >
+    <div ref={panelRef} className="relative min-h-full pb-2" aria-busy={isPending}>
       <RefreshOverlay active={isPending} />
       <div
         inert={isPending}
