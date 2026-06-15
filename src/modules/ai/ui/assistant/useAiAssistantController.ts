@@ -4,33 +4,44 @@ import type {
   AgentThreadView,
   ProjectAssistantContextSnapshot,
   ProjectAssistantStreamEvent,
-  ProjectAssistantToolName,
   TimelineSelectionUpdatedEvent,
   WorkspaceRefreshRequestedEvent,
-} from "@/modules/ai/domain/types";
-import {
-  PROJECT_ASSISTANT_WRITE_TOOL_NAMES,
-  PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES,
 } from "@/modules/ai/domain/types";
 import { rpc } from "@/rpc/client";
 
 import {
-  buildAssistantToolTraceSummary,
-  buildStreamingAssistantToolTraceSummary,
   canSendAssistantMessage,
   EMPTY_ASSISTANT_STATE,
   EMPTY_THREADS,
-  type AssistantToolTraceEntry,
   type AssistantAskUserAnswer,
   type EditingThreadState,
   getCandidateGroupForNode,
-  getRunErrorMessage,
-  getUsageTotalTokens,
   selectPendingRun,
   selectRetryableRun,
   type PendingAssistantAction,
 } from "./assistantState";
+import {
+  applyAssistantStreamEvent,
+  buildProjectAssistantRetryActiveTools,
+  buildProjectAssistantSendActiveTools,
+  createStreamOverlay,
+  failAssistantStreamOverlay,
+  getForwardedAssistantRefreshEvent,
+  isAssistantStreamAbortError,
+  isToolInputResumeEvent,
+  type AssistantStreamOverlay,
+} from "./assistantStreamOrchestration";
 import type { AssistantComposerSubmitPayload } from "./AssistantComposer";
+
+export {
+  applyStreamEvent,
+  buildProjectAssistantRetryActiveTools,
+  buildProjectAssistantSendActiveTools,
+  createStreamOverlay,
+  isToolInputResumeEvent,
+  shouldRenderPendingStreamBlocks,
+  type AssistantStreamOverlay,
+} from "./assistantStreamOrchestration";
 
 export type SessionListRow =
   | {
@@ -44,39 +55,6 @@ export type SessionListRow =
       type: "archived-toggle";
       count: number;
     };
-
-export interface AssistantStreamOverlay {
-  kind: "send" | "retry" | "continue" | "tool-input";
-  threadId: string;
-  triggerNodeId: string | null;
-  runId: string | null;
-  activeAssistantNodeId: string | null;
-  startedAt: number;
-  completedAt: number | null;
-  status: "running" | "failed";
-  stepCount: number;
-  totalTokens: number | null;
-  errorMessage: string | null;
-  blocks: Array<{
-    assistantNodeId: string;
-    assistantText: string;
-    reasoningTrace: Array<{
-      reasoningId: string;
-      text: string;
-    }>;
-    contentOrder: Array<
-      | {
-          kind: "text";
-          id: "text";
-        }
-      | {
-          kind: "reasoning";
-          id: string;
-        }
-    >;
-    toolTrace: AssistantToolTraceEntry[];
-  }>;
-}
 
 export const DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND = true;
 
@@ -155,416 +133,6 @@ export function resolveExpectedActiveThreadAfterArchiveToggle({
   return null;
 }
 
-export function createStreamOverlay({
-  kind,
-  threadId,
-  triggerNodeId,
-  runId = null,
-}: {
-  kind: "send" | "retry" | "continue" | "tool-input";
-  threadId: string;
-  triggerNodeId: string | null;
-  runId?: string | null;
-}): AssistantStreamOverlay {
-  return {
-    kind,
-    threadId,
-    triggerNodeId,
-    runId,
-    activeAssistantNodeId: null,
-    startedAt: Date.now(),
-    completedAt: null,
-    status: "running",
-    stepCount: 0,
-    totalTokens: null,
-    errorMessage: null,
-    blocks: [],
-  };
-}
-
-export function shouldRenderPendingStreamBlocks(
-  overlay: AssistantStreamOverlay | null,
-): overlay is AssistantStreamOverlay & { kind: "send" | "continue" | "tool-input" } {
-  return overlay?.kind === "send" || overlay?.kind === "continue" || overlay?.kind === "tool-input";
-}
-
-export function isToolInputResumeEvent(event: ProjectAssistantStreamEvent): boolean {
-  return (
-    event.type === "user-input-submitted" ||
-    event.type === "assistant-message-started" ||
-    event.type === "assistant-text-delta" ||
-    event.type === "assistant-reasoning-delta" ||
-    event.type === "tool-call-streaming-start" ||
-    event.type === "tool-call-delta" ||
-    event.type === "tool-call" ||
-    event.type === "tool-result" ||
-    event.type === "step-started" ||
-    event.type === "step-finished"
-  );
-}
-
-export function buildProjectAssistantSendActiveTools({
-  allowWrites,
-}: {
-  allowWrites: boolean;
-}): ProjectAssistantToolName[] {
-  return allowWrites
-    ? [...PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES, ...PROJECT_ASSISTANT_WRITE_TOOL_NAMES]
-    : [...PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES];
-}
-
-export function buildProjectAssistantRetryActiveTools(): ProjectAssistantToolName[] {
-  return [...PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES];
-}
-
-function updateStreamToolTrace(
-  current: AssistantToolTraceEntry[],
-  event: Extract<
-    ProjectAssistantStreamEvent,
-    { type: "tool-call-streaming-start" | "tool-call-delta" | "tool-call" | "tool-result" }
-  >,
-) {
-  if (event.type === "tool-call-streaming-start") {
-    const index = current.findIndex(
-      (entry) => entry.toolCallId === event.toolCallId || entry.toolName === event.toolName,
-    );
-    if (index >= 0) {
-      return current.map((entry, entryIndex) =>
-        entryIndex === index
-          ? {
-              ...entry,
-              toolCallId: event.toolCallId,
-              toolName: event.toolName,
-              nodeId: event.assistantNodeId,
-              summary: buildStreamingAssistantToolTraceSummary({
-                toolName: event.toolName,
-                inputText: entry.streamingInputText ?? "",
-              }),
-            }
-          : entry,
-      );
-    }
-
-    return [
-      ...current,
-      {
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        status: "pending" as const,
-        summary: buildStreamingAssistantToolTraceSummary({
-          toolName: event.toolName,
-          inputText: "",
-        }),
-        nodeId: event.assistantNodeId,
-        runId: null,
-        requestPayload: null,
-        responsePayload: null,
-        streamingInputText: "",
-      },
-    ];
-  }
-
-  if (event.type === "tool-call-delta") {
-    const index = current.findIndex(
-      (entry) => entry.toolCallId === event.toolCallId || entry.toolName === event.toolName,
-    );
-    if (index < 0) {
-      return current;
-    }
-
-    return current.map((entry, entryIndex) =>
-      entryIndex === index
-        ? {
-            ...entry,
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            nodeId: event.assistantNodeId,
-            summary: buildStreamingAssistantToolTraceSummary({
-              toolName: event.toolName,
-              inputText: event.inputText,
-            }),
-            streamingInputText: event.inputText,
-          }
-        : entry,
-    );
-  }
-
-  if (event.type === "tool-call") {
-    const index = current.findIndex(
-      (entry) =>
-        (entry.toolCallId != null &&
-          event.toolCallId != null &&
-          entry.toolCallId === event.toolCallId) ||
-        (event.toolCallId == null &&
-          entry.toolName === event.toolName &&
-          entry.status === "pending"),
-    );
-    if (index >= 0) {
-      return current.map((entry, entryIndex) =>
-        entryIndex === index
-          ? {
-              ...entry,
-              toolCallId: event.toolCallId,
-              toolName: event.toolName,
-              status: "pending" as const,
-              summary: buildAssistantToolTraceSummary({
-                toolName: event.toolName,
-                requestPayload: event.input,
-              }),
-              nodeId: event.assistantNodeId,
-              requestPayload: event.input,
-              responsePayload: null,
-              streamingInputText: null,
-            }
-          : entry,
-      );
-    }
-
-    return [
-      ...current,
-      {
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        status: "pending" as const,
-        summary: buildAssistantToolTraceSummary({
-          toolName: event.toolName,
-          requestPayload: event.input,
-        }),
-        nodeId: event.assistantNodeId,
-        runId: null,
-        requestPayload: event.input,
-        responsePayload: null,
-        streamingInputText: null,
-      },
-    ];
-  }
-
-  const index = current.findIndex(
-    (entry) =>
-      entry.toolCallId != null && event.toolCallId != null && entry.toolCallId === event.toolCallId,
-  );
-  if (index < 0) {
-    return [
-      ...current,
-      {
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        status: event.status,
-        summary: buildAssistantToolTraceSummary({
-          toolName: event.toolName,
-          requestPayload: null,
-          responsePayload: event.output,
-          status: event.status,
-        }),
-        nodeId: event.toolNodeId,
-        runId: null,
-        requestPayload: null,
-        responsePayload: event.output,
-        streamingInputText: null,
-      },
-    ];
-  }
-
-  return current.map((entry, entryIndex) =>
-    entryIndex === index
-      ? {
-          ...entry,
-          status: event.status,
-          summary: buildAssistantToolTraceSummary({
-            toolName: entry.toolName,
-            requestPayload: entry.requestPayload,
-            responsePayload: event.output,
-            status: event.status,
-          }),
-          responsePayload: event.output,
-          streamingInputText: null,
-        }
-      : entry,
-  );
-}
-
-function ensureStreamBlock(
-  overlay: AssistantStreamOverlay,
-  assistantNodeId: string,
-): AssistantStreamOverlay {
-  if (overlay.blocks.some((block) => block.assistantNodeId === assistantNodeId)) {
-    return overlay;
-  }
-
-  return {
-    ...overlay,
-    blocks: [
-      ...overlay.blocks,
-      {
-        assistantNodeId,
-        assistantText: "",
-        reasoningTrace: [],
-        contentOrder: [],
-        toolTrace: [],
-      },
-    ],
-  };
-}
-
-export function applyStreamEvent(
-  overlay: AssistantStreamOverlay,
-  event: ProjectAssistantStreamEvent,
-): AssistantStreamOverlay {
-  if (event.type === "run-started") {
-    return {
-      ...overlay,
-      runId: event.run.id,
-      triggerNodeId: event.triggerNodeId,
-    };
-  }
-
-  if (event.type === "step-started") {
-    return {
-      ...overlay,
-      stepCount: Math.max(overlay.stepCount, event.stepIndex + 1),
-    };
-  }
-
-  if (event.type === "assistant-message-started") {
-    const nextOverlay = ensureStreamBlock(overlay, event.nodeId);
-    return {
-      ...nextOverlay,
-      activeAssistantNodeId: event.nodeId,
-      stepCount: Math.max(nextOverlay.stepCount, event.stepIndex + 1),
-    };
-  }
-
-  if (event.type === "assistant-text-delta") {
-    const nextOverlay = ensureStreamBlock(overlay, event.nodeId);
-    return {
-      ...nextOverlay,
-      activeAssistantNodeId: event.nodeId,
-      blocks: nextOverlay.blocks.map((block) =>
-        block.assistantNodeId === event.nodeId
-          ? {
-              ...block,
-              contentOrder: block.contentOrder.some((entry) => entry.kind === "text")
-                ? block.contentOrder
-                : [...block.contentOrder, { kind: "text", id: "text" }],
-              assistantText: `${block.assistantText}${event.delta}`,
-            }
-          : block,
-      ),
-    };
-  }
-
-  if (event.type === "assistant-reasoning-delta") {
-    const nextOverlay = ensureStreamBlock(overlay, event.nodeId);
-    return {
-      ...nextOverlay,
-      activeAssistantNodeId: event.nodeId,
-      blocks: nextOverlay.blocks.map((block) => {
-        if (block.assistantNodeId !== event.nodeId) {
-          return block;
-        }
-
-        const reasoningIndex = block.reasoningTrace.findIndex(
-          (entry) => entry.reasoningId === event.reasoningId,
-        );
-        if (reasoningIndex < 0) {
-          return {
-            ...block,
-            contentOrder: [...block.contentOrder, { kind: "reasoning", id: event.reasoningId }],
-            reasoningTrace: [
-              ...block.reasoningTrace,
-              {
-                reasoningId: event.reasoningId,
-                text: event.accumulatedText,
-              },
-            ],
-          };
-        }
-
-        return {
-          ...block,
-          reasoningTrace: block.reasoningTrace.map((entry, index) =>
-            index === reasoningIndex ? { ...entry, text: event.accumulatedText } : entry,
-          ),
-        };
-      }),
-    };
-  }
-
-  if (
-    event.type === "tool-call-streaming-start" ||
-    event.type === "tool-call-delta" ||
-    event.type === "tool-call" ||
-    event.type === "tool-result"
-  ) {
-    const blockIndex =
-      event.type === "tool-call-streaming-start" ||
-      event.type === "tool-call-delta" ||
-      event.type === "tool-call"
-        ? overlay.blocks.findIndex((block) => block.assistantNodeId === event.assistantNodeId)
-        : overlay.blocks.findIndex((block) =>
-            block.toolTrace.some(
-              (entry) => entry.toolCallId != null && entry.toolCallId === event.toolCallId,
-            ),
-          );
-    const fallbackIndex = overlay.blocks.length - 1;
-    const targetIndex = blockIndex >= 0 ? blockIndex : fallbackIndex;
-    if (targetIndex < 0) {
-      return overlay;
-    }
-
-    return {
-      ...overlay,
-      blocks: overlay.blocks.map((block, index) =>
-        index === targetIndex
-          ? {
-              ...block,
-              toolTrace: updateStreamToolTrace(block.toolTrace, event),
-            }
-          : block,
-      ),
-    };
-  }
-
-  if (event.type === "user-input-requested") {
-    const nextOverlay = ensureStreamBlock(overlay, event.assistantNodeId);
-    return {
-      ...nextOverlay,
-      activeAssistantNodeId: event.assistantNodeId,
-      blocks: nextOverlay.blocks.map((block) =>
-        block.assistantNodeId === event.assistantNodeId
-          ? {
-              ...block,
-              toolTrace: [
-                ...block.toolTrace,
-                {
-                  toolCallId: event.toolCallId,
-                  toolName: event.toolName,
-                  status: "pending",
-                  summary: "等待回答",
-                  nodeId: event.assistantNodeId,
-                  runId: overlay.runId,
-                  requestPayload: event.input,
-                  responsePayload: null,
-                },
-              ],
-            }
-          : block,
-      ),
-    };
-  }
-
-  if (event.type === "step-finished") {
-    const tokens = getUsageTotalTokens(event.usage);
-    return {
-      ...overlay,
-      stepCount: Math.max(overlay.stepCount, event.stepIndex + 1),
-      totalTokens: tokens == null ? overlay.totalTokens : (overlay.totalTokens ?? 0) + tokens,
-    };
-  }
-
-  return overlay;
-}
-
 function patchAssistantOverviewState({
   projectId,
   thread,
@@ -599,6 +167,20 @@ export function useAiAssistantController(
   ) => void,
   context?: ProjectAssistantContextSnapshot | null,
 ) {
+  type AssistantStreamResult = {
+    thread: AgentThreadView;
+    state: typeof EMPTY_ASSISTANT_STATE;
+  };
+
+  type AssistantStreamMutation<Input> = {
+    startAsync: (
+      input: Input,
+      options: {
+        onEvent: (_event: ProjectAssistantStreamEvent) => void;
+      },
+    ) => Promise<AssistantStreamResult>;
+  };
+
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [draft, setDraft] = useState("");
@@ -788,6 +370,57 @@ export function useAiAssistantController(
     [handleSelectionChange, saveSelection],
   );
 
+  const runAssistantStreamAction = useCallback(
+    async <Input>({
+      overlay,
+      mutation,
+      input,
+      fallbackErrorMessage,
+      onEvent,
+    }: {
+      overlay: AssistantStreamOverlay;
+      mutation: AssistantStreamMutation<Input>;
+      input: Input;
+      fallbackErrorMessage: string;
+      onEvent?: (_event: ProjectAssistantStreamEvent) => void;
+    }) => {
+      setActiveStream(overlay);
+
+      try {
+        const result = await mutation.startAsync(input, {
+          onEvent: (event) => {
+            const refreshEvent = getForwardedAssistantRefreshEvent(event);
+            if (refreshEvent) {
+              onWorkspaceRefreshRequested?.(refreshEvent);
+            }
+            onEvent?.(event);
+            setActiveStream((current) => applyAssistantStreamEvent(current, event));
+          },
+        });
+        patchAssistantOverviewState({
+          projectId,
+          thread: result.thread,
+          state: result.state,
+        });
+        setActiveStream(null);
+        return { status: "success" as const };
+      } catch (error) {
+        if (isAssistantStreamAbortError(error)) {
+          void assistantOverviewQuery.refetch();
+          setActiveStream(null);
+          return { status: "aborted" as const };
+        }
+
+        const message = error instanceof Error ? error.message : fallbackErrorMessage;
+        setComposerError(message);
+        setActiveStream((current) => failAssistantStreamOverlay(current, message));
+        void assistantOverviewQuery.refetch();
+        return { status: "error" as const };
+      }
+    },
+    [assistantOverviewQuery, onWorkspaceRefreshRequested, projectId],
+  );
+
   const sendAssistantMessage = useCallback(
     async (payload: AssistantComposerSubmitPayload) => {
       const text = payload.text.trim();
@@ -801,7 +434,6 @@ export function useAiAssistantController(
       setDraft("");
       setDraftMentionCount(0);
       let clearPendingAction = true;
-      let streamStarted = false;
 
       try {
         let threadId = activeThreadId;
@@ -811,16 +443,14 @@ export function useAiAssistantController(
           setExpectedActiveThreadId(thread.id);
         }
 
-        streamStarted = true;
-        setActiveStream(
-          createStreamOverlay({
+        const result = await runAssistantStreamAction({
+          overlay: createStreamOverlay({
             kind: "send",
             threadId,
             triggerNodeId: null,
           }),
-        );
-        const result = await sendMessageStream.startAsync(
-          {
+          mutation: sendMessageStream,
+          input: {
             projectId,
             threadId,
             text,
@@ -828,47 +458,22 @@ export function useAiAssistantController(
             context,
             activeTools,
           },
-          {
-            onEvent: (event) => {
-              if (
-                event.type === "workspace-refresh-requested" ||
-                event.type === "timeline-selection-updated"
-              ) {
-                onWorkspaceRefreshRequested?.(event);
-              }
-              setActiveStream((current) =>
-                current == null ? current : applyStreamEvent(current, event),
-              );
-            },
-          },
-        );
-        patchAssistantOverviewState({
-          projectId,
-          thread: result.thread,
-          state: result.state,
+          fallbackErrorMessage: "发送消息失败。",
         });
-        setActiveStream(null);
+
+        if (result.status !== "success") {
+          setDraft(text);
+          setDraftMentionCount(0);
+        }
+
+        if (result.status === "error") {
+          clearPendingAction = false;
+        }
       } catch (error) {
         setDraft(text);
         setDraftMentionCount(0);
-        if (error instanceof Error && error.name === "RpcStreamAborted") {
-          void assistantOverviewQuery.refetch();
-          setActiveStream(null);
-          return;
-        }
-        clearPendingAction = !streamStarted;
         const message = error instanceof Error ? error.message : "发送消息失败。";
         setComposerError(message);
-        setActiveStream((current) =>
-          current == null
-            ? current
-            : {
-                ...current,
-                status: "failed",
-                completedAt: Date.now(),
-                errorMessage: message || getRunErrorMessage(),
-              },
-        );
         void assistantOverviewQuery.refetch();
       } finally {
         setAllowWritesForNextSend(DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND);
@@ -883,8 +488,8 @@ export function useAiAssistantController(
       assistantOverviewQuery,
       context,
       createThread,
-      onWorkspaceRefreshRequested,
       projectId,
+      runAssistantStreamAction,
       sendMessageStream,
       selectedModelSupportsToolUse,
     ],
@@ -931,17 +536,15 @@ export function useAiAssistantController(
 
       setComposerError(null);
       setPendingAction({ kind: "retry", triggerNodeId });
-      setActiveStream(
-        createStreamOverlay({
-          kind: "retry",
-          threadId: activeThreadId,
-          triggerNodeId,
-        }),
-      );
-
       try {
-        const result = await retryMessageStream.startAsync(
-          {
+        await runAssistantStreamAction({
+          overlay: createStreamOverlay({
+            kind: "retry",
+            threadId: activeThreadId,
+            triggerNodeId,
+          }),
+          mutation: retryMessageStream,
+          input: {
             projectId,
             threadId: activeThreadId,
             triggerNodeId,
@@ -949,56 +552,18 @@ export function useAiAssistantController(
               ? buildProjectAssistantRetryActiveTools()
               : null,
           },
-          {
-            onEvent: (event) => {
-              if (
-                event.type === "workspace-refresh-requested" ||
-                event.type === "timeline-selection-updated"
-              ) {
-                onWorkspaceRefreshRequested?.(event);
-              }
-              setActiveStream((current) =>
-                current == null ? current : applyStreamEvent(current, event),
-              );
-            },
-          },
-        );
-        patchAssistantOverviewState({
-          projectId,
-          thread: result.thread,
-          state: result.state,
+          fallbackErrorMessage: "重试失败。",
         });
-        setActiveStream(null);
-      } catch (error) {
-        if (error instanceof Error && error.name === "RpcStreamAborted") {
-          void assistantOverviewQuery.refetch();
-          setActiveStream(null);
-          return;
-        }
-        const message = error instanceof Error ? error.message : "重试失败。";
-        setComposerError(message);
-        setActiveStream((current) =>
-          current == null
-            ? current
-            : {
-                ...current,
-                status: "failed",
-                completedAt: Date.now(),
-                errorMessage: message || getRunErrorMessage(),
-              },
-        );
-        void assistantOverviewQuery.refetch();
       } finally {
         setPendingAction(null);
       }
     },
     [
       activeThreadId,
-      assistantOverviewQuery,
       projectId,
       retryMessageStream,
+      runAssistantStreamAction,
       selectedModelSupportsToolUse,
-      onWorkspaceRefreshRequested,
     ],
   );
 
@@ -1010,71 +575,26 @@ export function useAiAssistantController(
 
       setComposerError(null);
       setPendingAction({ kind: "continue", runId });
-      setActiveStream(
-        createStreamOverlay({
-          kind: "continue",
-          threadId: activeThreadId,
-          triggerNodeId: null,
-        }),
-      );
-
       try {
-        const result = await continueRunStream.startAsync(
-          {
+        await runAssistantStreamAction({
+          overlay: createStreamOverlay({
+            kind: "continue",
+            threadId: activeThreadId,
+            triggerNodeId: null,
+          }),
+          mutation: continueRunStream,
+          input: {
             projectId,
             threadId: activeThreadId,
             runId,
           },
-          {
-            onEvent: (event) => {
-              if (
-                event.type === "workspace-refresh-requested" ||
-                event.type === "timeline-selection-updated"
-              ) {
-                onWorkspaceRefreshRequested?.(event);
-              }
-              setActiveStream((current) =>
-                current == null ? current : applyStreamEvent(current, event),
-              );
-            },
-          },
-        );
-        patchAssistantOverviewState({
-          projectId,
-          thread: result.thread,
-          state: result.state,
+          fallbackErrorMessage: "继续生成失败。",
         });
-        setActiveStream(null);
-      } catch (error) {
-        if (error instanceof Error && error.name === "RpcStreamAborted") {
-          void assistantOverviewQuery.refetch();
-          setActiveStream(null);
-          return;
-        }
-        const message = error instanceof Error ? error.message : "继续生成失败。";
-        setComposerError(message);
-        setActiveStream((current) =>
-          current == null
-            ? current
-            : {
-                ...current,
-                status: "failed",
-                completedAt: Date.now(),
-                errorMessage: message || getRunErrorMessage(),
-              },
-        );
-        void assistantOverviewQuery.refetch();
       } finally {
         setPendingAction(null);
       }
     },
-    [
-      activeThreadId,
-      assistantOverviewQuery,
-      continueRunStream,
-      onWorkspaceRefreshRequested,
-      projectId,
-    ],
+    [activeThreadId, continueRunStream, projectId, runAssistantStreamAction],
   );
 
   const handleSubmitToolInput = useCallback(
@@ -1090,84 +610,44 @@ export function useAiAssistantController(
         [toolCallId]: answers,
       }));
       setPendingAction({ kind: "tool-input", runId: pendingRun.id, toolCallId });
-      setActiveStream(
-        createStreamOverlay({
+      const result = await runAssistantStreamAction({
+        overlay: createStreamOverlay({
           kind: "tool-input",
           threadId: activeThreadId,
           triggerNodeId: pendingRun.triggerNodeId,
           runId: pendingRun.id,
         }),
-      );
-
-      try {
-        const result = await submitToolInputStream.startAsync(
-          {
-            projectId,
-            threadId: activeThreadId,
-            runId: pendingRun.id,
-            toolCallId,
-            answers,
-          },
-          {
-            onEvent: (event) => {
-              if (
-                event.type === "workspace-refresh-requested" ||
-                event.type === "timeline-selection-updated"
-              ) {
-                onWorkspaceRefreshRequested?.(event);
-              }
-              if (isToolInputResumeEvent(event)) {
-                setSubmittingToolInputToolCallId(null);
-              }
-              setActiveStream((current) =>
-                current == null ? current : applyStreamEvent(current, event),
-              );
-            },
-          },
-        );
-        patchAssistantOverviewState({
+        mutation: submitToolInputStream,
+        input: {
           projectId,
-          thread: result.thread,
-          state: result.state,
-        });
-        setActiveStream(null);
-      } catch (error) {
-        if (error instanceof Error && error.name === "RpcStreamAborted") {
-          void assistantOverviewQuery.refetch();
-          setActiveStream(null);
+          threadId: activeThreadId,
+          runId: pendingRun.id,
+          toolCallId,
+          answers,
+        },
+        fallbackErrorMessage: "提交回答失败。",
+        onEvent: (event) => {
+          if (isToolInputResumeEvent(event)) {
+            setSubmittingToolInputToolCallId(null);
+          }
+        },
+      });
+      try {
+        if (result.status !== "error") {
           return;
         }
+
         setSubmittedToolInputAnswers((current) => {
           const next = { ...current };
           delete next[toolCallId];
           return next;
         });
-        const message = error instanceof Error ? error.message : "提交回答失败。";
-        setComposerError(message);
-        setActiveStream((current) =>
-          current == null
-            ? current
-            : {
-                ...current,
-                status: "failed",
-                completedAt: Date.now(),
-                errorMessage: message || getRunErrorMessage(),
-              },
-        );
-        void assistantOverviewQuery.refetch();
       } finally {
         setSubmittingToolInputToolCallId(null);
         setPendingAction(null);
       }
     },
-    [
-      activeThreadId,
-      assistantOverviewQuery,
-      onWorkspaceRefreshRequested,
-      pendingRun,
-      projectId,
-      submitToolInputStream,
-    ],
+    [activeThreadId, pendingRun, projectId, runAssistantStreamAction, submitToolInputStream],
   );
 
   const handleCreateThread = useCallback(async () => {

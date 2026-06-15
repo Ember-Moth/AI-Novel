@@ -7,16 +7,22 @@ import {
 
 import { getMessagesViewportSessionKey, shouldAnimateMessageMount } from "./aiSidebarModel";
 import {
-  applyStreamEvent,
   buildProjectAssistantRetryActiveTools,
   buildProjectAssistantSendActiveTools,
   buildSessionRows,
-  createStreamOverlay,
   DEFAULT_ALLOW_WRITES_FOR_NEXT_SEND,
-  isToolInputResumeEvent,
   resolveExpectedActiveThreadAfterArchiveToggle,
-  shouldRenderPendingStreamBlocks,
 } from "./useAiAssistantController";
+import {
+  applyStreamEvent,
+  applyAssistantStreamEvent,
+  createStreamOverlay,
+  failAssistantStreamOverlay,
+  getForwardedAssistantRefreshEvent,
+  isAssistantStreamAbortError,
+  isToolInputResumeEvent,
+  shouldRenderPendingStreamBlocks,
+} from "./assistantStreamOrchestration";
 
 const baseThread = {
   projectId: "project_1",
@@ -159,6 +165,95 @@ test("user-input-submitted counts as tool input resume progress", () => {
       toolCallId: "tool_ask_1",
     }),
   ).toBe(true);
+});
+
+test("assistant message start counts as tool input resume progress", () => {
+  expect(
+    isToolInputResumeEvent({
+      type: "assistant-message-started",
+      nodeId: "assistant_1",
+      parentNodeId: "user_1",
+      stepIndex: 0,
+    }),
+  ).toBe(true);
+});
+
+test("getForwardedAssistantRefreshEvent forwards workspace refresh events", () => {
+  expect(
+    getForwardedAssistantRefreshEvent({
+      type: "workspace-refresh-requested",
+      workspaceId: "workspace_1",
+      areas: ["content"],
+      contentNodeId: "content_1",
+    }),
+  ).toEqual({
+    type: "workspace-refresh-requested",
+    workspaceId: "workspace_1",
+    areas: ["content"],
+    contentNodeId: "content_1",
+  });
+});
+
+test("getForwardedAssistantRefreshEvent forwards timeline selection events", () => {
+  expect(
+    getForwardedAssistantRefreshEvent({
+      type: "timeline-selection-updated",
+      workspaceId: "workspace_1",
+      timelinePointId: "point_1",
+      timelineLabel: "转折",
+    }),
+  ).toEqual({
+    type: "timeline-selection-updated",
+    workspaceId: "workspace_1",
+    timelinePointId: "point_1",
+    timelineLabel: "转折",
+  });
+});
+
+test("getForwardedAssistantRefreshEvent ignores non-refresh stream events", () => {
+  expect(
+    getForwardedAssistantRefreshEvent({
+      type: "step-started",
+      stepIndex: 0,
+    }),
+  ).toBeNull();
+});
+
+test("failAssistantStreamOverlay marks overlay failed with completion time", () => {
+  const startedAt = Date.now() - 10;
+  const overlay = {
+    ...createStreamOverlay({
+      kind: "retry",
+      threadId: "thread_a",
+      triggerNodeId: "assistant_1",
+    }),
+    startedAt,
+  };
+
+  const failed = failAssistantStreamOverlay(overlay, "重试失败。");
+
+  expect(failed).not.toBeNull();
+  expect(failed?.status).toBe("failed");
+  expect(failed?.errorMessage).toBe("重试失败。");
+  expect(failed?.completedAt).toBeNumber();
+  expect((failed?.completedAt ?? 0) >= startedAt).toBe(true);
+});
+
+test("applyAssistantStreamEvent preserves null overlays", () => {
+  expect(
+    applyAssistantStreamEvent(null, {
+      type: "step-started",
+      stepIndex: 0,
+    }),
+  ).toBeNull();
+});
+
+test("isAssistantStreamAbortError identifies aborted rpc stream errors", () => {
+  const error = new Error("aborted");
+  error.name = "RpcStreamAborted";
+
+  expect(isAssistantStreamAbortError(error)).toBe(true);
+  expect(isAssistantStreamAbortError(new Error("other"))).toBe(false);
 });
 
 test("applyStreamEvent keeps reasoning, text, and tool traces aligned in one stream block", () => {
