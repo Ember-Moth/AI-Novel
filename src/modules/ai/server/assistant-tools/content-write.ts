@@ -118,10 +118,10 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
         },
       }),
       execute: async ({ parentId, afterSiblingId, title, body }) => {
-        try {
+        return await withEnvelope(async () => {
           const workspace = getWorkspaceForProject(projectId);
           if (!workspace) {
-            return failure(new Error("当前项目没有默认工作区。"));
+            throw new Error("当前项目没有默认工作区。");
           }
 
           const normalizedParentId = normalizeOptionalManuscriptParentId(parentId);
@@ -137,35 +137,27 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
             .catch(() => normalizedAfterSiblingId)
             .then((queuedAfterSiblingId) => {
               const effectiveAfterSiblingId = queuedAfterSiblingId ?? normalizedAfterSiblingId;
-              const result = withEnvelope(() => {
-                const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
-                const node = createContentNode({
-                  workspaceId: workspace.id,
-                  parentId: normalizedParentId,
-                  afterSiblingId: effectiveAfterSiblingId ?? undefined,
-                  anchorPointId: resolvedTimelinePointId,
-                  title: normalizedTitle,
-                  body: body ?? undefined,
-                });
-
-                return {
-                  ok: true,
-                  truncated: false,
-                  data: {
-                    action: "created" as const,
-                    nodeId: node.id,
-                    title: node.title,
-                    parentId: node.parentId,
-                    timelinePointId: resolvedTimelinePointId,
-                  },
-                };
+              const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
+              const node = createContentNode({
+                workspaceId: workspace.id,
+                parentId: normalizedParentId,
+                afterSiblingId: effectiveAfterSiblingId ?? undefined,
+                anchorPointId: resolvedTimelinePointId,
+                title: normalizedTitle,
+                body: body ?? undefined,
               });
 
-              if (!result.ok) {
-                throw result;
-              }
-
-              return result;
+              return {
+                ok: true as const,
+                truncated: false,
+                data: {
+                  action: "created" as const,
+                  nodeId: node.id,
+                  title: node.title,
+                  parentId: node.parentId,
+                  timelinePointId: resolvedTimelinePointId,
+                },
+              };
             });
 
           createManuscriptNodeQueues.set(
@@ -177,12 +169,7 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
           );
 
           return await resultPromise;
-        } catch (error) {
-          if (error && typeof error === "object" && Reflect.get(error, "ok") === false) {
-            return error as ReturnType<typeof failure>;
-          }
-          return failure(error);
-        }
+        });
       },
     }),
     update_manuscript_node: tool({

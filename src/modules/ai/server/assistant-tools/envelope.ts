@@ -24,6 +24,8 @@ export type AssistantToolErrorContextValue =
 
 export type AssistantToolErrorContext = Record<string, AssistantToolErrorContextValue | undefined>;
 
+type MaybePromise<T> = T | Promise<T>;
+
 export function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "工具执行失败。";
 }
@@ -57,12 +59,28 @@ export function failure(
   return result;
 }
 
+function isPromiseLike<T>(value: MaybePromise<T>): value is Promise<T> {
+  return typeof value === "object" && value !== null && "then" in value;
+}
+
 export function withEnvelope<T>(
   execute: () => AssistantToolSuccess<T>,
   getContext?: () => AssistantToolErrorContext,
-): AssistantToolEnvelope<T> {
+): AssistantToolEnvelope<T>;
+export function withEnvelope<T>(
+  execute: () => Promise<AssistantToolSuccess<T>>,
+  getContext?: () => AssistantToolErrorContext,
+): Promise<AssistantToolEnvelope<T>>;
+export function withEnvelope<T>(
+  execute: () => MaybePromise<AssistantToolSuccess<T>>,
+  getContext?: () => AssistantToolErrorContext,
+): MaybePromise<AssistantToolEnvelope<T>> {
   try {
-    return execute();
+    const result = execute();
+    if (isPromiseLike(result)) {
+      return result.catch((error) => failure(error, getContext));
+    }
+    return result;
   } catch (error) {
     return failure(error, getContext);
   }
