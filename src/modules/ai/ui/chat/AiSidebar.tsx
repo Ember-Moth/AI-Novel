@@ -33,6 +33,7 @@ import { ChatComposerPane } from "./ChatComposerPane";
 import { MessageList } from "./MessageList";
 import { useAutoFollowScroll } from "./hooks/useAutoFollowScroll";
 import { SessionList } from "./SessionList";
+import { resolveSidebarActiveChat } from "./sidebarSessionState";
 import { useChatPathState } from "./hooks/useChatPathState";
 import { ProjectChatTransport } from "./transport/ProjectChatTransport";
 import type { ProjectChatMessage } from "./types";
@@ -492,25 +493,41 @@ export function AiSidebar({
   const chats = useProjectChats(projectId);
   const { chats: chatRows, createChat, isLoading, isMutating, showArchived } = chats;
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [hasAutoCreated, setHasAutoCreated] = useState(false);
+  const [hasInitializedDefaultSession, setHasInitializedDefaultSession] = useState(false);
 
   useEffect(() => {
-    if (activeChatId && chatRows.some((chat) => chat.id === activeChatId)) {
+    if (isLoading || isMutating) {
       return;
     }
 
-    if (chatRows[0]) {
-      setActiveChatId(chatRows[0].id);
-      return;
+    const resolved = resolveSidebarActiveChat({
+      activeChatId,
+      visibleChatIds: chatRows.map((chat) => chat.id),
+      canAutoCreateWhenEmpty: !hasInitializedDefaultSession && !showArchived,
+    });
+
+    if (resolved.nextActiveChatId !== activeChatId) {
+      setActiveChatId(resolved.nextActiveChatId);
     }
 
-    if (!isLoading && !isMutating && !showArchived && !hasAutoCreated) {
-      setHasAutoCreated(true);
+    if (!hasInitializedDefaultSession) {
+      setHasInitializedDefaultSession(true);
+    }
+
+    if (resolved.shouldAutoCreate) {
       void createChat().then((chat) => {
         setActiveChatId(chat.id);
       });
     }
-  }, [activeChatId, chatRows, createChat, hasAutoCreated, isLoading, isMutating, showArchived]);
+  }, [
+    activeChatId,
+    chatRows,
+    createChat,
+    hasInitializedDefaultSession,
+    isLoading,
+    isMutating,
+    showArchived,
+  ]);
 
   return (
     <aside className="flex h-full w-96 max-w-[42vw] min-w-72 shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar-background">
