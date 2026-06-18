@@ -671,7 +671,12 @@ function WorkingTreeContentChangeDetails({
     change.previousTitle !== (change.title ?? change.label);
   return (
     <div className="ml-5 flex flex-wrap items-center gap-1.5 text-[11px] leading-relaxed text-foreground-muted">
-      {bodyChanged ? <SemanticChangeChip label="正文已改" tone="amber" /> : null}
+      {bodyChanged && change.bodyCharDelta ? (
+        <SemanticBodyDeltaChip
+          added={change.bodyCharDelta.added}
+          removed={change.bodyCharDelta.removed}
+        />
+      ) : null}
       {orderChanged ? <SemanticChangeChip label="同级顺序调整" tone="slate" /> : null}
       {titleChanged ? (
         <SemanticTransitionChip
@@ -717,6 +722,23 @@ function SemanticChangeChip({ tone, label }: { tone: "amber" | "slate"; label: s
       )}
     >
       {label}
+    </span>
+  );
+}
+
+function SemanticBodyDeltaChip({ added, removed }: { added: number; removed: number }) {
+  return (
+    <span className="inline-flex h-5.5 items-stretch overflow-hidden rounded-sm border border-border bg-sidebar-background/70 align-middle text-[10px] leading-none">
+      {added > 0 ? (
+        <span className="inline-flex items-center bg-emerald-500/14 px-1.5 text-emerald-100">
+          {`+${added}`}
+        </span>
+      ) : null}
+      {removed > 0 ? (
+        <span className="inline-flex items-center bg-red-500/14 px-1.5 text-red-200/85">
+          {`-${removed}`}
+        </span>
+      ) : null}
     </span>
   );
 }

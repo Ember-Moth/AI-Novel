@@ -73,6 +73,63 @@ function summarizeBodyChange(previousBody: string, nextBody: string) {
   return previousBody !== nextBody;
 }
 
+function summarizeBodyCharDelta(previousBody: string, nextBody: string) {
+  if (previousBody === nextBody) {
+    return { added: 0, removed: 0 };
+  }
+
+  const a = Array.from(previousBody);
+  const b = Array.from(nextBody);
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
+
+  for (let i = 1; i < rows; i++) {
+    dp[i]![0] = i;
+  }
+  for (let j = 1; j < cols; j++) {
+    dp[0]![j] = j;
+  }
+
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i]![j] = dp[i - 1]![j - 1]!;
+        continue;
+      }
+      dp[i]![j] = Math.min(dp[i - 1]![j]!, dp[i]![j - 1]!) + 1;
+    }
+  }
+
+  let i = a.length;
+  let j = b.length;
+  let added = 0;
+  let removed = 0;
+
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      i -= 1;
+      j -= 1;
+      continue;
+    }
+
+    const deleteCost =
+      i > 0 ? (dp[i - 1]![j] ?? Number.POSITIVE_INFINITY) : Number.POSITIVE_INFINITY;
+    const insertCost =
+      j > 0 ? (dp[i]![j - 1] ?? Number.POSITIVE_INFINITY) : Number.POSITIVE_INFINITY;
+
+    if (deleteCost <= insertCost) {
+      removed += 1;
+      i -= 1;
+    } else {
+      added += 1;
+      j -= 1;
+    }
+  }
+
+  return { added, removed };
+}
+
 function buildContentLabel(node: {
   title: string | null;
   id: string;
@@ -190,6 +247,7 @@ function compareContentStates(
           pointIdOrOrigin(nextNode.anchorTimelinePointId),
         ),
         changedAspects: ["title", "body", "parent", "order", "anchor"],
+        bodyCharDelta: { added: Array.from(nextNode.body).length, removed: 0 },
         previousTitle: null,
         previousParentId: null,
         previousParentLabel: null,
@@ -220,6 +278,7 @@ function compareContentStates(
           pointIdOrOrigin(previousNode.anchorTimelinePointId),
         ),
         changedAspects: ["title", "body", "parent", "order", "anchor"],
+        bodyCharDelta: { added: 0, removed: Array.from(previousNode.body).length },
         previousTitle: previousNode.title,
         previousParentId: previousNode.parentId,
         previousParentLabel: resolveParentLabel(previousById, previousNode.parentId),
@@ -280,6 +339,9 @@ function compareContentStates(
         pointIdOrOrigin(nextNode.anchorTimelinePointId),
       ),
       changedAspects,
+      bodyCharDelta: changedAspects.includes("body")
+        ? summarizeBodyCharDelta(previousNode.body, nextNode.body)
+        : null,
       previousTitle: previousNode.title,
       previousParentId: previousNode.parentId,
       previousParentLabel: resolveParentLabel(previousById, previousNode.parentId),

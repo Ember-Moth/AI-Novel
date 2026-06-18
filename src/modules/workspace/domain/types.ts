@@ -165,6 +165,10 @@ export interface WorkingTreeContentChangeItem {
   anchorTimelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID;
   anchorTimelinePointLabel: string | null;
   changedAspects: ContentChangeAspect[];
+  bodyCharDelta: {
+    added: number;
+    removed: number;
+  } | null;
   previousTitle: string | null;
   previousParentId: string | null;
   previousParentLabel: string | null;

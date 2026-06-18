@@ -64,6 +64,7 @@ test("uncommitted edits before first commit appear as additions", async () => {
     anchorTimelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
     anchorTimelinePointLabel: "原点",
     changedAspects: ["title", "body", "parent", "order", "anchor"],
+    bodyCharDelta: { added: 4, removed: 0 },
     previousTitle: null,
     previousParentId: null,
     previousParentLabel: null,
@@ -173,6 +174,7 @@ test("content, timeline and aux edits appear in the diff summary", async () => {
     kind: "modified",
     title: "Changed title",
     previousTitle: "Chapter 1",
+    bodyCharDelta: { added: 8, removed: 3 },
   });
   expect(chapterChange?.changedAspects).toEqual(expect.arrayContaining(["title", "body"]));
   expect(status.areas.timeline.changes).toContainEqual({
@@ -246,6 +248,7 @@ test("content move and anchor updates are summarized semantically", async () => 
     anchorTimelinePointLabel: "Middle",
     previousAnchorTimelinePointId: introPoint.id,
     previousAnchorTimelinePointLabel: "Intro",
+    bodyCharDelta: null,
   });
   expect(chapterChange?.changedAspects).toEqual(expect.arrayContaining(["parent", "anchor"]));
 });
