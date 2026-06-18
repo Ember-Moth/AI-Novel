@@ -10,10 +10,9 @@ import {
 } from "@/modules/workspace/domain";
 
 import type { ToolBuildContext } from "./context";
-import { failure, withEnvelope } from "./envelope";
 import { getTimelineLabelById, resolveCurrentTimelinePointId } from "./timeline-helpers";
 import type { ContentWriteToolName } from "./tool-names";
-import { getWorkspaceForProject } from "./workspace";
+import { withProjectWorkspace } from "./workspace";
 
 type QueuedCreateAnchor = string | null;
 
@@ -117,60 +116,58 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
           },
         },
       }),
-      execute: async ({ parentId, afterSiblingId, title, body }) => {
-        return await withEnvelope(async () => {
-          const workspace = getWorkspaceForProject(projectId);
-          if (!workspace) {
-            throw new Error("当前项目没有默认工作区。");
-          }
+      execute: ({ parentId, afterSiblingId, title, body }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: async (workspace) => {
+            const normalizedParentId = normalizeOptionalManuscriptParentId(parentId);
+            const normalizedAfterSiblingId = normalizeOptionalSiblingId(afterSiblingId);
+            const normalizedTitle = normalizeRequiredTitle(title, "title");
+            const queueKey = createManuscriptInsertQueueKey({
+              workspaceId: workspace.id,
+              parentId: normalizedParentId,
+            });
+            const previousCreate =
+              createManuscriptNodeQueues.get(queueKey) ?? Promise.resolve(null);
 
-          const normalizedParentId = normalizeOptionalManuscriptParentId(parentId);
-          const normalizedAfterSiblingId = normalizeOptionalSiblingId(afterSiblingId);
-          const normalizedTitle = normalizeRequiredTitle(title, "title");
-          const queueKey = createManuscriptInsertQueueKey({
-            workspaceId: workspace.id,
-            parentId: normalizedParentId,
-          });
-          const previousCreate = createManuscriptNodeQueues.get(queueKey) ?? Promise.resolve(null);
+            const resultPromise = previousCreate
+              .catch(() => normalizedAfterSiblingId)
+              .then((queuedAfterSiblingId) => {
+                const effectiveAfterSiblingId = queuedAfterSiblingId ?? normalizedAfterSiblingId;
+                const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
+                const node = createContentNode({
+                  workspaceId: workspace.id,
+                  parentId: normalizedParentId,
+                  afterSiblingId: effectiveAfterSiblingId ?? undefined,
+                  anchorPointId: resolvedTimelinePointId,
+                  title: normalizedTitle,
+                  body: body ?? undefined,
+                });
 
-          const resultPromise = previousCreate
-            .catch(() => normalizedAfterSiblingId)
-            .then((queuedAfterSiblingId) => {
-              const effectiveAfterSiblingId = queuedAfterSiblingId ?? normalizedAfterSiblingId;
-              const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
-              const node = createContentNode({
-                workspaceId: workspace.id,
-                parentId: normalizedParentId,
-                afterSiblingId: effectiveAfterSiblingId ?? undefined,
-                anchorPointId: resolvedTimelinePointId,
-                title: normalizedTitle,
-                body: body ?? undefined,
+                return {
+                  ok: true as const,
+                  truncated: false,
+                  data: {
+                    action: "created" as const,
+                    nodeId: node.id,
+                    title: node.title,
+                    parentId: node.parentId,
+                    timelinePointId: resolvedTimelinePointId,
+                  },
+                };
               });
 
-              return {
-                ok: true as const,
-                truncated: false,
-                data: {
-                  action: "created" as const,
-                  nodeId: node.id,
-                  title: node.title,
-                  parentId: node.parentId,
-                  timelinePointId: resolvedTimelinePointId,
-                },
-              };
-            });
+            createManuscriptNodeQueues.set(
+              queueKey,
+              resultPromise.then(
+                (result) => result.data.nodeId,
+                () => normalizedAfterSiblingId,
+              ),
+            );
 
-          createManuscriptNodeQueues.set(
-            queueKey,
-            resultPromise.then(
-              (result) => result.data.nodeId,
-              () => normalizedAfterSiblingId,
-            ),
-          );
-
-          return await resultPromise;
-        });
-      },
+            return await resultPromise;
+          },
+        }),
     }),
     update_manuscript_node: tool({
       description:
@@ -202,46 +199,43 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
           },
         },
       }),
-      execute: async ({ nodeId, title, body, anchorPointId }) => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
+      execute: ({ nodeId, title, body, anchorPointId }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const normalizedNodeId = normalizeRequiredNodeId(nodeId, "nodeId");
+            const normalizedTitle = normalizeOptionalUpdatedTitle(title);
+            const currentTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
+            const node = updateContentNode({
+              workspaceId: workspace.id,
+              nodeId: normalizedNodeId,
+              title: normalizedTitle,
+              body: body === undefined ? undefined : (body ?? null),
+              anchorPointId: anchorPointId ?? undefined,
+            });
+            const warnings =
+              body === undefined
+                ? []
+                : buildContentAnchorTimelineWarnings({
+                    workspaceId: workspace.id,
+                    currentTimelinePointId,
+                    nodeTimelinePointId: node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID,
+                  });
+            const timelinePointId = node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID;
 
-        return withEnvelope(() => {
-          const normalizedNodeId = normalizeRequiredNodeId(nodeId, "nodeId");
-          const normalizedTitle = normalizeOptionalUpdatedTitle(title);
-          const currentTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
-          const node = updateContentNode({
-            workspaceId: workspace.id,
-            nodeId: normalizedNodeId,
-            title: normalizedTitle,
-            body: body === undefined ? undefined : (body ?? null),
-            anchorPointId: anchorPointId ?? undefined,
-          });
-          const warnings =
-            body === undefined
-              ? []
-              : buildContentAnchorTimelineWarnings({
-                  workspaceId: workspace.id,
-                  currentTimelinePointId,
-                  nodeTimelinePointId: node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID,
-                });
-          const timelinePointId = node.anchorTimelinePointId ?? ORIGIN_TIMELINE_POINT_ID;
-
-          return {
-            ok: true,
-            truncated: false,
-            data: {
-              action: "updated" as const,
-              nodeId: node.id,
-              title: node.title,
-              timelinePointId,
-              ...(warnings.length > 0 ? { warnings } : {}),
-            },
-          };
-        });
-      },
+            return {
+              ok: true as const,
+              truncated: false,
+              data: {
+                action: "updated" as const,
+                nodeId: node.id,
+                title: node.title,
+                timelinePointId,
+                ...(warnings.length > 0 ? { warnings } : {}),
+              },
+            };
+          },
+        }),
     }),
     move_manuscript_node: tool({
       description:
@@ -270,35 +264,32 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
           },
         },
       }),
-      execute: async ({ nodeId, newParentId, afterSiblingId }) => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
+      execute: ({ nodeId, newParentId, afterSiblingId }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const normalizedNodeId = normalizeRequiredNodeId(nodeId, "nodeId");
+            const normalizedParentId = normalizeOptionalManuscriptParentId(newParentId);
+            const normalizedAfterSiblingId = normalizeOptionalSiblingId(afterSiblingId);
+            const node = moveContentNode({
+              workspaceId: workspace.id,
+              nodeId: normalizedNodeId,
+              newParentId: normalizedParentId,
+              afterSiblingId: normalizedAfterSiblingId ?? undefined,
+            });
 
-        return withEnvelope(() => {
-          const normalizedNodeId = normalizeRequiredNodeId(nodeId, "nodeId");
-          const normalizedParentId = normalizeOptionalManuscriptParentId(newParentId);
-          const normalizedAfterSiblingId = normalizeOptionalSiblingId(afterSiblingId);
-          const node = moveContentNode({
-            workspaceId: workspace.id,
-            nodeId: normalizedNodeId,
-            newParentId: normalizedParentId,
-            afterSiblingId: normalizedAfterSiblingId ?? undefined,
-          });
-
-          return {
-            ok: true,
-            truncated: false,
-            data: {
-              action: "moved" as const,
-              nodeId: node.id,
-              title: node.title,
-              newParentId: node.parentId,
-            },
-          };
-        });
-      },
+            return {
+              ok: true as const,
+              truncated: false,
+              data: {
+                action: "moved" as const,
+                nodeId: node.id,
+                title: node.title,
+                newParentId: node.parentId,
+              },
+            };
+          },
+        }),
     }),
     delete_manuscript_node: tool({
       description:
@@ -313,31 +304,28 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
           },
         },
       }),
-      execute: async ({ nodeId }) => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
-
-        return withEnvelope(() => {
-          const normalizedNodeId = normalizeRequiredNodeId(nodeId, "nodeId");
-          const node = readManuscriptNode(workspace.id, normalizedNodeId);
-          deleteContentNode({
-            workspaceId: workspace.id,
-            nodeId: normalizedNodeId,
-          });
-
-          return {
-            ok: true,
-            truncated: false,
-            data: {
-              action: "deleted" as const,
+      execute: ({ nodeId }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const normalizedNodeId = normalizeRequiredNodeId(nodeId, "nodeId");
+            const node = readManuscriptNode(workspace.id, normalizedNodeId);
+            deleteContentNode({
+              workspaceId: workspace.id,
               nodeId: normalizedNodeId,
-              title: node.title,
-            },
-          };
-        });
-      },
+            });
+
+            return {
+              ok: true as const,
+              truncated: false,
+              data: {
+                action: "deleted" as const,
+                nodeId: normalizedNodeId,
+                title: node.title,
+              },
+            };
+          },
+        }),
     }),
   } satisfies Record<ContentWriteToolName, unknown>;
 }

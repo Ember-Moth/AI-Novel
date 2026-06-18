@@ -13,7 +13,6 @@ import {
 import { invariant } from "@/shared/lib/domain";
 
 import type { ToolBuildContext } from "./context";
-import { failure, withEnvelope } from "./envelope";
 import { limitItems, limitTimelinePoints, TIMELINE_AUX_CHANGE_LIMIT } from "./limits";
 import {
   getTimelineLabelById,
@@ -23,7 +22,7 @@ import {
   updateRuntimeTimelineSelection,
 } from "./timeline-helpers";
 import type { TimelineToolName } from "./tool-names";
-import { getWorkspaceForProject } from "./workspace";
+import { withProjectWorkspace } from "./workspace";
 
 export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildContext) {
   return {
@@ -34,26 +33,23 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
         type: "object",
         additionalProperties: false,
       }),
-      execute: async () => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
-
-        return withEnvelope(() => {
-          const limited = limitTimelinePoints(listTimelinePoints(workspace.id));
-          return {
-            ok: true,
-            truncated: limited.truncated,
-            data: {
-              points: limited.points.map((point) => ({
-                ...point,
-                auxChangeSummary: summarizeAuxTimelineChangesAt(workspace.id, point.id),
-              })),
-            },
-          };
-        });
-      },
+      execute: () =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const limited = limitTimelinePoints(listTimelinePoints(workspace.id));
+            return {
+              ok: true as const,
+              truncated: limited.truncated,
+              data: {
+                points: limited.points.map((point) => ({
+                  ...point,
+                  auxChangeSummary: summarizeAuxTimelineChangesAt(workspace.id, point.id),
+                })),
+              },
+            };
+          },
+        }),
     }),
     list_current_timeline_aux_changes: tool({
       description:
@@ -69,48 +65,45 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
           },
         },
       }),
-      execute: async ({ timelinePointId }) => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
+      execute: ({ timelinePointId }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const resolvedPointId =
+              timelinePointId === undefined
+                ? resolveCurrentTimelinePointId(runtimeContext)
+                : resolveTimelinePointIdOrLabel({
+                    workspaceId: workspace.id,
+                    timelinePointIdOrLabel: timelinePointId,
+                  });
+            invariant(
+              resolvedPointId !== ORIGIN_TIMELINE_POINT_ID,
+              "原点没有前一个时间线，无法枚举辅助信息变更。",
+            );
 
-        return withEnvelope(() => {
-          const resolvedPointId =
-            timelinePointId === undefined
-              ? resolveCurrentTimelinePointId(runtimeContext)
-              : resolveTimelinePointIdOrLabel({
-                  workspaceId: workspace.id,
-                  timelinePointIdOrLabel: timelinePointId,
-                });
-          invariant(
-            resolvedPointId !== ORIGIN_TIMELINE_POINT_ID,
-            "原点没有前一个时间线，无法枚举辅助信息变更。",
-          );
+            const point = listTimelinePoints(workspace.id).find(
+              (item) => item.id === resolvedPointId,
+            );
+            invariant(point, "指定的时间点不存在。");
+            invariant(point.prevPointId, "原点没有前一个时间线，无法枚举辅助信息变更。");
 
-          const point = listTimelinePoints(workspace.id).find(
-            (item) => item.id === resolvedPointId,
-          );
-          invariant(point, "指定的时间点不存在。");
-          invariant(point.prevPointId, "原点没有前一个时间线，无法枚举辅助信息变更。");
+            const changes = listAuxTimelineChangesAt(workspace.id, resolvedPointId);
+            const limited = limitItems(changes, TIMELINE_AUX_CHANGE_LIMIT);
 
-          const changes = listAuxTimelineChangesAt(workspace.id, resolvedPointId);
-          const limited = limitItems(changes, TIMELINE_AUX_CHANGE_LIMIT);
-
-          return {
-            ok: true,
-            truncated: limited.truncated,
-            data: {
-              timelinePointId: resolvedPointId,
-              timelineLabel: getTimelineLabelById(workspace.id, resolvedPointId),
-              previousTimelinePointId: point.prevPointId,
-              previousTimelineLabel: getTimelineLabelById(workspace.id, point.prevPointId),
-              summary: summarizeAuxTimelineChangesAt(workspace.id, resolvedPointId),
-              changes: limited.items,
-            },
-          };
-        });
-      },
+            return {
+              ok: true as const,
+              truncated: limited.truncated,
+              data: {
+                timelinePointId: resolvedPointId,
+                timelineLabel: getTimelineLabelById(workspace.id, resolvedPointId),
+                previousTimelinePointId: point.prevPointId,
+                previousTimelineLabel: getTimelineLabelById(workspace.id, point.prevPointId),
+                summary: summarizeAuxTimelineChangesAt(workspace.id, resolvedPointId),
+                changes: limited.items,
+              },
+            };
+          },
+        }),
     }),
     set_current_timeline: tool({
       description:
@@ -126,48 +119,45 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
           },
         },
       }),
-      execute: async ({ timelinePointId }) => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
-
-        return withEnvelope(() => {
-          const selected = resolveSelectableTimelinePoint({
-            workspaceId: workspace.id,
-            timelinePointIdOrLabel: timelinePointId,
-          });
-          updateRuntimeTimelineSelection({
-            runtimeContext,
-            timelinePointId: selected.timelinePointId,
-            timelineLabel: selected.timelineLabel,
-          });
-          const warnings =
-            selected.matchedBy === "label"
-              ? [
-                  {
-                    code: "timeline_point_label_used_as_fallback" as const,
-                    message:
-                      "本次根据时间点名称匹配完成切换。为避免重名或后续改名带来的歧义，建议后续优先使用 timelinePointId。",
-                    providedValue: timelinePointId,
-                    matchedTimelinePointId: selected.timelinePointId,
-                    matchedTimelineLabel: selected.timelineLabel,
-                  },
-                ]
-              : [];
-
-          return {
-            ok: true,
-            truncated: false,
-            data: {
-              action: "selected" as const,
+      execute: ({ timelinePointId }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const selected = resolveSelectableTimelinePoint({
+              workspaceId: workspace.id,
+              timelinePointIdOrLabel: timelinePointId,
+            });
+            updateRuntimeTimelineSelection({
+              runtimeContext,
               timelinePointId: selected.timelinePointId,
               timelineLabel: selected.timelineLabel,
-              ...(warnings.length > 0 ? { warnings } : {}),
-            },
-          };
-        });
-      },
+            });
+            const warnings =
+              selected.matchedBy === "label"
+                ? [
+                    {
+                      code: "timeline_point_label_used_as_fallback" as const,
+                      message:
+                        "本次根据时间点名称匹配完成切换。为避免重名或后续改名带来的歧义，建议后续优先使用 timelinePointId。",
+                      providedValue: timelinePointId,
+                      matchedTimelinePointId: selected.timelinePointId,
+                      matchedTimelineLabel: selected.timelineLabel,
+                    },
+                  ]
+                : [];
+
+            return {
+              ok: true as const,
+              truncated: false,
+              data: {
+                action: "selected" as const,
+                timelinePointId: selected.timelinePointId,
+                timelineLabel: selected.timelineLabel,
+                ...(warnings.length > 0 ? { warnings } : {}),
+              },
+            };
+          },
+        }),
     }),
     create_story_timeline_points: tool({
       description:
@@ -211,42 +201,39 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
           },
         },
       }),
-      execute: async ({ points, afterPointId }) => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
-
-        return withEnvelope(() => {
-          const resolvedAfterPointId =
-            afterPointId === undefined
-              ? undefined
-              : resolveTimelinePointIdOrLabel({
-                  workspaceId: workspace.id,
-                  timelinePointIdOrLabel: afterPointId,
-                });
-          const createdPoints = createTimelinePoints({
-            workspaceId: workspace.id,
-            afterPointId: resolvedAfterPointId,
-            points: points.map((point) => ({
-              label: point.label,
-              description: point.description ?? undefined,
-            })),
-          });
-
-          return {
-            ok: true,
-            truncated: false,
-            data: {
-              action: "created_batch" as const,
-              points: createdPoints.map((point) => ({
-                pointId: point.id,
+      execute: ({ points, afterPointId }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const resolvedAfterPointId =
+              afterPointId === undefined
+                ? undefined
+                : resolveTimelinePointIdOrLabel({
+                    workspaceId: workspace.id,
+                    timelinePointIdOrLabel: afterPointId,
+                  });
+            const createdPoints = createTimelinePoints({
+              workspaceId: workspace.id,
+              afterPointId: resolvedAfterPointId,
+              points: points.map((point) => ({
                 label: point.label,
+                description: point.description ?? undefined,
               })),
-            },
-          };
-        });
-      },
+            });
+
+            return {
+              ok: true as const,
+              truncated: false,
+              data: {
+                action: "created_batch" as const,
+                points: createdPoints.map((point) => ({
+                  pointId: point.id,
+                  label: point.label,
+                })),
+              },
+            };
+          },
+        }),
     }),
     update_story_timeline_point: tool({
       description:
@@ -273,31 +260,28 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
           },
         },
       }),
-      execute: async ({ pointId, label, description }) => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
+      execute: ({ pointId, label, description }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const point = updateTimelinePoint({
+              workspaceId: workspace.id,
+              pointId,
+              label: label ?? undefined,
+              description: description === undefined ? undefined : description || null,
+            });
 
-        return withEnvelope(() => {
-          const point = updateTimelinePoint({
-            workspaceId: workspace.id,
-            pointId,
-            label: label ?? undefined,
-            description: description === undefined ? undefined : description || null,
-          });
-
-          return {
-            ok: true,
-            truncated: false,
-            data: {
-              action: "updated" as const,
-              pointId: point.id,
-              label: point.label,
-            },
-          };
-        });
-      },
+            return {
+              ok: true as const,
+              truncated: false,
+              data: {
+                action: "updated" as const,
+                pointId: point.id,
+                label: point.label,
+              },
+            };
+          },
+        }),
     }),
     move_story_timeline_point: tool({
       description:
@@ -320,42 +304,39 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
           },
         },
       }),
-      execute: async ({ pointId, afterPointId }) => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
+      execute: ({ pointId, afterPointId }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const resolvedPointId = resolveTimelinePointIdOrLabel({
+              workspaceId: workspace.id,
+              timelinePointIdOrLabel: pointId,
+            });
+            invariant(resolvedPointId !== ORIGIN_TIMELINE_POINT_ID, "无法移动原点时间点。");
+            const resolvedAfterPointId =
+              afterPointId === undefined
+                ? undefined
+                : resolveTimelinePointIdOrLabel({
+                    workspaceId: workspace.id,
+                    timelinePointIdOrLabel: afterPointId,
+                  });
+            const point = moveTimelinePoint({
+              workspaceId: workspace.id,
+              pointId: resolvedPointId,
+              afterPointId: resolvedAfterPointId,
+            });
 
-        return withEnvelope(() => {
-          const resolvedPointId = resolveTimelinePointIdOrLabel({
-            workspaceId: workspace.id,
-            timelinePointIdOrLabel: pointId,
-          });
-          invariant(resolvedPointId !== ORIGIN_TIMELINE_POINT_ID, "无法移动原点时间点。");
-          const resolvedAfterPointId =
-            afterPointId === undefined
-              ? undefined
-              : resolveTimelinePointIdOrLabel({
-                  workspaceId: workspace.id,
-                  timelinePointIdOrLabel: afterPointId,
-                });
-          const point = moveTimelinePoint({
-            workspaceId: workspace.id,
-            pointId: resolvedPointId,
-            afterPointId: resolvedAfterPointId,
-          });
-
-          return {
-            ok: true,
-            truncated: false,
-            data: {
-              action: "moved" as const,
-              pointId: point.id,
-              label: point.label,
-            },
-          };
-        });
-      },
+            return {
+              ok: true as const,
+              truncated: false,
+              data: {
+                action: "moved" as const,
+                pointId: point.id,
+                label: point.label,
+              },
+            };
+          },
+        }),
     }),
     delete_story_timeline_point: tool({
       description:
@@ -378,34 +359,31 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
           },
         },
       }),
-      execute: async ({ pointId, purgeAuxLayers }) => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
+      execute: ({ pointId, purgeAuxLayers }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const resolvedPointId = resolveTimelinePointIdOrLabel({
+              workspaceId: workspace.id,
+              timelinePointIdOrLabel: pointId,
+            });
+            invariant(resolvedPointId !== ORIGIN_TIMELINE_POINT_ID, "无法删除原点时间点。");
+            const label = getTimelineLabelById(workspace.id, resolvedPointId);
+            deleteTimelinePoint(workspace.id, resolvedPointId, {
+              purgeAuxLayers: purgeAuxLayers ?? undefined,
+            });
 
-        return withEnvelope(() => {
-          const resolvedPointId = resolveTimelinePointIdOrLabel({
-            workspaceId: workspace.id,
-            timelinePointIdOrLabel: pointId,
-          });
-          invariant(resolvedPointId !== ORIGIN_TIMELINE_POINT_ID, "无法删除原点时间点。");
-          const label = getTimelineLabelById(workspace.id, resolvedPointId);
-          deleteTimelinePoint(workspace.id, resolvedPointId, {
-            purgeAuxLayers: purgeAuxLayers ?? undefined,
-          });
-
-          return {
-            ok: true,
-            truncated: false,
-            data: {
-              action: "deleted" as const,
-              pointId: resolvedPointId,
-              label,
-            },
-          };
-        });
-      },
+            return {
+              ok: true as const,
+              truncated: false,
+              data: {
+                action: "deleted" as const,
+                pointId: resolvedPointId,
+                label,
+              },
+            };
+          },
+        }),
     }),
   } satisfies Record<TimelineToolName, unknown>;
 }

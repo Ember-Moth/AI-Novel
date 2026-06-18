@@ -3,10 +3,9 @@ import { jsonSchema, tool } from "ai";
 import { listManuscriptNodes, readManuscriptNode } from "@/modules/workspace/domain";
 
 import type { ToolBuildContext } from "./context";
-import { failure, withEnvelope } from "./envelope";
 import { resolveActiveContentNodeId } from "./selection";
 import type { ContentReadToolName } from "./tool-names";
-import { getWorkspaceForProject } from "./workspace";
+import { withProjectWorkspace } from "./workspace";
 
 export function buildContentReadTools({ projectId, runtimeContext }: ToolBuildContext) {
   return {
@@ -27,24 +26,21 @@ export function buildContentReadTools({ projectId, runtimeContext }: ToolBuildCo
           },
         },
       }),
-      execute: async ({ rootNodeId, depth }) => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
-
-        return withEnvelope(() => {
-          const list = listManuscriptNodes(workspace.id, rootNodeId ?? undefined, { depth });
-          return {
-            ok: true,
-            truncated: list.truncated,
-            data: {
-              depth: Math.max(1, Math.trunc(depth ?? 2)),
-              entries: list.nodes,
-            },
-          };
-        });
-      },
+      execute: ({ rootNodeId, depth }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const list = listManuscriptNodes(workspace.id, rootNodeId ?? undefined, { depth });
+            return {
+              ok: true as const,
+              truncated: list.truncated,
+              data: {
+                depth: Math.max(1, Math.trunc(depth ?? 2)),
+                entries: list.nodes,
+              },
+            };
+          },
+        }),
     }),
     read_manuscript_node: tool({
       description:
@@ -58,27 +54,25 @@ export function buildContentReadTools({ projectId, runtimeContext }: ToolBuildCo
           },
         },
       }),
-      execute: async ({ nodeId }) => {
-        const workspace = getWorkspaceForProject(projectId);
-        if (!workspace) {
-          return failure(new Error("当前项目没有默认工作区。"));
-        }
+      execute: ({ nodeId }) =>
+        withProjectWorkspace({
+          projectId,
+          execute: (workspace) => {
+            const targetNodeId =
+              nodeId ?? resolveActiveContentNodeId(runtimeContext.snapshot, null);
+            if (!targetNodeId) {
+              throw new Error("当前没有可读取的正文节点。");
+            }
 
-        return withEnvelope(() => {
-          const targetNodeId = nodeId ?? resolveActiveContentNodeId(runtimeContext.snapshot, null);
-          if (!targetNodeId) {
-            throw new Error("当前没有可读取的正文节点。");
-          }
-
-          return {
-            ok: true,
-            truncated: false,
-            data: {
-              node: readManuscriptNode(workspace.id, targetNodeId),
-            },
-          };
-        });
-      },
+            return {
+              ok: true as const,
+              truncated: false,
+              data: {
+                node: readManuscriptNode(workspace.id, targetNodeId),
+              },
+            };
+          },
+        }),
     }),
   } satisfies Record<ContentReadToolName, unknown>;
 }
