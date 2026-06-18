@@ -161,12 +161,14 @@ export interface WorkingTreeContentChangeItem {
   title: string | null;
   parentId: string | null;
   parentLabel: string | null;
+  parentPathLabel: string;
   anchorTimelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID;
   anchorTimelinePointLabel: string | null;
   changedAspects: ContentChangeAspect[];
   previousTitle: string | null;
   previousParentId: string | null;
   previousParentLabel: string | null;
+  previousParentPathLabel: string | null;
   previousAnchorTimelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID | null;
   previousAnchorTimelinePointLabel: string | null;
 }

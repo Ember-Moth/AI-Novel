@@ -105,6 +105,39 @@ function resolveParentLabel(
   });
 }
 
+function resolveNodePathLabel(
+  nodeMap: Map<string, FlatContentNode>,
+  parentId: string | null,
+): string {
+  if (!parentId) {
+    return "顶层";
+  }
+
+  const segments: string[] = [];
+  let currentId: string | null = parentId;
+  const seen = new Set<string>();
+
+  while (currentId && !seen.has(currentId)) {
+    seen.add(currentId);
+    const current = nodeMap.get(currentId);
+    if (!current) {
+      segments.unshift(currentId);
+      break;
+    }
+    segments.unshift(
+      buildContentLabel({
+        id: current.id,
+        title: current.title,
+        parentId: current.parentId,
+        anchorTimelinePointId: pointIdOrOrigin(current.anchorTimelinePointId),
+      }),
+    );
+    currentId = current.parentId;
+  }
+
+  return segments.length > 0 ? segments.join(" / ") : "顶层";
+}
+
 function resolveTimelinePointLabel(
   labelMap: Map<string, string>,
   pointId: string | typeof ORIGIN_TIMELINE_POINT_ID | null,
@@ -150,6 +183,7 @@ function compareContentStates(
         title: nextNode.title,
         parentId: nextNode.parentId,
         parentLabel: resolveParentLabel(nextById, nextNode.parentId),
+        parentPathLabel: resolveNodePathLabel(nextById, nextNode.parentId),
         anchorTimelinePointId: pointIdOrOrigin(nextNode.anchorTimelinePointId),
         anchorTimelinePointLabel: resolveTimelinePointLabel(
           nextTimelineLabels,
@@ -159,6 +193,7 @@ function compareContentStates(
         previousTitle: null,
         previousParentId: null,
         previousParentLabel: null,
+        previousParentPathLabel: null,
         previousAnchorTimelinePointId: null,
         previousAnchorTimelinePointLabel: null,
       });
@@ -178,6 +213,7 @@ function compareContentStates(
         title: previousNode.title,
         parentId: previousNode.parentId,
         parentLabel: resolveParentLabel(previousById, previousNode.parentId),
+        parentPathLabel: resolveNodePathLabel(previousById, previousNode.parentId),
         anchorTimelinePointId: pointIdOrOrigin(previousNode.anchorTimelinePointId),
         anchorTimelinePointLabel: resolveTimelinePointLabel(
           previousTimelineLabels,
@@ -187,6 +223,7 @@ function compareContentStates(
         previousTitle: previousNode.title,
         previousParentId: previousNode.parentId,
         previousParentLabel: resolveParentLabel(previousById, previousNode.parentId),
+        previousParentPathLabel: resolveNodePathLabel(previousById, previousNode.parentId),
         previousAnchorTimelinePointId: pointIdOrOrigin(previousNode.anchorTimelinePointId),
         previousAnchorTimelinePointLabel: resolveTimelinePointLabel(
           previousTimelineLabels,
@@ -236,6 +273,7 @@ function compareContentStates(
       title: nextNode.title,
       parentId: nextNode.parentId,
       parentLabel: resolveParentLabel(nextById, nextNode.parentId),
+      parentPathLabel: resolveNodePathLabel(nextById, nextNode.parentId),
       anchorTimelinePointId: pointIdOrOrigin(nextNode.anchorTimelinePointId),
       anchorTimelinePointLabel: resolveTimelinePointLabel(
         nextTimelineLabels,
@@ -245,6 +283,7 @@ function compareContentStates(
       previousTitle: previousNode.title,
       previousParentId: previousNode.parentId,
       previousParentLabel: resolveParentLabel(previousById, previousNode.parentId),
+      previousParentPathLabel: resolveNodePathLabel(previousById, previousNode.parentId),
       previousAnchorTimelinePointId: pointIdOrOrigin(previousNode.anchorTimelinePointId),
       previousAnchorTimelinePointLabel: resolveTimelinePointLabel(
         previousTimelineLabels,

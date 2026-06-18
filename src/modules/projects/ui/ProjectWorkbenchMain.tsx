@@ -507,7 +507,7 @@ function renderContentArea(changes: WorkingTreeStatus["areas"]["content"]["chang
         >
           <div className="flex items-center gap-2">
             <WorkingTreeChangeBadge kind={change.kind} />
-            <WorkingTreeChangeLabel label={change.label} emphasizeTimeline={false} />
+            <ContentChangeBreadcrumb change={change} />
           </div>
           <WorkingTreeContentChangeDetails change={change} />
         </li>
@@ -582,40 +582,75 @@ function WorkingTreeChangeBadge({
   );
 }
 
+function ContentChangeBreadcrumb({
+  change,
+}: {
+  change: WorkingTreeStatus["areas"]["content"]["changes"][number];
+}) {
+  const parentPath =
+    change.kind === "deleted"
+      ? (change.previousParentPathLabel ?? change.parentPathLabel)
+      : change.parentPathLabel;
+  const parentSegments = parentPath === "顶层" ? [] : parentPath.split(" / ");
+  const segments = [...parentSegments, change.label];
+
+  return (
+    <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+      {segments.map((segment, index) => {
+        const isLast = index === segments.length - 1;
+        return (
+          <span
+            key={`${change.nodeId}-${segment}-${index}`}
+            className="flex min-w-0 items-center gap-1"
+          >
+            {index > 0 ? (
+              <span className="shrink-0 text-sm text-foreground-muted/55">{"/"}</span>
+            ) : null}
+            <span
+              className={cn(
+                "min-w-0 truncate text-sm",
+                isLast ? "font-medium text-foreground" : "text-foreground-muted",
+              )}
+            >
+              {segment}
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function WorkingTreeContentChangeDetails({
   change,
 }: {
   change: WorkingTreeStatus["areas"]["content"]["changes"][number];
 }) {
   if (change.kind === "added") {
-    const parts = ["新建节点"];
-    if (change.parentLabel) {
-      parts.push(`位于 ${change.parentLabel} 下`);
-    }
-    if (change.anchorTimelinePointLabel && change.anchorTimelinePointLabel !== "原点") {
-      parts.push(`锚定到 ${change.anchorTimelinePointLabel}`);
-    }
     return (
-      <div className="ml-5 text-[11px] leading-relaxed text-foreground-muted">
-        {parts.join("，")}
+      <div className="ml-5 flex flex-wrap items-center gap-1.5 text-[11px] leading-relaxed text-foreground-muted">
+        {change.anchorTimelinePointLabel && change.anchorTimelinePointLabel !== "原点" ? (
+          <SemanticPlacementChip
+            label="锚定到"
+            value={change.anchorTimelinePointLabel}
+            tone="sky"
+          />
+        ) : null}
       </div>
     );
   }
 
   if (change.kind === "deleted") {
-    const parts = ["删除节点"];
-    if (change.previousParentLabel) {
-      parts.push(`原位于 ${change.previousParentLabel} 下`);
-    }
-    if (
-      change.previousAnchorTimelinePointLabel &&
-      change.previousAnchorTimelinePointLabel !== "原点"
-    ) {
-      parts.push(`原锚点 ${change.previousAnchorTimelinePointLabel}`);
-    }
     return (
-      <div className="ml-5 text-[11px] leading-relaxed text-foreground-muted">
-        {parts.join("，")}
+      <div className="ml-5 flex flex-wrap items-center gap-1.5 text-[11px] leading-relaxed text-foreground-muted">
+        {change.previousAnchorTimelinePointLabel &&
+        change.previousAnchorTimelinePointLabel !== "原点" ? (
+          <SemanticPlacementChip
+            label="原锚点"
+            value={change.previousAnchorTimelinePointLabel}
+            tone="red"
+          />
+        ) : null}
       </div>
     );
   }
@@ -715,6 +750,33 @@ function SemanticTransitionChip({
       </span>
       <span className="inline-flex items-center px-1 text-foreground-muted/60">{"→"}</span>
       <span className={cn("inline-flex items-center px-1.5 leading-none", toClassName)}>{to}</span>
+    </span>
+  );
+}
+
+function SemanticPlacementChip({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "emerald" | "sky" | "slate" | "red";
+}) {
+  const valueClassName =
+    tone === "emerald"
+      ? "bg-emerald-500/14 text-emerald-100"
+      : tone === "red"
+        ? "bg-red-500/14 text-red-200/85"
+        : tone === "sky"
+          ? "bg-sky-500/14 text-sky-100"
+          : "bg-foreground-muted/8 text-foreground-muted";
+  return (
+    <span className="inline-flex h-5.5 items-stretch overflow-hidden rounded-sm border border-border bg-sidebar-background/70 align-middle text-[10px] leading-none">
+      <span className="inline-flex items-center px-1.5 text-foreground-muted/70">{label}</span>
+      <span className={cn("inline-flex items-center px-1.5 leading-none", valueClassName)}>
+        {value}
+      </span>
     </span>
   );
 }
