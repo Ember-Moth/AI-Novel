@@ -34,10 +34,7 @@ function toExportedNode(node: ManuscriptNodeDiskState): ExportedContentNode {
     anchorTimelinePointId: pointIdOrOrigin(node.anchorTimelinePointId),
     title: node.title,
     body: node.body,
-    children: node.children
-      .slice()
-      .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
-      .map((child) => toExportedNode(child)),
+    children: node.children.map((child) => toExportedNode(child)),
   };
 }
 
@@ -45,9 +42,7 @@ function toListNode(
   node: ManuscriptNodeDiskState,
   depth: number,
 ): { node: ManuscriptListNode; truncated: boolean } {
-  const children = node.children
-    .slice()
-    .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
+  const children = node.children;
 
   if (depth <= 1) {
     return {
@@ -99,11 +94,9 @@ export async function createContentNode(input: {
   const node: ManuscriptNodeDiskState = {
     id: createId("content"),
     parentId: input.parentId,
-    order: 0,
-    title: input.title ?? null,
+    title: input.title?.trim() || null,
     anchorTimelinePointId,
     body: input.body ?? "",
-    dirPath: "",
     children: [],
   };
 
@@ -118,7 +111,6 @@ export async function createContentNode(input: {
   return {
     id: created.id,
     parentId: created.parentId,
-    order: created.order,
     title: created.title,
     anchorTimelinePointId: created.anchorTimelinePointId,
     workspaceId: workspace.id,
@@ -151,7 +143,6 @@ export async function moveContentNode(input: {
   return {
     id: node.id,
     parentId: node.parentId,
-    order: node.order,
     title: node.title,
     anchorTimelinePointId: node.anchorTimelinePointId,
     workspaceId: workspace.id,
@@ -189,7 +180,7 @@ export async function updateContentNode(input: {
     node.anchorTimelinePointId = assertTimelinePoint(state, input.anchorPointId);
   }
   if (input.title !== undefined) {
-    node.title = input.title;
+    node.title = input.title?.trim() || null;
   }
   if (input.body !== undefined) {
     node.body = input.body ?? "";
@@ -199,7 +190,6 @@ export async function updateContentNode(input: {
   return {
     id: node.id,
     parentId: node.parentId,
-    order: node.order,
     title: node.title,
     anchorTimelinePointId: node.anchorTimelinePointId,
     workspaceId: workspace.id,
@@ -261,10 +251,7 @@ export async function readManuscriptNode(
     anchorTimelinePointId: pointIdOrOrigin(node.anchorTimelinePointId),
     title: node.title,
     body: node.body,
-    children: node.children
-      .slice()
-      .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
-      .map((child) => toListNode(child, 1).node),
+    children: node.children.map((child) => toListNode(child, 1).node),
   };
 }
 

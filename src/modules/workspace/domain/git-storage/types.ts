@@ -28,11 +28,9 @@ export interface WorkspaceIndexRow {
 export interface ManuscriptNodeDiskState {
   id: string;
   parentId: string | null;
-  order: number;
   title: string | null;
   anchorTimelinePointId: string | null;
   body: string;
-  dirPath: string;
   children: ManuscriptNodeDiskState[];
 }
 

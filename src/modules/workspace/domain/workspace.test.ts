@@ -24,17 +24,30 @@ function flattenAuxNodes(nodes: ExportedAuxNode[]): ExportedAuxNode[] {
   return nodes.flatMap((node) => [node, ...flattenAuxNodes(node.children)]);
 }
 
-function listManuscriptDirs(worktreePath: string) {
+function listManuscriptFiles(worktreePath: string) {
   const manuscriptRoot = path.join(worktreePath, "manuscript");
   return fs
     .readdirSync(manuscriptRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md") && entry.name !== "index.jsonl")
     .map((entry) => entry.name)
     .sort();
 }
 
-function expectNoTemporaryManuscriptDirs(worktreePath: string) {
-  expect(listManuscriptDirs(worktreePath).filter((name) => name.startsWith("__tmp__"))).toEqual([]);
+function expectNoOrphanManuscriptFiles(worktreePath: string) {
+  // 所有 .md 文件应在 index.jsonl 中有对应条目
+  const indexContent = fs.readFileSync(
+    path.join(worktreePath, "manuscript", "index.jsonl"),
+    "utf8",
+  );
+  const indexIds = new Set(
+    indexContent
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line).id as string),
+  );
+  for (const filename of listManuscriptFiles(worktreePath)) {
+    expect(indexIds.has(filename.slice(0, -3))).toBe(true);
+  }
 }
 
 test("content export preserves sibling order and nesting", async () => {
@@ -1151,8 +1164,6 @@ test("content node move rejects invalid targets without corrupting persisted tre
     body: "scene",
   });
   const before = await service.exportContentSubtree(workspace.projectId, workspace.id);
-  const rootDirsBefore = listManuscriptDirs(worktreePathFor(workspace));
-
   expect(
     async () =>
       await service.moveContentNode({
@@ -1165,8 +1176,7 @@ test("content node move rejects invalid targets without corrupting persisted tre
   ).toThrow("无法移动章节：目标位置不在同一个父级下。");
 
   expect(await service.exportContentSubtree(workspace.projectId, workspace.id)).toEqual(before);
-  expect(listManuscriptDirs(worktreePathFor(workspace))).toEqual(rootDirsBefore);
-  expectNoTemporaryManuscriptDirs(worktreePathFor(workspace));
+  expectNoOrphanManuscriptFiles(worktreePathFor(workspace));
 });
 
 test("content node move rejects self-referential positions without detaching directories", async () => {
@@ -1207,7 +1217,7 @@ test("content node move rejects self-referential positions without detaching dir
   ).toThrow("无法移动：目标位置不能是章节自身。");
 
   expect(await service.exportContentSubtree(workspace.projectId, workspace.id)).toEqual(before);
-  expectNoTemporaryManuscriptDirs(worktreePathFor(workspace));
+  expectNoOrphanManuscriptFiles(worktreePathFor(workspace));
 });
 
 test("content node creation rejects foreign after-sibling without writing partial nodes", async () => {
@@ -1240,7 +1250,7 @@ test("content node creation rejects foreign after-sibling without writing partia
   ).toThrow("无法创建章节：目标位置不在同一个父级下。");
 
   expect(await service.exportContentSubtree(workspace.projectId, workspace.id)).toEqual(before);
-  expectNoTemporaryManuscriptDirs(worktreePathFor(workspace));
+  expectNoOrphanManuscriptFiles(worktreePathFor(workspace));
 });
 
 test("content body updates preserve front matter delimiters and normalize newlines", async () => {
