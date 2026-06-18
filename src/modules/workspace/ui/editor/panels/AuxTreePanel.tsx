@@ -24,6 +24,8 @@ import {
 import type { AuxTreeNodeVM } from "@/modules/workspace/ui/editor/model/types";
 import { cn } from "@/shared/lib/cn";
 
+import { isPanelBlankAreaDropTarget } from "./panelBlankAreaDrop";
+
 const AUX_ROW_SELECTOR = "[data-row-id]";
 const AUX_PANEL_DROP_ZONE_ATTRIBUTE = "data-aux-panel-drop-zone";
 type AuxDropIndicatorTarget = { mode: "node"; nodeId: string } | { mode: "root" };
@@ -34,20 +36,6 @@ type DropIndicatorRect = {
   width: number;
   height: number;
 };
-
-function pointFallsWithinElementBounds(
-  point: { x: number; y: number },
-  element: HTMLElement | null,
-) {
-  if (!(element instanceof HTMLElement)) {
-    return false;
-  }
-
-  const rect = element.getBoundingClientRect();
-  return (
-    point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom
-  );
-}
 
 type AuxSymlinkTargetPickerState = {
   active: boolean;
@@ -521,14 +509,19 @@ export function AuxTreePanel({
       return resolved ? nextIntent : null;
     }
 
-    const sourceRowElement =
-      panelRef.current?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(nodeId)}"]`) ?? null;
-    if (pointFallsWithinElementBounds(point, sourceRowElement)) {
-      return null;
-    }
-
     const panelDropZone = source?.closest(`[${AUX_PANEL_DROP_ZONE_ATTRIBUTE}]`);
-    if (panelDropZone instanceof HTMLElement) {
+    const visibleRows = panelRef.current?.querySelectorAll(AUX_ROW_SELECTOR);
+    const lastVisibleRow = visibleRows?.item((visibleRows?.length ?? 0) - 1);
+    if (
+      isPanelBlankAreaDropTarget({
+        hitPanelDropZone: panelDropZone instanceof HTMLElement,
+        pointY: point.y,
+        lastVisibleRowBottom:
+          lastVisibleRow instanceof HTMLElement
+            ? lastVisibleRow.getBoundingClientRect().bottom
+            : null,
+      })
+    ) {
       return findRootDropIntent(nodeId);
     }
 

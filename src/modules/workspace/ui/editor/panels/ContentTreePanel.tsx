@@ -25,6 +25,8 @@ import {
 import type { ContentTreeNodeVM } from "@/modules/workspace/ui/editor/model/types";
 import { cn } from "@/shared/lib/cn";
 
+import { isPanelBlankAreaDropTarget } from "./panelBlankAreaDrop";
+
 const CONTENT_ROW_SELECTOR = "[data-row-id]";
 const CONTENT_PANEL_DROP_ZONE_ATTRIBUTE = "data-content-panel-drop-zone";
 type ContentDropIntent = ContentMoveIntent;
@@ -56,20 +58,6 @@ type InsideIndicatorRect = {
 };
 
 type DropIndicatorRect = BoundaryIndicatorRect | InsideIndicatorRect;
-
-function pointFallsWithinElementBounds(
-  point: { x: number; y: number },
-  element: HTMLElement | null,
-) {
-  if (!(element instanceof HTMLElement)) {
-    return false;
-  }
-
-  const rect = element.getBoundingClientRect();
-  return (
-    point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom
-  );
-}
 
 function dropPositionFromPointer(clientY: number, row: HTMLElement): ContentDropPosition {
   const rect = row.getBoundingClientRect();
@@ -446,14 +434,19 @@ export function ContentTreePanel({
       return resolved ? nextIntent : null;
     }
 
-    const sourceRowElement =
-      panelRef.current?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(nodeId)}"]`) ?? null;
-    if (pointFallsWithinElementBounds(point, sourceRowElement)) {
-      return null;
-    }
-
     const panelDropZone = source?.closest(`[${CONTENT_PANEL_DROP_ZONE_ATTRIBUTE}]`);
-    if (panelDropZone instanceof HTMLElement) {
+    const visibleRows = panelRef.current?.querySelectorAll(CONTENT_ROW_SELECTOR);
+    const lastVisibleRow = visibleRows?.item((visibleRows?.length ?? 0) - 1);
+    if (
+      isPanelBlankAreaDropTarget({
+        hitPanelDropZone: panelDropZone instanceof HTMLElement,
+        pointY: point.y,
+        lastVisibleRowBottom:
+          lastVisibleRow instanceof HTMLElement
+            ? lastVisibleRow.getBoundingClientRect().bottom
+            : null,
+      })
+    ) {
       return findRootEndDropIntent(nodeId);
     }
 
