@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ProjectAssistantToolName } from "@/modules/ai/domain/types";
 import { rpc } from "@/rpc/client";
 
-import { buildProjectAssistantSendActiveTools } from "../assistant/runtime/activeTools";
+import { buildProjectAssistantSendActiveTools } from "../assistant/activeTools";
 import { AllowWritesToggle } from "../assistant/composer/AllowWritesToggle";
 import {
   AssistantComposer,

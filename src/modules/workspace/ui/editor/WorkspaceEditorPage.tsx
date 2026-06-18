@@ -7,7 +7,7 @@ import type {
   WorkspaceRefreshRequestedEvent,
 } from "@/modules/ai/domain/types";
 import { ActionErrorBubble } from "@/modules/workspace/ui/editor/components/ActionErrorBubble";
-import { AiSidebar } from "@/modules/ai/ui/assistant/AiSidebar";
+import { AiSidebar } from "@/modules/ai/ui/chat/AiSidebar";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { FullPageMessage } from "@/shared/ui/FullPageMessage";
 import { IconButton } from "@/shared/ui/IconButton";

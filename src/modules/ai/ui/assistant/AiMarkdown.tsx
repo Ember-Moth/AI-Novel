@@ -3,7 +3,7 @@ import { BlockPolicy, harden } from "rehype-harden";
 import { Streamdown, defaultRehypePlugins, type StreamdownProps } from "streamdown";
 
 import { cn } from "@/shared/lib/cn";
-import { SidebarMarkdownTable } from "@/modules/ai/ui/assistant/SidebarMarkdownTable";
+import { SidebarMarkdownTable } from "./SidebarMarkdownTable";
 import { MarkdownTable } from "@/shared/ui/markdown/MarkdownTable";
 import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
 
