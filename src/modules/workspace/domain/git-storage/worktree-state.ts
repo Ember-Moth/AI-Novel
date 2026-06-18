@@ -12,8 +12,7 @@ export interface WorktreeState {
   timeline: TimelineMetaRow[];
 }
 
-const META_DIR = "novel-evolver";
-const TIMELINE_FILE = `${META_DIR}/timeline.jsonl`;
+const TIMELINE_FILE = "timeline.jsonl";
 const MANUSCRIPT_DIR = "manuscript";
 const INDEX_FILE = "index.jsonl";
 export const AUX_ORIGIN_DIR = "aux/origin";
@@ -176,7 +175,6 @@ function writeManuscriptFiles(dir: string, roots: ManuscriptNodeDiskState[]) {
 }
 
 export async function writeWorktreeState(dir: string, state: WorktreeState) {
-  await fs.promises.mkdir(path.join(dir, META_DIR), { recursive: true });
   await fs.promises.writeFile(
     path.join(dir, TIMELINE_FILE),
     stringifyJsonl(state.timeline),
@@ -187,7 +185,6 @@ export async function writeWorktreeState(dir: string, state: WorktreeState) {
 }
 
 export function writeWorktreeStateSync(dir: string, state: WorktreeState) {
-  ensureDirSync(path.join(dir, META_DIR));
   fs.writeFileSync(path.join(dir, TIMELINE_FILE), stringifyJsonl(state.timeline), "utf8");
   writeManuscriptFiles(dir, state.content);
   ensureDirSync(path.join(dir, AUX_ORIGIN_DIR));

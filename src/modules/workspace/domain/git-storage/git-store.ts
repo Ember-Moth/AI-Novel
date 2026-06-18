@@ -43,7 +43,7 @@ async function removeWorktreeGitFile(dir: string) {
 
 async function clearVersionedWorktreeFiles(dir: string) {
   await Promise.all(
-    ["novel-evolver", "manuscript", "aux"].map((entry) =>
+    ["timeline.jsonl", "manuscript", "aux"].map((entry) =>
       fs.promises.rm(path.join(dir, entry), { recursive: true, force: true }),
     ),
   );

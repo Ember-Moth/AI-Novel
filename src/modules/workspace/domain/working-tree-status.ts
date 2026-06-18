@@ -17,7 +17,7 @@ function kindFromMatrix(head: number, workdir: number): WorkingTreeChangeItem["k
 }
 
 function areaForPath(filepath: string): keyof WorkingTreeStatus["areas"] {
-  if (filepath.startsWith("novel-evolver/timeline")) return "timeline";
+  if (filepath === "timeline.jsonl") return "timeline";
   if (filepath.startsWith("aux/") || filepath.startsWith("novel-evolver/aux")) return "aux";
   return "content";
 }

@@ -58,7 +58,7 @@ test("uncommitted edits before first commit appear as additions", async () => {
     kind: "added",
   });
   expect(status.areas.timeline.changes).toContainEqual({
-    label: "novel-evolver/timeline.jsonl",
+    label: "timeline.jsonl",
     kind: "added",
   });
   expect(status.areas.aux.changes.some((change) => change.label.startsWith("aux/"))).toBe(true);
@@ -158,7 +158,7 @@ test("content, timeline and aux edits appear in the diff summary", async () => {
     kind: "modified",
   });
   expect(status.areas.timeline.changes).toContainEqual({
-    label: "novel-evolver/timeline.jsonl",
+    label: "timeline.jsonl",
     kind: "modified",
   });
   expect(status.areas.aux.changed).toBe(true);
