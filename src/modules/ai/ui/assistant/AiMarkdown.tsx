@@ -3,6 +3,7 @@ import { BlockPolicy, harden } from "rehype-harden";
 import { Streamdown, defaultRehypePlugins, type StreamdownProps } from "streamdown";
 
 import { cn } from "@/shared/lib/cn";
+import { SidebarMarkdownTable } from "@/modules/ai/ui/assistant/SidebarMarkdownTable";
 import { MarkdownTable } from "@/shared/ui/markdown/MarkdownTable";
 import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
 
@@ -29,9 +30,8 @@ const MARKDOWN_VARIANT_CLASS_NAMES = {
   reasoning: "text-[10px] leading-4",
 } as const;
 
-const MARKDOWN_COMPONENTS: NonNullable<StreamdownProps["components"]> = {
+const BASE_MARKDOWN_COMPONENTS: NonNullable<StreamdownProps["components"]> = {
   code: MarkdownCode,
-  table: MarkdownTable,
 };
 
 const MARKDOWN_ANIMATION: NonNullable<StreamdownProps["animated"]> = {
@@ -42,11 +42,18 @@ export function AiMarkdown({
   content,
   isStreaming,
   variant,
+  tableLayout = "default",
 }: {
   content: string;
   isStreaming: boolean;
   variant: "assistant" | "reasoning";
+  tableLayout?: "default" | "sidebar-cards";
 }) {
+  const components: NonNullable<StreamdownProps["components"]> = {
+    ...BASE_MARKDOWN_COMPONENTS,
+    table: tableLayout === "sidebar-cards" ? SidebarMarkdownTable : MarkdownTable,
+  };
+
   return (
     <Streamdown
       mode={isStreaming ? "streaming" : "static"}
@@ -55,7 +62,7 @@ export function AiMarkdown({
       isAnimating={isStreaming}
       controls={false}
       rehypePlugins={AI_MARKDOWN_REHYPE_PLUGINS}
-      components={MARKDOWN_COMPONENTS}
+      components={components}
       className={cn(MARKDOWN_ROOT_CLASS_NAME, MARKDOWN_VARIANT_CLASS_NAMES[variant])}
     >
       {content}

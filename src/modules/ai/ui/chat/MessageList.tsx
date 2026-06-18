@@ -227,6 +227,7 @@ export function MessageList({
                           <AiMarkdown
                             content={part.text}
                             isStreaming={isStreaming && part.state !== "done"}
+                            tableLayout="sidebar-cards"
                             variant="assistant"
                           />
                         </div>

@@ -19,6 +19,28 @@ test("AiMarkdown renders markdown structures for assistant content", () => {
   expect(html).toContain("ai-table-scrollbar");
 });
 
+test("AiMarkdown renders sidebar tables as stacked cards when requested", () => {
+  const html = renderToStaticMarkup(
+    <AiMarkdown
+      content={
+        "| 工具 | 功能 | 结果 |\n| - | - | - |\n| `create_manuscript_node` | 创建顶层章节 | 已创建，保留 **正文** |"
+      }
+      isStreaming={false}
+      tableLayout="sidebar-cards"
+      variant="assistant"
+    />,
+  );
+
+  expect(html).toContain('data-ai-sidebar-table="root"');
+  expect(html).toContain('data-ai-sidebar-table="row"');
+  expect(html).toContain(">工具<");
+  expect(html).toContain(">功能<");
+  expect(html).toContain(">结果<");
+  expect(html).toContain("create_manuscript_node");
+  expect(html).toContain("创建顶层章节");
+  expect(html).toContain("已创建，保留");
+});
+
 test("AiMarkdown tolerates incomplete fenced code blocks while streaming", () => {
   const render = () =>
     renderToStaticMarkup(
