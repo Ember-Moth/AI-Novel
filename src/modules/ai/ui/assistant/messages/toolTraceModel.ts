@@ -1,3 +1,5 @@
+import { Allow, parse as parsePartialJson } from "partial-json";
+
 import type { AgentThreadNodeView, AgentToolTraceStatus } from "@/modules/ai/domain/types";
 
 export interface AssistantToolTraceEntry {
@@ -9,7 +11,8 @@ export interface AssistantToolTraceEntry {
   runId: string | null;
   requestPayload: unknown | null;
   responsePayload: unknown | null;
-  streamingInputText?: string | null;
+  streamingInputTextRaw: string | null;
+  streamingRequestPayload: unknown | null;
 }
 
 function getToolPayloadField(payload: unknown, key: string) {
@@ -51,54 +54,43 @@ function formatToolTarget(value: string | null, fallback: string) {
   return `${normalized.slice(0, 79)}…`;
 }
 
-function normalizeStreamingSummaryValue(value: string | null) {
-  if (value == null) {
-    return null;
-  }
-  const normalized = value
-    .replace(/\\(["\\/bfnrt])/g, "$1")
-    .replace(/\\u([0-9a-fA-F]{4})/g, (_, code: string) =>
-      String.fromCharCode(Number.parseInt(code, 16)),
-    )
-    .trim()
-    .replace(/\s+/g, " ");
-  if (normalized.length === 0) {
-    return null;
-  }
-  return normalized.length <= 80 ? normalized : `${normalized.slice(0, 79)}…`;
+function getStreamingToolField(input: unknown, key: string) {
+  return getRecordString(input, key);
 }
 
-function getStreamingToolField(inputText: string, key: string) {
-  const quotedPattern = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`, "u");
-  const quotedMatch = quotedPattern.exec(inputText);
-  if (quotedMatch) {
-    return normalizeStreamingSummaryValue(quotedMatch[1] ?? null);
-  }
-
-  const barePattern = new RegExp(`"${key}"\\s*:\\s*([^,}\\]]+)`, "u");
-  const bareMatch = barePattern.exec(inputText);
-  if (!bareMatch) {
+export function parseAssistantToolStreamingInput(inputText: string) {
+  if (inputText.trim().length === 0) {
     return null;
   }
 
-  return normalizeStreamingSummaryValue((bareMatch[1] ?? "").replace(/^"+|"+$/g, ""));
+  try {
+    const parsed = parsePartialJson(inputText, Allow.ALL);
+    return Array.isArray(parsed) || (parsed && typeof parsed === "object") ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export function buildStreamingAssistantToolTraceSummary({
   toolName,
-  inputText,
+  requestPayload,
 }: {
   toolName: string;
-  inputText: string;
+  requestPayload: unknown;
 }) {
   const fallback = `正在调用 ${toolName}`;
-  const path = getStreamingToolField(inputText, "path");
-  const newPath = getStreamingToolField(inputText, "newPath");
-  const targetPath = getStreamingToolField(inputText, "targetPath");
-  const nodeId = getStreamingToolField(inputText, "nodeId");
-  const title = getStreamingToolField(inputText, "title");
-  const timelinePointId = getStreamingToolField(inputText, "timelinePointId");
-  const label = getStreamingToolField(inputText, "label");
+  const path = getStreamingToolField(requestPayload, "path");
+  const newPath = getStreamingToolField(requestPayload, "newPath");
+  const targetPath =
+    getStreamingToolField(requestPayload, "targetPath") ??
+    getStreamingToolField(requestPayload, "newTargetPath");
+  const nodeId = getStreamingToolField(requestPayload, "nodeId");
+  const title = getStreamingToolField(requestPayload, "title");
+  const timelinePointId =
+    getStreamingToolField(requestPayload, "timelinePointId") ??
+    getStreamingToolField(requestPayload, "pointId");
+  const label =
+    getStreamingToolField(requestPayload, "label") ?? getFirstTimelinePointLabel(requestPayload);
 
   switch (toolName) {
     case "list_files":
@@ -323,6 +315,8 @@ function createToolTraceEntry({
     runId: node.createdByRunId ?? null,
     requestPayload,
     responsePayload: null,
+    streamingInputTextRaw: null,
+    streamingRequestPayload: null,
   };
 }
 
@@ -391,6 +385,8 @@ export function getAssistantToolTrace(
         responsePayload: targetEntry.responsePayload,
         status: targetEntry.status,
       });
+      targetEntry.streamingInputTextRaw = null;
+      targetEntry.streamingRequestPayload = null;
     });
   }
 

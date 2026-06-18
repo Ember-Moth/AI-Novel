@@ -31,3 +31,55 @@ test("MessageList uses sidebar card tables for assistant markdown in chat", () =
   expect(html).toContain("create_manuscript_node");
   expect(html).toContain("已创建节点");
 });
+
+test("MessageList renders structured tool cards in chat", () => {
+  const html = renderToStaticMarkup(
+    <MessageList
+      messages={[
+        {
+          id: "assistant_1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-list_story_timeline_points",
+              state: "output-available",
+              input: {},
+              output: {
+                ok: true,
+                truncated: false,
+                data: {
+                  points: [
+                    {
+                      id: "origin",
+                      label: "原点",
+                      description: null,
+                      prevPointId: null,
+                      isImplicitOrigin: true,
+                      auxChangeSummary: {
+                        hasChanges: false,
+                        added: 0,
+                        modified: 0,
+                        deleted: 0,
+                        total: 0,
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        } as any,
+      ]}
+      allMessages={[]}
+      candidateGroups={[]}
+      isStreaming={false}
+      onSelectBranch={() => {}}
+      onSubmitAskUser={() => {}}
+    />,
+  );
+
+  expect(html).toContain('data-ai-tool-trace="section"');
+  expect(html).toContain("时间点");
+  expect(html).toContain("原点");
+  expect(html).toContain("原始数据");
+});

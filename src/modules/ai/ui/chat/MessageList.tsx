@@ -10,6 +10,11 @@ import type {
   AssistantAskUserAnswer,
   AssistantAskUserQuestion,
 } from "../assistant/messages/askUserModel";
+import { ToolTraceCard } from "../assistant/messages/ToolTraceCard";
+import {
+  buildAssistantToolTraceSummary,
+  type AssistantToolTraceEntry,
+} from "../assistant/messages/toolTraceModel";
 import { AskUserInlineCard } from "../assistant/messages/AskUserInlineCard";
 import { ReasoningTraceCard } from "../assistant/messages/ReasoningTraceCard";
 import { UserMessageBubble } from "../assistant/messages/UserMessageBubble";
@@ -144,24 +149,38 @@ function ToolCard({
   output?: unknown;
   errorText?: string;
 }) {
-  return (
-    <div className="overflow-hidden rounded-md border border-border bg-editor-background">
-      <div className="flex items-center gap-2 border-b border-border/70 px-2.5 py-2 text-[11px] leading-4 text-foreground-muted">
-        <span className="icon-[material-symbols--build-outline] shrink-0 text-[14px] text-accent-foreground" />
-        <span className="min-w-0 flex-1 truncate">{toolName}</span>
-        <span>{state}</span>
-      </div>
-      <div className="space-y-2 px-2.5 py-2 text-[11px] leading-4 text-foreground-muted">
-        <pre className="overflow-x-auto whitespace-pre-wrap">{JSON.stringify(input, null, 2)}</pre>
-        {output !== undefined ? (
-          <pre className="overflow-x-auto whitespace-pre-wrap text-foreground">
-            {JSON.stringify(output, null, 2)}
-          </pre>
-        ) : null}
-        {errorText ? <div className="text-destructive">{errorText}</div> : null}
-      </div>
-    </div>
-  );
+  const status =
+    errorText || state === "output-error"
+      ? ("error" as const)
+      : state === "output-available"
+        ? ("success" as const)
+        : ("pending" as const);
+  const responsePayload =
+    errorText && output === undefined
+      ? {
+          ok: false,
+          error: errorText,
+        }
+      : (output ?? null);
+  const entry: AssistantToolTraceEntry = {
+    toolCallId: null,
+    toolName,
+    status,
+    summary: buildAssistantToolTraceSummary({
+      toolName,
+      requestPayload: input ?? null,
+      responsePayload,
+      status,
+    }),
+    nodeId: `chat-tool:${toolName}`,
+    runId: null,
+    requestPayload: input ?? null,
+    responsePayload,
+    streamingInputTextRaw: null,
+    streamingRequestPayload: null,
+  };
+
+  return <ToolTraceCard entry={entry} expanded forceExpanded hideToggle onToggle={() => {}} />;
 }
 
 export function MessageList({

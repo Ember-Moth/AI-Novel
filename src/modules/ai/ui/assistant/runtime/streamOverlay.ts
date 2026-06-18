@@ -3,6 +3,7 @@ import type { ProjectAssistantStreamEvent } from "@/modules/ai/domain/types";
 import {
   buildAssistantToolTraceSummary,
   buildStreamingAssistantToolTraceSummary,
+  parseAssistantToolStreamingInput,
   type AssistantToolTraceEntry,
 } from "../messages/toolTraceModel";
 import { getRunErrorMessage, getUsageTotalTokens } from "../messages/runSummaryModel";
@@ -94,7 +95,7 @@ function updateStreamToolTrace(
               nodeId: event.assistantNodeId,
               summary: buildStreamingAssistantToolTraceSummary({
                 toolName: event.toolName,
-                inputText: entry.streamingInputText ?? "",
+                requestPayload: entry.streamingRequestPayload,
               }),
             }
           : entry,
@@ -109,13 +110,14 @@ function updateStreamToolTrace(
         status: "pending" as const,
         summary: buildStreamingAssistantToolTraceSummary({
           toolName: event.toolName,
-          inputText: "",
+          requestPayload: null,
         }),
         nodeId: event.assistantNodeId,
         runId: null,
         requestPayload: null,
         responsePayload: null,
-        streamingInputText: "",
+        streamingInputTextRaw: "",
+        streamingRequestPayload: null,
       },
     ];
   }
@@ -130,17 +132,22 @@ function updateStreamToolTrace(
 
     return current.map((entry, entryIndex) =>
       entryIndex === index
-        ? {
-            ...entry,
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            nodeId: event.assistantNodeId,
-            summary: buildStreamingAssistantToolTraceSummary({
+        ? (() => {
+            const parsed = parseAssistantToolStreamingInput(event.inputText);
+            const streamingRequestPayload = parsed ?? entry.streamingRequestPayload;
+            return {
+              ...entry,
+              toolCallId: event.toolCallId,
               toolName: event.toolName,
-              inputText: event.inputText,
-            }),
-            streamingInputText: event.inputText,
-          }
+              nodeId: event.assistantNodeId,
+              summary: buildStreamingAssistantToolTraceSummary({
+                toolName: event.toolName,
+                requestPayload: streamingRequestPayload,
+              }),
+              streamingInputTextRaw: event.inputText,
+              streamingRequestPayload,
+            };
+          })()
         : entry,
     );
   }
@@ -170,7 +177,8 @@ function updateStreamToolTrace(
               nodeId: event.assistantNodeId,
               requestPayload: event.input,
               responsePayload: null,
-              streamingInputText: null,
+              streamingInputTextRaw: null,
+              streamingRequestPayload: event.input,
             }
           : entry,
       );
@@ -190,7 +198,8 @@ function updateStreamToolTrace(
         runId: null,
         requestPayload: event.input,
         responsePayload: null,
-        streamingInputText: null,
+        streamingInputTextRaw: null,
+        streamingRequestPayload: event.input,
       },
     ];
   }
@@ -216,7 +225,8 @@ function updateStreamToolTrace(
         runId: null,
         requestPayload: null,
         responsePayload: event.output,
-        streamingInputText: null,
+        streamingInputTextRaw: null,
+        streamingRequestPayload: null,
       },
     ];
   }
@@ -233,7 +243,8 @@ function updateStreamToolTrace(
             status: event.status,
           }),
           responsePayload: event.output,
-          streamingInputText: null,
+          streamingInputTextRaw: null,
+          streamingRequestPayload: null,
         }
       : entry,
   );
@@ -398,6 +409,8 @@ export function applyStreamEvent(
                   runId: overlay.runId,
                   requestPayload: event.input,
                   responsePayload: null,
+                  streamingInputTextRaw: null,
+                  streamingRequestPayload: null,
                 },
               ],
             }

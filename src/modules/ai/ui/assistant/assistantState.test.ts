@@ -125,6 +125,8 @@ test("getAssistantToolTrace merges tool call and tool result into one trace entr
       runId: "run_1",
       requestPayload: {},
       responsePayload: { type: "json", value: { ok: true, data: { answer: 42 } } },
+      streamingInputTextRaw: null,
+      streamingRequestPayload: null,
     },
   ]);
 });
@@ -419,13 +421,18 @@ test("buildStreamingAssistantToolTraceSummary keeps only short tool hints", () =
   expect(
     buildStreamingAssistantToolTraceSummary({
       toolName: "write_file",
-      inputText: '{"path":"/世界观/核心设定.md","content":"这段大文本不应该进入折叠摘要。"}',
+      requestPayload: {
+        path: "/世界观/核心设定.md",
+        content: "这段大文本不应该进入折叠摘要。",
+      },
     }),
   ).toBe("正在写入辅助信息 /世界观/核心设定.md");
   expect(
     buildStreamingAssistantToolTraceSummary({
       toolName: "unknown_tool",
-      inputText: '{"content":"很长的正文"}',
+      requestPayload: {
+        content: "很长的正文",
+      },
     }),
   ).toBe("正在调用 unknown_tool");
 });
@@ -620,6 +627,8 @@ test("getAssistantToolTrace marks tool failures from tool result payloads", () =
       runId: "run_1",
       requestPayload: {},
       responsePayload: { type: "json", value: { ok: false, error: "boom" } },
+      streamingInputTextRaw: null,
+      streamingRequestPayload: null,
     },
   ]);
 });

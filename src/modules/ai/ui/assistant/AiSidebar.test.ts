@@ -126,6 +126,85 @@ test("applyStreamEvent accumulates usage tokens as steps finish", () => {
   expect(afterSecondStep.totalTokens).toBe(81);
 });
 
+test("applyStreamEvent parses partial tool input into structured payload", () => {
+  const overlay = createStreamOverlay({
+    kind: "send",
+    threadId: "thread_a",
+    triggerNodeId: null,
+  });
+
+  const started = applyStreamEvent(
+    applyStreamEvent(overlay, {
+      type: "assistant-message-started",
+      nodeId: "assistant_1",
+      parentNodeId: "user_1",
+      stepIndex: 0,
+    }),
+    {
+      type: "tool-call-streaming-start",
+      assistantNodeId: "assistant_1",
+      toolCallId: "tool_1",
+      toolName: "write_file",
+    },
+  );
+  const updated = applyStreamEvent(started, {
+    type: "tool-call-delta",
+    assistantNodeId: "assistant_1",
+    toolCallId: "tool_1",
+    toolName: "write_file",
+    inputTextDelta: '{"path":"/角色/主角.md","content":"第一行',
+    inputText: '{"path":"/角色/主角.md","content":"第一行',
+  });
+
+  expect(updated.blocks[0]?.toolTrace[0]?.streamingRequestPayload).toEqual({
+    path: "/角色/主角.md",
+    content: "第一行",
+  });
+});
+
+test("applyStreamEvent preserves last parsed tool input when later delta is malformed", () => {
+  const overlay = createStreamOverlay({
+    kind: "send",
+    threadId: "thread_a",
+    triggerNodeId: null,
+  });
+
+  const started = applyStreamEvent(
+    applyStreamEvent(overlay, {
+      type: "assistant-message-started",
+      nodeId: "assistant_1",
+      parentNodeId: "user_1",
+      stepIndex: 0,
+    }),
+    {
+      type: "tool-call-streaming-start",
+      assistantNodeId: "assistant_1",
+      toolCallId: "tool_1",
+      toolName: "write_file",
+    },
+  );
+  const parsed = applyStreamEvent(started, {
+    type: "tool-call-delta",
+    assistantNodeId: "assistant_1",
+    toolCallId: "tool_1",
+    toolName: "write_file",
+    inputTextDelta: '{"path":"/角色/主角.md","content":"第一行',
+    inputText: '{"path":"/角色/主角.md","content":"第一行',
+  });
+  const malformed = applyStreamEvent(parsed, {
+    type: "tool-call-delta",
+    assistantNodeId: "assistant_1",
+    toolCallId: "tool_1",
+    toolName: "write_file",
+    inputTextDelta: ", ???",
+    inputText: '{"path":"/角色/主角.md","content":"第一行", ???',
+  });
+
+  expect(malformed.blocks[0]?.toolTrace[0]?.streamingRequestPayload).toEqual(
+    parsed.blocks[0]?.toolTrace[0]?.streamingRequestPayload,
+  );
+});
+
 test("tool input streams render in the pending stream area", () => {
   expect(
     shouldRenderPendingStreamBlocks(
@@ -346,7 +425,8 @@ test("applyStreamEvent keeps reasoning, text, and tool traces aligned in one str
               title: "雨夜重逢",
             },
           },
-          streamingInputText: null,
+          streamingInputTextRaw: null,
+          streamingRequestPayload: null,
         },
       ],
     },
@@ -398,7 +478,8 @@ test("applyStreamEvent reuses one tool trace across streaming start delta and fi
     status: "pending",
     summary: "写入辅助信息 /设定/角色.md",
     requestPayload: { path: "/设定/角色.md", content: "主角：林舟" },
-    streamingInputText: null,
+    streamingInputTextRaw: null,
+    streamingRequestPayload: { path: "/设定/角色.md", content: "主角：林舟" },
   });
 });
 
