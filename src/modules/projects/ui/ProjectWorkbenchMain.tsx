@@ -638,8 +638,10 @@ function WorkingTreeContentChangeDetails({
   return (
     <div className="ml-5 text-[11px] leading-relaxed text-foreground-muted">
       {details.length ? <span>{details.join("、")}</span> : null}
-      {change.previousTitle && change.previousTitle !== change.label ? (
-        <span className="ml-2">{`从 “${change.previousTitle}”`}</span>
+      {change.changedAspects.includes("title") &&
+      change.previousTitle &&
+      change.previousTitle !== (change.title ?? change.label) ? (
+        <span className="ml-2">{`标题 ${change.previousTitle} -> ${change.title ?? change.label}`}</span>
       ) : null}
       {parentDetail ? <span className="ml-2">{`位置 ${parentDetail}`}</span> : null}
       {anchorDetail ? <span className="ml-2">{`时间点 ${anchorDetail}`}</span> : null}
