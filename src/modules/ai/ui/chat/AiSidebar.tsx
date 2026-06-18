@@ -470,6 +470,20 @@ export function AiSidebar({
         </span>
         <button
           type="button"
+          onClick={() => chats.setShowArchived(!chats.showArchived)}
+          className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground"
+        >
+          <span
+            className={
+              chats.showArchived
+                ? "icon-[material-symbols--inventory-2]"
+                : "icon-[material-symbols--inventory-2-outline]"
+            }
+          />
+          <span>{chats.showArchived ? "隐藏归档" : "显示归档"}</span>
+        </button>
+        <button
+          type="button"
           onClick={() =>
             void createChat().then((chat) => {
               setActiveChatId(chat.id);
@@ -502,11 +516,6 @@ export function AiSidebar({
                   layout.setSheetState("peek");
                 }
               }}
-              onCreate={() =>
-                void createChat().then((chat) => {
-                  setActiveChatId(chat.id);
-                })
-              }
               onArchiveToggle={(chatId, archived) => {
                 void chats.archiveChat(chatId, archived).then(() => {
                   if (activeChatId === chatId && archived) {
@@ -514,7 +523,6 @@ export function AiSidebar({
                   }
                 });
               }}
-              onShowArchivedChange={chats.setShowArchived}
               isMutating={isMutating}
             />
           </OverlayScrollbar>

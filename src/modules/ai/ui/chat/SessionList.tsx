@@ -15,46 +15,22 @@ export function SessionList({
   activeChatId,
   showArchived,
   onActivate,
-  onCreate,
   onArchiveToggle,
-  onShowArchivedChange,
   isMutating,
 }: {
   chats: ProjectChatInfo[];
   activeChatId: string | null;
   showArchived: boolean;
   onActivate: (_chatId: string) => void;
-  onCreate: () => void;
   onArchiveToggle: (_chatId: string, _archived: boolean) => void;
-  onShowArchivedChange: (_showArchived: boolean) => void;
   isMutating: boolean;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
-        <button
-          type="button"
-          onClick={onCreate}
-          disabled={isMutating}
-          className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <span className="icon-[material-symbols--add]" />
-          <span>新建会话</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onShowArchivedChange(!showArchived)}
-          className="ml-auto inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-foreground-muted transition hover:bg-list-hover-background hover:text-foreground"
-        >
-          <span
-            className={
-              showArchived
-                ? "icon-[material-symbols--inventory-2]"
-                : "icon-[material-symbols--inventory-2-outline]"
-            }
-          />
-          <span>{showArchived ? "隐藏归档" : "显示归档"}</span>
-        </button>
+        <div className="text-[11px] text-foreground-muted">
+          {showArchived ? "已显示归档会话" : "当前仅显示未归档会话"}
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
