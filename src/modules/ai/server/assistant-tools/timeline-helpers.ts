@@ -63,6 +63,20 @@ export function resolveTimelinePointIdOrLabel(input: {
   return foundByLabel.id;
 }
 
+export function resolveOptionalTimelinePointIdOrLabel(input: {
+  workspaceId: string;
+  timelinePointIdOrLabel?: string | null;
+}) {
+  if (input.timelinePointIdOrLabel == null) {
+    return undefined;
+  }
+
+  return resolveTimelinePointIdOrLabel({
+    workspaceId: input.workspaceId,
+    timelinePointIdOrLabel: input.timelinePointIdOrLabel,
+  });
+}
+
 export function updateRuntimeTimelineSelection(input: {
   runtimeContext: ToolRuntimeContext;
   timelinePointId: string;

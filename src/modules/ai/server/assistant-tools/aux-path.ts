@@ -3,9 +3,10 @@ import { basename, dirname } from "node:path/posix";
 import { readAuxByPathAt } from "@/modules/workspace/domain";
 import { invariant } from "@/shared/lib/domain";
 
+import { requireNonEmptyString } from "./string-args";
+
 export function normalizeAuxPath(path: string, actionLabel: string) {
-  const normalized = path.trim();
-  invariant(normalized.length > 0, `${actionLabel}时路径不能为空。`);
+  const normalized = requireNonEmptyString(path, `${actionLabel}时路径`);
   invariant(normalized.startsWith("/"), `${actionLabel}只支持以 / 开头的绝对路径。`);
   const segments = normalized.split("/").filter(Boolean);
   invariant(segments.length > 0, `${actionLabel}不能作用于辅助资料根目录。`);

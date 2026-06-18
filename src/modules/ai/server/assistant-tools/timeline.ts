@@ -17,6 +17,7 @@ import { limitItems, limitTimelinePoints, TIMELINE_AUX_CHANGE_LIMIT } from "./li
 import {
   getTimelineLabelById,
   resolveCurrentTimelinePointId,
+  resolveOptionalTimelinePointIdOrLabel,
   resolveSelectableTimelinePoint,
   resolveTimelinePointIdOrLabel,
   updateRuntimeTimelineSelection,
@@ -205,13 +206,10 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
         withProjectWorkspace({
           projectId,
           execute: (workspace) => {
-            const resolvedAfterPointId =
-              afterPointId === undefined
-                ? undefined
-                : resolveTimelinePointIdOrLabel({
-                    workspaceId: workspace.id,
-                    timelinePointIdOrLabel: afterPointId,
-                  });
+            const resolvedAfterPointId = resolveOptionalTimelinePointIdOrLabel({
+              workspaceId: workspace.id,
+              timelinePointIdOrLabel: afterPointId,
+            });
             const createdPoints = createTimelinePoints({
               workspaceId: workspace.id,
               afterPointId: resolvedAfterPointId,
@@ -313,13 +311,10 @@ export function buildTimelineTools({ projectId, runtimeContext }: ToolBuildConte
               timelinePointIdOrLabel: pointId,
             });
             invariant(resolvedPointId !== ORIGIN_TIMELINE_POINT_ID, "无法移动原点时间点。");
-            const resolvedAfterPointId =
-              afterPointId === undefined
-                ? undefined
-                : resolveTimelinePointIdOrLabel({
-                    workspaceId: workspace.id,
-                    timelinePointIdOrLabel: afterPointId,
-                  });
+            const resolvedAfterPointId = resolveOptionalTimelinePointIdOrLabel({
+              workspaceId: workspace.id,
+              timelinePointIdOrLabel: afterPointId,
+            });
             const point = moveTimelinePoint({
               workspaceId: workspace.id,
               pointId: resolvedPointId,

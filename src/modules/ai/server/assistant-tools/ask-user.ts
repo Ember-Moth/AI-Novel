@@ -1,6 +1,7 @@
 import { jsonSchema, tool } from "ai";
 
 import type { ToolBuildContext } from "./context";
+import { normalizeOptionalString, normalizeRequiredString } from "./string-args";
 import type { InteractionToolName } from "./tool-names";
 
 export const ASK_USER_TOOL_NAME = "ask_user";
@@ -49,28 +50,6 @@ export type AskUserAnswer =
 export interface AskUserOutput {
   request: AskUserInput;
   answers: AskUserAnswer[];
-}
-
-function normalizeRequiredString(value: unknown, label: string) {
-  if (typeof value !== "string") {
-    throw new Error(`${label}必须是字符串。`);
-  }
-  const normalized = value.trim();
-  if (!normalized) {
-    throw new Error(`${label}不能为空。`);
-  }
-  return normalized;
-}
-
-function normalizeOptionalString(value: unknown, label: string) {
-  if (value == null) {
-    return undefined;
-  }
-  if (typeof value !== "string") {
-    throw new Error(`${label}必须是字符串。`);
-  }
-  const normalized = value.trim();
-  return normalized ? normalized : undefined;
 }
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {

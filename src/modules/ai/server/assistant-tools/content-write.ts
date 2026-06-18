@@ -12,22 +12,13 @@ import {
 import type { ToolBuildContext } from "./context";
 import { getTimelineLabelById, resolveCurrentTimelinePointId } from "./timeline-helpers";
 import type { ContentWriteToolName } from "./tool-names";
+import { normalizeOptionalStringToNull } from "./string-args";
 import { withProjectWorkspace } from "./workspace";
 
 type QueuedCreateAnchor = string | null;
 
 function createManuscriptInsertQueueKey(input: { workspaceId: string; parentId: string | null }) {
   return `${input.workspaceId}:${input.parentId ?? "top"}`;
-}
-
-function normalizeOptionalManuscriptParentId(value: string | null | undefined) {
-  const normalized = value?.trim();
-  return normalized ? normalized : null;
-}
-
-function normalizeOptionalSiblingId(value: string | null | undefined) {
-  const normalized = value?.trim();
-  return normalized ? normalized : null;
 }
 
 function normalizeRequiredNodeId(value: string, fieldName: string) {
@@ -120,8 +111,8 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
         withProjectWorkspace({
           projectId,
           execute: async (workspace) => {
-            const normalizedParentId = normalizeOptionalManuscriptParentId(parentId);
-            const normalizedAfterSiblingId = normalizeOptionalSiblingId(afterSiblingId);
+            const normalizedParentId = normalizeOptionalStringToNull(parentId);
+            const normalizedAfterSiblingId = normalizeOptionalStringToNull(afterSiblingId);
             const normalizedTitle = normalizeRequiredTitle(title, "title");
             const queueKey = createManuscriptInsertQueueKey({
               workspaceId: workspace.id,
@@ -269,8 +260,8 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
           projectId,
           execute: (workspace) => {
             const normalizedNodeId = normalizeRequiredNodeId(nodeId, "nodeId");
-            const normalizedParentId = normalizeOptionalManuscriptParentId(newParentId);
-            const normalizedAfterSiblingId = normalizeOptionalSiblingId(afterSiblingId);
+            const normalizedParentId = normalizeOptionalStringToNull(newParentId);
+            const normalizedAfterSiblingId = normalizeOptionalStringToNull(afterSiblingId);
             const node = moveContentNode({
               workspaceId: workspace.id,
               nodeId: normalizedNodeId,
