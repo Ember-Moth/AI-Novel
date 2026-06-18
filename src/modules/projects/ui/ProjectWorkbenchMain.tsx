@@ -635,13 +635,25 @@ function WorkingTreeContentChangeDetails({
   const anchorDetail = change.changedAspects.includes("anchor")
     ? `${change.previousAnchorTimelinePointLabel ?? "原点"} -> ${change.anchorTimelinePointLabel ?? "原点"}`
     : null;
+  const titleChanged =
+    change.changedAspects.includes("title") &&
+    change.previousTitle &&
+    change.previousTitle !== (change.title ?? change.label);
+  const detailLabels = details.filter((detail) => detail !== contentChangeAspectLabels.title);
   return (
     <div className="ml-5 text-[11px] leading-relaxed text-foreground-muted">
-      {details.length ? <span>{details.join("、")}</span> : null}
-      {change.changedAspects.includes("title") &&
-      change.previousTitle &&
-      change.previousTitle !== (change.title ?? change.label) ? (
-        <span className="ml-2">{`标题 ${change.previousTitle} -> ${change.title ?? change.label}`}</span>
+      {detailLabels.length ? <span>{detailLabels.join("、")}</span> : null}
+      {titleChanged ? (
+        <span className={cn("ml-2 inline-flex items-center gap-1.5 align-middle")}>
+          <span className="text-foreground-muted/70">标题</span>
+          <span className="rounded-sm border border-red-500/20 bg-red-500/8 px-1.5 py-0.5 text-red-200/85 line-through decoration-red-300/50">
+            {change.previousTitle}
+          </span>
+          <span className="text-foreground-muted/60">{"->"}</span>
+          <span className="rounded-sm border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-100">
+            {change.title ?? change.label}
+          </span>
+        </span>
       ) : null}
       {parentDetail ? <span className="ml-2">{`位置 ${parentDetail}`}</span> : null}
       {anchorDetail ? <span className="ml-2">{`时间点 ${anchorDetail}`}</span> : null}
