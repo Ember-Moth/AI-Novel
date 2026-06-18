@@ -4,6 +4,7 @@ import { serve } from "bun";
 import index from "@/app/client/index.html";
 import { ensureAiCatalogFresh } from "@/modules/ai/domain/catalog";
 import {
+  handleProjectChatAbortRequest,
   handleProjectChatArchiveRequest,
   handleProjectChatDetailRequest,
   handleProjectChatRequest,
@@ -31,6 +32,9 @@ const server = serve({
     },
     "/api/chats/:id/archive": {
       PUT: (request) => handleProjectChatArchiveRequest(request, request.params.id),
+    },
+    "/api/chats/:id/abort": {
+      POST: (request) => handleProjectChatAbortRequest(request, request.params.id),
     },
     "/api/chats/:id/state": {
       GET: (request) => handleProjectChatStateRequest(request, request.params.id),

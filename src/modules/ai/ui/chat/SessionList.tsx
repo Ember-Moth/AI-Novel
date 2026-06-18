@@ -42,12 +42,11 @@ export function SessionList({
             const archived = chat.archivedAt != null;
 
             return (
-              <button
+              <div
                 key={chat.id}
-                type="button"
                 onClick={() => onActivate(chat.id)}
                 className={cn(
-                  "group flex w-full items-start gap-2 border-b border-border/60 px-3 py-2 text-left transition",
+                  "group flex w-full cursor-pointer items-start gap-2 border-b border-border/60 px-3 py-2 text-left transition",
                   active
                     ? "bg-list-active-background text-foreground"
                     : "text-foreground-muted hover:bg-list-hover-background hover:text-foreground",
@@ -78,7 +77,7 @@ export function SessionList({
                   onClick={() => onArchiveToggle(chat.id, !archived)}
                   className="opacity-0 group-hover:opacity-100"
                 />
-              </button>
+              </div>
             );
           })
         )}

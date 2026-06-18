@@ -140,6 +140,8 @@ interface ActiveChatControllerValue {
     _activeTools: ProjectAssistantToolName[],
   ) => void;
   commitModelSelection: (_connectionId: string, _modelId: string) => void;
+  abortStream: () => Promise<boolean>;
+  resumeStream: () => void;
 }
 
 const ActiveChatControllerContext = createContext<ActiveChatControllerValue | null>(null);
@@ -176,8 +178,8 @@ function ActiveChatConversationProvider({
       }),
     [chatId, context, pendingActiveTools, projectId],
   );
-  const { messages, sendMessage, addToolOutput, setMessages, status } = useChat<ProjectChatMessage>(
-    {
+  const { messages, sendMessage, addToolOutput, setMessages, status, stop } =
+    useChat<ProjectChatMessage>({
       id: chatId,
       transport,
       onData: (part) => {
@@ -197,8 +199,7 @@ function ActiveChatConversationProvider({
       sendAutomaticallyWhen: ({ messages: chatMessages }) =>
         lastAssistantMessageIsCompleteWithToolCalls({ messages: chatMessages }) ||
         lastAssistantMessageIsCompleteWithApprovalResponses({ messages: chatMessages }),
-    },
-  );
+    });
 
   useEffect(() => {
     setMessages(chatState.visibleMessages as ProjectChatMessage[]);
@@ -297,6 +298,36 @@ function ActiveChatConversationProvider({
     [sendMessage],
   );
 
+  const abortStream = useCallback(async () => {
+    const aborted = await transport.abortStream();
+    if (aborted) {
+      stop();
+    }
+    return aborted;
+  }, [transport, stop]);
+
+  const resumeStream = useCallback(() => {
+    // Find the last incomplete assistant message
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.role === "assistant") {
+      // Check if the message is incomplete (has incomplete parts)
+      const hasIncompletePart = lastMessage.parts.some(
+        (part) =>
+          (part.type === "text" || part.type === "reasoning") &&
+          (part.state === "streaming" || part.state === undefined),
+      );
+      if (hasIncompletePart) {
+        // Resume by sending the message again - useChat will handle the resume
+        void sendMessage({
+          text: "",
+          metadata: {
+            mentions: [],
+          },
+        });
+      }
+    }
+  }, [messages, sendMessage]);
+
   const value = useMemo<ActiveChatControllerValue>(
     () => ({
       chatId,
@@ -311,6 +342,8 @@ function ActiveChatConversationProvider({
       submitAskUser,
       submitComposer,
       commitModelSelection,
+      abortStream,
+      resumeStream,
     }),
     [
       chatState.allMessages,
@@ -325,6 +358,8 @@ function ActiveChatConversationProvider({
       status,
       submitAskUser,
       submitComposer,
+      abortStream,
+      resumeStream,
     ],
   );
 
@@ -409,17 +444,33 @@ function ActiveChatMessagesPane() {
 
 function ActiveChatComposerPane() {
   const controller = useActiveChatController();
+  const isStreaming = controller.status === "streaming" || controller.status === "submitted";
+
+  // Check if the last message is an incomplete assistant message
+  const canResume = useMemo(() => {
+    if (isStreaming) {
+      return false;
+    }
+    const lastMessage = controller.messages[controller.messages.length - 1];
+    if (!lastMessage || lastMessage.role !== "assistant") {
+      return false;
+    }
+    return lastMessage.parts.some(
+      (part) =>
+        (part.type === "text" || part.type === "reasoning") &&
+        (part.state === "streaming" || part.state === undefined),
+    );
+  }, [controller.messages, isStreaming]);
+
   return (
     <ChatComposerPane
       selectedConnectionId={controller.selectedConnectionId}
       selectedModelId={controller.selectedModelId}
-      isBusy={
-        controller.status === "streaming" ||
-        controller.status === "submitted" ||
-        controller.isSavingModel
-      }
+      isBusy={isStreaming || controller.isSavingModel}
       onSelectionCommit={controller.commitModelSelection}
       onSubmit={controller.submitComposer}
+      onAbort={isStreaming ? controller.abortStream : undefined}
+      onResume={canResume ? controller.resumeStream : undefined}
     />
   );
 }

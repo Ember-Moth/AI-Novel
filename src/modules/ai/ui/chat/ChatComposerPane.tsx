@@ -33,6 +33,8 @@ export function ChatComposerPane({
   isBusy,
   onSelectionCommit,
   onSubmit,
+  onAbort,
+  onResume,
 }: {
   selectedConnectionId: string;
   selectedModelId: string;
@@ -42,6 +44,8 @@ export function ChatComposerPane({
     _payload: AssistantComposerSubmitPayload,
     _activeTools: ProjectAssistantToolName[],
   ) => void;
+  onAbort?: () => Promise<boolean>;
+  onResume?: () => void;
 }) {
   const [draftConnectionId, setDraftConnectionId] = useState(selectedConnectionId);
   const [draftModelId, setDraftModelId] = useState(selectedModelId);
@@ -105,12 +109,33 @@ export function ChatComposerPane({
               }}
             />
             <button
-              type="submit"
-              disabled={!canSend}
-              title={canSend ? "发送" : "当前无法发送"}
-              aria-label="发送"
+              type={isBusy && onAbort ? "button" : "submit"}
+              disabled={!canSend && !isBusy && !onResume}
+              title={
+                isBusy && onAbort
+                  ? "停止"
+                  : onResume
+                    ? "继续生成"
+                    : canSend
+                      ? "发送"
+                      : "当前无法发送"
+              }
+              aria-label={isBusy && onAbort ? "停止" : onResume ? "继续生成" : "发送"}
+              onClick={
+                isBusy && onAbort
+                  ? (e) => {
+                      e.preventDefault();
+                      void onAbort();
+                    }
+                  : onResume
+                    ? (e) => {
+                        e.preventDefault();
+                        onResume();
+                      }
+                    : undefined
+              }
               className={`flex size-7 shrink-0 items-center justify-center rounded-md transition disabled:cursor-not-allowed ${
-                canSend
+                canSend || isBusy || onResume
                   ? "bg-accent-foreground text-sidebar-background hover:brightness-110"
                   : "text-foreground-muted hover:bg-list-hover-background"
               }`}
@@ -118,8 +143,10 @@ export function ChatComposerPane({
               <span
                 className={`text-base ${
                   isBusy
-                    ? "icon-[material-symbols--progress-activity] animate-spin"
-                    : "icon-[material-symbols--arrow-upward]"
+                    ? "icon-[material-symbols--stop]"
+                    : onResume
+                      ? "icon-[material-symbols--play-arrow]"
+                      : "icon-[material-symbols--arrow-upward]"
                 }`}
               />
             </button>

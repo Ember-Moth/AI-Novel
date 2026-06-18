@@ -27,6 +27,7 @@ import {
   type ProjectChatModelConfig,
   type StoredProjectChatMessage,
 } from "@/modules/ai/domain/project-chat";
+import { streamRegistry } from "./stream-registry";
 import type {
   AssistantMentionInput,
   ProjectAssistantContextSnapshot,
@@ -421,6 +422,11 @@ export async function handleProjectChatRequest(request: Request) {
 
     const bufferedDataParts: ProjectChatStreamData[] = [];
     let streamWriter: UIMessageStreamWriter<any> | null = null;
+
+    // Create AbortController for this stream
+    const abortController = new AbortController();
+    const streamId = streamRegistry.register(chatId, abortController);
+
     const result = streamText({
       model: createLanguageModelForConnection({
         connection: selection.connection,
@@ -437,6 +443,7 @@ export async function handleProjectChatRequest(request: Request) {
         ? { maxOutputTokens: chat.modelConfig.maxTokens }
         : {}),
       stopWhen: stepCountIs(getAiAssistantMaxSteps()),
+      abortSignal: abortController.signal,
       experimental_onToolCallFinish: (event) => {
         if (!event.success) {
           return;
@@ -480,6 +487,9 @@ export async function handleProjectChatRequest(request: Request) {
             originalMessages: incomingMessages,
             generateMessageId: () => createId("chat_msg"),
             onFinish: async ({ responseMessage, isContinuation }) => {
+              // Unregister stream when finished
+              streamRegistry.unregister(streamId);
+
               const latestMessages = getProjectChatMessages(projectId, chatId);
               const responseIndex = latestMessages.findIndex(
                 (message) => message.id === responseMessage.id,
@@ -528,11 +538,18 @@ export async function handleProjectChatRequest(request: Request) {
           }),
         );
       },
-      onError: (error) => normalizeError(error).message,
+      onError: (error) => {
+        // Unregister stream on error
+        streamRegistry.unregister(streamId);
+        return normalizeError(error).message;
+      },
     });
 
     return createUIMessageStreamResponse({
       stream: responseStream,
+      headers: new Headers({
+        "X-Stream-Id": streamId,
+      }),
     });
   } catch (error) {
     return jsonError(normalizeError(error).message);
@@ -683,6 +700,24 @@ export async function handleProjectChatArchiveRequest(request: Request, chatId: 
     const normalizedChatId = normalizeChatId(chatId);
     return Response.json({
       chat: archiveProjectChat(projectId, normalizedChatId, body.archived === true),
+    });
+  } catch (error) {
+    return jsonError(normalizeError(error).message);
+  }
+}
+
+export async function handleProjectChatAbortRequest(request: Request, chatId: string) {
+  try {
+    const url = new URL(request.url);
+    const _projectId = normalizeProjectId(url.searchParams.get("projectId"));
+    const normalizedChatId = normalizeChatId(chatId);
+
+    // Abort the stream for this chat
+    const aborted = streamRegistry.abortByChatId(normalizedChatId);
+
+    return Response.json({
+      success: aborted,
+      message: aborted ? "Stream aborted" : "No active stream found",
     });
   } catch (error) {
     return jsonError(normalizeError(error).message);
