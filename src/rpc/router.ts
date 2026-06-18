@@ -79,6 +79,7 @@ export const workspaces = {
 export const branches = {
   list: branchHandlers.list,
   get: branchHandlers.get,
+  heads: branchHandlers.heads,
   create: branchHandlers.create,
   createWithWorkspace: branchHandlers.createWithWorkspace,
   delete: branchHandlers.deleteMutation,

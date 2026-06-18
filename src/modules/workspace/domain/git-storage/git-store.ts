@@ -13,13 +13,8 @@ const AUTHOR = {
   email: "noreply@novel-evolver.local",
 };
 
-export function toBranchRef(name: string) {
-  const safe = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._/-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return `refs/heads/${safe || "main"}`;
+export function branchRef(branchId: string) {
+  return `refs/heads/branch/${branchId}`;
 }
 
 export function metaRef(projectId: string) {
@@ -53,6 +48,18 @@ function ensureProjectRepoSync(projectId: string) {
     );
   }
   return gitdir;
+}
+
+export function writeRefSync(input: { projectId: string; ref: string; value: string }) {
+  const gitdir = ensureProjectRepoSync(input.projectId);
+  const refPath = path.join(gitdir, input.ref);
+  fs.mkdirSync(path.dirname(refPath), { recursive: true });
+  fs.writeFileSync(refPath, `${input.value}\n`);
+}
+
+export function deleteRefSync(input: { projectId: string; ref: string }) {
+  const gitdir = ensureProjectRepoSync(input.projectId);
+  fs.rmSync(path.join(gitdir, input.ref), { force: true });
 }
 
 async function removeWorktreeGitFile(dir: string) {

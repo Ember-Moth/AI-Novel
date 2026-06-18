@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { createId, invariant, now } from "@/shared/lib/domain";
 
 import { createBranch } from "./branches";
-import { checkoutCommitToWorktree } from "./git-storage/git-store";
+import { branchRef, checkoutCommitToWorktree, resolveRef } from "./git-storage/git-store";
 import { getProjectWorktreeDir } from "./git-storage/paths";
 import type { BranchIndexRow, ProjectIndexRow, WorkspaceIndexRow } from "./git-storage/types";
 import {
@@ -108,11 +108,12 @@ export async function createWorkspaceForBranch(branchId: string, name?: string) 
 
   mkdirSync(worktreePath, { recursive: true });
   seedEmptyWorktree(worktreePath);
-  if (branch.headCommitId) {
+  const headCommitId = await resolveRef(branch.projectId, branchRef(branch.id));
+  if (headCommitId) {
     await checkoutCommitToWorktree({
       projectId: branch.projectId,
       workspaceId,
-      commitId: branch.headCommitId,
+      commitId: headCommitId,
     });
   }
 
@@ -131,7 +132,6 @@ export async function createWorkspaceForBranch(branchId: string, name?: string) 
           projectId: branch.projectId,
           branchId: branch.id,
           name: name ?? branch.name,
-          worktreePath,
           createdAt: timestamp,
           updatedAt: timestamp,
         },
@@ -165,7 +165,6 @@ export function createDefaultWorkspace(projectId: string, name = "main") {
           projectId,
           branchId: branch.id,
           name,
-          worktreePath,
           createdAt: timestamp,
           updatedAt: timestamp,
         },

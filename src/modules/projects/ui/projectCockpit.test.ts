@@ -8,9 +8,15 @@ import {
 } from "./projectCockpit";
 
 const branches = [
-  { id: "branch_old", updatedAt: 10, headCommitId: "commit_old" },
-  { id: "branch_default", updatedAt: 20, headCommitId: "commit_default" },
-  { id: "branch_new", updatedAt: 30, headCommitId: "commit_new" },
+  { id: "branch_old", updatedAt: 10 },
+  { id: "branch_default", updatedAt: 20 },
+  { id: "branch_new", updatedAt: 30 },
+];
+
+const branchHeads = [
+  { branchId: "branch_old", headCommitId: "commit_old" },
+  { branchId: "branch_default", headCommitId: "commit_default" },
+  { branchId: "branch_new", headCommitId: "commit_new" },
 ];
 
 test("sortProjectBranches keeps the default branch first, then sorts by updatedAt", () => {
@@ -29,10 +35,10 @@ test("resolveSelectedBranchId prefers remembered branch, then default branch, th
 });
 
 test("resolveNewBranchSourceCommitId uses the default branch head when present", () => {
-  expect(resolveNewBranchSourceCommitId(branches, "branch_default")).toBe("commit_default");
+  expect(resolveNewBranchSourceCommitId(branchHeads, "branch_default")).toBe("commit_default");
   expect(
     resolveNewBranchSourceCommitId(
-      [{ id: "branch_empty", updatedAt: 1, headCommitId: null }],
+      [{ branchId: "branch_empty", headCommitId: null }],
       "branch_empty",
     ),
   ).toBeNull();

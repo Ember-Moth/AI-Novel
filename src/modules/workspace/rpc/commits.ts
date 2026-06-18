@@ -65,6 +65,7 @@ export const create = mutation<
   ctx.invalidate(
     rpcTags.commitHistory(input.branchId),
     rpcTags.branch(input.branchId),
+    rpcTags.branchHeadsByProject(branch.projectId),
     rpcTags.branchesByProject(branch.projectId),
     rpcTags.project(branch.projectId),
     rpcTags.projectsList(),

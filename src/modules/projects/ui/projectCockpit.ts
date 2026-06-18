@@ -1,6 +1,10 @@
 export interface BranchLike {
   id: string;
   updatedAt: number;
+}
+
+export interface BranchHeadLike {
+  branchId: string;
   headCommitId: string | null;
 }
 
@@ -41,11 +45,11 @@ export function resolveSelectedBranchId<TBranch extends BranchLike>(
   return sorted[0]?.id ?? null;
 }
 
-export function resolveNewBranchSourceCommitId<TBranch extends BranchLike>(
-  branches: readonly TBranch[],
+export function resolveNewBranchSourceCommitId<TBranchHead extends BranchHeadLike>(
+  branchHeads: readonly TBranchHead[],
   defaultBranchId: string | null,
 ) {
-  const defaultBranch = branches.find((branch) => branch.id === defaultBranchId);
+  const defaultBranch = branchHeads.find((branch) => branch.branchId === defaultBranchId);
   return defaultBranch?.headCommitId ?? null;
 }
 

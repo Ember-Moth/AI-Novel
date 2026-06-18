@@ -53,6 +53,19 @@ test("project initialization writes a real repo and metadata custom ref", async 
 
   expect(await waitForRef("git_init", metaRef("git_init"))).toMatch(/^[0-9a-f]{40}$/);
   expect((await waitForProjectMeta("git_init"))?.defaultBranchId).toBe(workspace.branchId);
+  const branchesJsonl = await readFileAtRef({
+    projectId: "git_init",
+    ref: metaRef("git_init"),
+    filepath: "branches.jsonl",
+  });
+  const workspacesJsonl = await readFileAtRef({
+    projectId: "git_init",
+    ref: metaRef("git_init"),
+    filepath: "workspaces.jsonl",
+  });
+  expect(branchesJsonl).not.toContain('"ref"');
+  expect(branchesJsonl).not.toContain('"headCommitId"');
+  expect(workspacesJsonl).not.toContain('"worktreePath"');
 });
 
 test("branch worktrees preserve independent uncommitted edits", async () => {

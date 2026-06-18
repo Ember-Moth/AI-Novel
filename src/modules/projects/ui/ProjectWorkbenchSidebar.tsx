@@ -12,6 +12,7 @@ import { useProjectWorkbenchState } from "./state/projectWorkbenchStore";
 export function ProjectWorkbenchSidebar({
   project,
   branches,
+  branchHeadCommitIdById,
   branchesLoading,
   branchesError,
   selectedBranch,
@@ -23,6 +24,7 @@ export function ProjectWorkbenchSidebar({
 }: {
   project: ProjectRow;
   branches: BranchList;
+  branchHeadCommitIdById: ReadonlyMap<string, string | null>;
   branchesLoading: boolean;
   branchesError: string | null;
   selectedBranch: BranchRow | null;
@@ -56,6 +58,7 @@ export function ProjectWorkbenchSidebar({
               <ProjectBranchListPanel
                 project={project}
                 branches={branches}
+                branchHeadCommitIdById={branchHeadCommitIdById}
                 branchesLoading={branchesLoading}
                 branchesError={branchesError}
                 selectedBranch={selectedBranch}
@@ -84,6 +87,7 @@ export function ProjectWorkbenchSidebar({
 function ProjectBranchListPanel({
   project,
   branches,
+  branchHeadCommitIdById,
   branchesLoading,
   branchesError,
   selectedBranch,
@@ -91,6 +95,7 @@ function ProjectBranchListPanel({
 }: {
   project: ProjectRow;
   branches: BranchList;
+  branchHeadCommitIdById: ReadonlyMap<string, string | null>;
   branchesLoading: boolean;
   branchesError: string | null;
   selectedBranch: BranchRow | null;
@@ -142,7 +147,11 @@ function ProjectBranchListPanel({
               ) : null}
             </div>
           }
-          trailing={branch.headCommitId ? formatCommitId(branch.headCommitId) : "空分支"}
+          trailing={
+            branchHeadCommitIdById.get(branch.id)
+              ? formatCommitId(branchHeadCommitIdById.get(branch.id)!)
+              : "空分支"
+          }
         />
       ))}
     </div>

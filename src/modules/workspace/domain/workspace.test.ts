@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { seedProjectRecord } from "@/test/project";
+import { getProjectWorktreeDir } from "./git-storage/paths";
 import * as service from "./index";
 
 type ExportedAuxNode = ReturnType<typeof service.exportAuxSnapshotTree>["nodes"][number];
@@ -13,6 +14,10 @@ function seedProject(projectId: string) {
     service.createDefaultWorkspace(projectId);
   }
   return service.getDefaultWorkspace(projectId)!;
+}
+
+function worktreePathFor(workspace: { projectId: string; id: string }) {
+  return getProjectWorktreeDir(workspace.projectId, workspace.id);
 }
 
 function flattenAuxNodes(nodes: ExportedAuxNode[]): ExportedAuxNode[] {
@@ -743,7 +748,7 @@ test("restoreDeletedAuxNodeAt removes the current whiteout and restores lower fo
     ],
   });
   expect(
-    fs.existsSync(path.join(workspace.worktreePath, `aux/timeline/${point.id}/.wh.state`)),
+    fs.existsSync(path.join(worktreePathFor(workspace), `aux/timeline/${point.id}/.wh.state`)),
   ).toBe(false);
 });
 
@@ -966,7 +971,7 @@ test("content node move rejects invalid targets without corrupting persisted tre
     body: "scene",
   });
   const before = service.exportContentSubtree(workspace.id);
-  const rootDirsBefore = listManuscriptDirs(workspace.worktreePath);
+  const rootDirsBefore = listManuscriptDirs(worktreePathFor(workspace));
 
   expect(() =>
     service.moveContentNode({
@@ -978,8 +983,8 @@ test("content node move rejects invalid targets without corrupting persisted tre
   ).toThrow("无法移动章节：目标位置不在同一个父级下。");
 
   expect(service.exportContentSubtree(workspace.id)).toEqual(before);
-  expect(listManuscriptDirs(workspace.worktreePath)).toEqual(rootDirsBefore);
-  expectNoTemporaryManuscriptDirs(workspace.worktreePath);
+  expect(listManuscriptDirs(worktreePathFor(workspace))).toEqual(rootDirsBefore);
+  expectNoTemporaryManuscriptDirs(worktreePathFor(workspace));
 });
 
 test("content node move rejects self-referential positions without detaching directories", () => {
@@ -1014,7 +1019,7 @@ test("content node move rejects self-referential positions without detaching dir
   ).toThrow("无法移动：目标位置不能是章节自身。");
 
   expect(service.exportContentSubtree(workspace.id)).toEqual(before);
-  expectNoTemporaryManuscriptDirs(workspace.worktreePath);
+  expectNoTemporaryManuscriptDirs(worktreePathFor(workspace));
 });
 
 test("content node creation rejects foreign after-sibling without writing partial nodes", () => {
@@ -1043,7 +1048,7 @@ test("content node creation rejects foreign after-sibling without writing partia
   ).toThrow("无法创建章节：目标位置不在同一个父级下。");
 
   expect(service.exportContentSubtree(workspace.id)).toEqual(before);
-  expectNoTemporaryManuscriptDirs(workspace.worktreePath);
+  expectNoTemporaryManuscriptDirs(worktreePathFor(workspace));
 });
 
 test("content body updates preserve front matter delimiters and normalize newlines", () => {
@@ -1296,7 +1301,9 @@ test("timeline point deletion purges auxiliary overlay directory when requested"
   service.deleteTimelinePoint(workspace.id, point.id, { purgeAuxLayers: true });
 
   expect(service.listTimelinePoints(workspace.id).some((item) => item.id === point.id)).toBe(false);
-  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/timeline", point.id))).toBe(false);
+  expect(fs.existsSync(path.join(worktreePathFor(workspace), "aux/timeline", point.id))).toBe(
+    false,
+  );
 });
 
 test("timeline point insertion at origin rewires the previous head", () => {
@@ -1408,7 +1415,7 @@ test("deleteAuxNodeAt physically removes origin aux nodes without whiteouts", ()
     timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
     path: "/notes",
   });
-  fs.writeFileSync(path.join(workspace.worktreePath, "aux/origin/.wh.orphan"), "", "utf8");
+  fs.writeFileSync(path.join(worktreePathFor(workspace), "aux/origin/.wh.orphan"), "", "utf8");
 
   service.deleteAuxNodeAt({
     workspaceId: workspace.id,
@@ -1419,9 +1426,9 @@ test("deleteAuxNodeAt physically removes origin aux nodes without whiteouts", ()
   expect(
     service.readAuxByPathAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, "/notes"),
   ).toBeNull();
-  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/notes"))).toBe(false);
-  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/.wh.notes"))).toBe(false);
-  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/.wh.orphan"))).toBe(false);
+  expect(fs.existsSync(path.join(worktreePathFor(workspace), "aux/origin/notes"))).toBe(false);
+  expect(fs.existsSync(path.join(worktreePathFor(workspace), "aux/origin/.wh.notes"))).toBe(false);
+  expect(fs.existsSync(path.join(worktreePathFor(workspace), "aux/origin/.wh.orphan"))).toBe(false);
 });
 
 test("deleteAuxNodeAt keeps timeline whiteouts only when hiding lower nodes", () => {
@@ -1457,13 +1464,13 @@ test("deleteAuxNodeAt keeps timeline whiteouts only when hiding lower nodes", ()
   });
 
   expect(
-    fs.existsSync(path.join(workspace.worktreePath, `aux/timeline/${point.id}/draft.md`)),
+    fs.existsSync(path.join(worktreePathFor(workspace), `aux/timeline/${point.id}/draft.md`)),
   ).toBe(false);
   expect(
-    fs.existsSync(path.join(workspace.worktreePath, `aux/timeline/${point.id}/.wh.draft.md`)),
+    fs.existsSync(path.join(worktreePathFor(workspace), `aux/timeline/${point.id}/.wh.draft.md`)),
   ).toBe(false);
   expect(
-    fs.existsSync(path.join(workspace.worktreePath, `aux/timeline/${point.id}/.wh.origin.md`)),
+    fs.existsSync(path.join(worktreePathFor(workspace), `aux/timeline/${point.id}/.wh.origin.md`)),
   ).toBe(true);
 });
 
@@ -1557,10 +1564,10 @@ test("deleted aux subtree nodes are hidden and whiteouts are path-based", () => 
   expect(
     service.readAuxByPathAt(workspace.id, service.ORIGIN_TIMELINE_POINT_ID, "/state"),
   ).toBeNull();
-  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/state/.wh.location.md"))).toBe(
-    false,
-  );
-  expect(fs.existsSync(path.join(workspace.worktreePath, "aux/origin/.wh.state"))).toBe(false);
+  expect(
+    fs.existsSync(path.join(worktreePathFor(workspace), "aux/origin/state/.wh.location.md")),
+  ).toBe(false);
+  expect(fs.existsSync(path.join(worktreePathFor(workspace), "aux/origin/.wh.state"))).toBe(false);
 });
 
 test("timeline point label can be updated", () => {

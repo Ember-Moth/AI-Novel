@@ -2,8 +2,9 @@ import fs from "node:fs";
 
 import git from "isomorphic-git";
 
-import { getBranch } from "./branches";
-import { ensureProjectRepo } from "./git-storage/git-store";
+import { getBranch, getBranchHeadCommitId } from "./branches";
+import { branchRef, ensureProjectRepo } from "./git-storage/git-store";
+import { getProjectWorktreeDir } from "./git-storage/paths";
 import { getWorkspaceForBranchId } from "./lifecycle";
 import type { WorkingTreeChangeItem, WorkingTreeStatus } from "./types";
 import { readWorktreeState } from "./git-storage/worktree-state";
@@ -23,11 +24,12 @@ function areaForPath(filepath: string): keyof WorkingTreeStatus["areas"] {
 
 export async function getWorkingTreeStatus(branchId: string): Promise<WorkingTreeStatus> {
   const branch = getBranch(branchId);
+  const headCommitId = await getBranchHeadCommitId(branch.id);
   const workspace = getWorkspaceForBranchId(branch.id);
   if (!workspace) {
     return {
       hasChanges: false,
-      headCommitId: branch.headCommitId,
+      headCommitId,
       areas: {
         content: { changed: false, changes: [] },
         timeline: { changed: false, changes: [] },
@@ -35,10 +37,16 @@ export async function getWorkingTreeStatus(branchId: string): Promise<WorkingTre
       },
     };
   }
+  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
   const gitdir = await ensureProjectRepo(branch.projectId);
-  const matrix = await git.statusMatrix({ fs, dir: workspace.worktreePath, gitdir });
-  const state = readWorktreeState(workspace.worktreePath);
-  if (!branch.headCommitId && state.content.length === 0 && state.timeline.length === 0) {
+  const matrix = await git.statusMatrix({
+    fs,
+    dir: worktreePath,
+    gitdir,
+    ref: branchRef(branch.id),
+  });
+  const state = readWorktreeState(worktreePath);
+  if (!headCommitId && state.content.length === 0 && state.timeline.length === 0) {
     return {
       hasChanges: false,
       headCommitId: null,
@@ -66,7 +74,7 @@ export async function getWorkingTreeStatus(branchId: string): Promise<WorkingTre
   }
   return {
     hasChanges: Object.values(areas).some((area) => area.changed),
-    headCommitId: branch.headCommitId,
+    headCommitId,
     areas,
   };
 }

@@ -16,6 +16,7 @@ import type {
   TimelinePointRef,
 } from "./types";
 import { getWorkspace, touchWorkspaceMeta } from "./lifecycle";
+import { getProjectWorktreeDir } from "./git-storage/paths";
 import {
   assertTimelinePoint,
   AUX_ORIGIN_DIR,
@@ -236,13 +237,14 @@ function readAuxContentFromSnapshot(node: OverlaySnapshotNode) {
 
 function buildSnapshot(workspaceId: string, pointId: TimelinePointRef) {
   const workspace = getWorkspace(workspaceId);
-  const state = readWorktreeState(workspace.worktreePath);
+  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
+  const state = readWorktreeState(worktreePath);
   const normalizedPointId = assertTimelinePoint(state, pointId);
   const snapshot = new Map<string, OverlaySnapshotNode>();
   const layers = [null, ...timelineLayerPointIds(state, normalizedPointId)];
 
   for (const layerPointId of layers) {
-    for (const entry of readLayerEntries(workspace.worktreePath, layerPointId)) {
+    for (const entry of readLayerEntries(worktreePath, layerPointId)) {
       if (entry.kind === "whiteout") {
         removeFromSnapshot(snapshot, entry.path);
         continue;
@@ -273,7 +275,7 @@ function buildSnapshot(workspaceId: string, pointId: TimelinePointRef) {
     node.content = readAuxContentFromSnapshot(node);
   }
 
-  return { workspace, state, pointId: normalizedPointId, snapshot };
+  return { workspace, worktreePath, state, pointId: normalizedPointId, snapshot };
 }
 
 function sortedSnapshotNodes(snapshot: Map<string, OverlaySnapshotNode>) {
@@ -451,7 +453,8 @@ export function mkdirAt(input: {
   const { normalizedPath, parentPath } = splitAuxPath(input.path, "创建辅助资料目录");
   assertParentDir(snapshot, parentPath);
   assertPathAvailable(snapshot, normalizedPath);
-  const root = currentLayerRoot(workspace.worktreePath, pointId);
+  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
+  const root = currentLayerRoot(worktreePath, pointId);
   const targetPath = fsPathForAuxPath(root, normalizedPath);
   clearUpperNodeForWrite(root, normalizedPath);
   writeKeepFile(targetPath);
@@ -470,7 +473,8 @@ export function writeFileAt(input: {
   const existing = snapshot.get(normalizedPath);
   invariant(!existing || existing.nodeType === "file", "目标路径不是文件。");
   assertParentDir(snapshot, parentPath);
-  const root = currentLayerRoot(workspace.worktreePath, pointId);
+  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
+  const root = currentLayerRoot(worktreePath, pointId);
   const targetPath = fsPathForAuxPath(root, normalizedPath);
   clearUpperNodeForWrite(root, normalizedPath);
   ensureDirSync(path.dirname(targetPath));
@@ -490,7 +494,8 @@ export function linkAt(input: {
   const normalizedTargetPath = normalizeAuxPath(input.targetPath, "创建辅助资料链接");
   assertParentDir(snapshot, parentPath);
   assertPathAvailable(snapshot, normalizedPath);
-  const root = currentLayerRoot(workspace.worktreePath, pointId);
+  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
+  const root = currentLayerRoot(worktreePath, pointId);
   const targetPath = fsPathForAuxPath(root, normalizedPath);
   clearUpperNodeForWrite(root, normalizedPath);
   ensureDirSync(path.dirname(targetPath));
@@ -522,7 +527,7 @@ export function moveAuxNodeAt(input: {
   assertParentDir(snapshot, parentPath);
   assertPathAvailable(snapshot, targetPath, sourcePath);
   materializeSubtreeAt({
-    worktreePath: workspace.worktreePath,
+    worktreePath: getProjectWorktreeDir(workspace.projectId, workspace.id),
     pointId,
     snapshot,
     sourcePath,
@@ -531,7 +536,7 @@ export function moveAuxNodeAt(input: {
   deleteVisiblePathFromLayer({
     workspaceId: workspace.id,
     state,
-    worktreePath: workspace.worktreePath,
+    worktreePath: getProjectWorktreeDir(workspace.projectId, workspace.id),
     pointId,
     auxPath: sourcePath,
   });
@@ -555,7 +560,8 @@ export function retargetAuxSymlinkAt(input: {
   const normalizedTargetPath = normalizeAuxPath(input.targetPath, "重定向辅助资料链接");
   const existing = snapshot.get(normalizedPath);
   invariant(existing?.nodeType === "symlink", "当前辅助信息不是链接。");
-  const root = currentLayerRoot(workspace.worktreePath, pointId);
+  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
+  const root = currentLayerRoot(worktreePath, pointId);
   const targetPath = fsPathForAuxPath(root, normalizedPath);
   clearUpperNodeForWrite(root, normalizedPath);
   ensureDirSync(path.dirname(targetPath));
@@ -578,7 +584,7 @@ export function deleteAuxNodeAt(input: {
   deleteVisiblePathFromLayer({
     workspaceId: workspace.id,
     state,
-    worktreePath: workspace.worktreePath,
+    worktreePath: getProjectWorktreeDir(workspace.projectId, workspace.id),
     pointId,
     auxPath: normalizedPath,
   });
@@ -591,13 +597,14 @@ export function restoreDeletedAuxNodeAt(input: {
   path: string;
 }) {
   const workspace = getWorkspace(input.workspaceId);
-  const state = readWorktreeState(workspace.worktreePath);
+  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
+  const state = readWorktreeState(worktreePath);
   const pointId = assertTimelinePoint(state, input.timelinePointId);
   invariant(pointId !== null, "原点没有可恢复的辅助资料删除标记。");
   const normalizedPath = normalizeAuxPath(input.path, "恢复辅助资料");
   const lowerSnapshot = lowerSnapshotForLayer(input.workspaceId, state, pointId);
   invariant(snapshotHasPathOrDescendant(lowerSnapshot, normalizedPath), "没有可恢复的辅助资料。");
-  const root = currentLayerRoot(workspace.worktreePath, pointId);
+  const root = currentLayerRoot(worktreePath, pointId);
   const whiteoutPath = whiteoutPathForAuxPath(root, normalizedPath);
   invariant(fs.existsSync(whiteoutPath), "没有可恢复的辅助资料删除标记。");
   fs.rmSync(whiteoutPath, { force: true });
@@ -674,15 +681,15 @@ export function exportAuxSnapshotTree(
   pointId?: TimelinePointRef,
 ): ExportedAuxSnapshotTree {
   const {
-    workspace,
     state,
     pointId: normalizedPointId,
     snapshot,
+    worktreePath,
   } = buildSnapshot(workspaceId, pointId);
   const deletedEntries = currentLayerDeletedEntries({
     workspaceId,
     state,
-    worktreePath: workspace.worktreePath,
+    worktreePath,
     pointId: normalizedPointId,
   });
   const build = (parentPath: string): ExportedAuxNode[] => {
@@ -737,7 +744,7 @@ export function listAuxTimelineChangesAt(
   const current = buildSnapshot(workspaceId, pointId).snapshot;
   const normalizedPointId = normalizePointId(pointId);
   const workspace = getWorkspace(workspaceId);
-  const state = readWorktreeState(workspace.worktreePath);
+  const state = readWorktreeState(getProjectWorktreeDir(workspace.projectId, workspace.id));
   const point = normalizedPointId
     ? orderTimelineRows(state.timeline).find((item) => item.id === normalizedPointId)
     : null;

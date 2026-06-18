@@ -5,7 +5,7 @@ import { invariant } from "@/shared/lib/domain";
 
 import { commitCustomRefSync, metaRef, readFilesAtRefSync } from "./git-store";
 import { parseJsonl, stringifyJsonl } from "./jsonl";
-import { ensureStorageRoot, getProjectWorktreeDir } from "./paths";
+import { ensureStorageRoot } from "./paths";
 import type {
   BranchIndexRow,
   ProjectIndexRow,
@@ -17,13 +17,6 @@ function repoProjectIdFromDirname(dirname: string) {
   return dirname.endsWith(".git") ? dirname.slice(0, -4) : null;
 }
 
-function normalizeWorkspaceRow(projectId: string, workspace: WorkspaceIndexRow): WorkspaceIndexRow {
-  return {
-    ...workspace,
-    worktreePath: getProjectWorktreeDir(projectId, workspace.id),
-  };
-}
-
 function normalizePayload(payload: ProjectMetaPayload): ProjectMetaPayload {
   return {
     project: {
@@ -33,23 +26,21 @@ function normalizePayload(payload: ProjectMetaPayload): ProjectMetaPayload {
     },
     branches: payload.branches.map((branch) => ({
       ...branch,
-      headCommitId: branch.headCommitId ?? null,
       forkedFromCommitId: branch.forkedFromCommitId ?? null,
     })),
-    workspaces: payload.workspaces.map((workspace) =>
-      normalizeWorkspaceRow(payload.project.id, workspace),
-    ),
+    workspaces: payload.workspaces.map((workspace) => ({
+      ...workspace,
+    })),
   };
 }
 
-function parsePayload(projectId: string, files: Record<string, string>): ProjectMetaPayload {
+function parsePayload(files: Record<string, string>): ProjectMetaPayload {
   const projectJson = files["project.json"];
   invariant(projectJson, "缺少 project.json。");
   const project = JSON.parse(projectJson) as ProjectIndexRow;
   const branches = parseJsonl<BranchIndexRow>(files["branches.jsonl"]);
-  const workspaces = parseJsonl<WorkspaceIndexRow>(files["workspaces.jsonl"]).map((workspace) =>
-    normalizeWorkspaceRow(projectId, workspace),
-  );
+  const workspaces = parseJsonl<WorkspaceIndexRow>(files["workspaces.jsonl"]);
+
   return normalizePayload({
     project: {
       ...project,
@@ -63,7 +54,7 @@ function parsePayload(projectId: string, files: Record<string, string>): Project
 
 export function tryReadProjectMetaSync(projectId: string): ProjectMetaPayload | null {
   try {
-    return parsePayload(projectId, readFilesAtRefSync({ projectId, ref: metaRef(projectId) }));
+    return parsePayload(readFilesAtRefSync({ projectId, ref: metaRef(projectId) }));
   } catch {
     return null;
   }
@@ -125,12 +116,7 @@ export function writeProjectMetaSync(
     files: {
       "project.json": `${JSON.stringify(normalized.project, null, 2)}\n`,
       "branches.jsonl": stringifyJsonl(normalized.branches),
-      "workspaces.jsonl": stringifyJsonl(
-        normalized.workspaces.map((workspace) => ({
-          ...workspace,
-          worktreePath: getProjectWorktreeDir(normalized.project.id, workspace.id),
-        })),
-      ),
+      "workspaces.jsonl": stringifyJsonl(normalized.workspaces),
     },
   });
   return normalized;

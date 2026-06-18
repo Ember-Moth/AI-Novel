@@ -56,10 +56,21 @@ export function ProjectWorkbenchRoute({ projectId }: { projectId: string }) {
       refetchOnWindowFocus: true,
     },
   );
+  const branchHeadsQuery = rpc.useQuery(
+    "branches.heads",
+    { projectId },
+    {
+      refetchOnWindowFocus: true,
+    },
+  );
 
   const project = projectQuery.data;
   const branches = branchesQuery.data ?? [];
   const workspaces = workspacesQuery.data ?? [];
+  const branchHeads = branchHeadsQuery.data ?? [];
+  const branchHeadCommitIdById = new Map(
+    branchHeads.map((branchHead) => [branchHead.branchId, branchHead.headCommitId] as const),
+  );
   const sortedBranches = sortProjectBranches(branches, project?.defaultBranchId ?? null);
   const rememberedBranchId = projectBranchSelection[projectId] ?? null;
   const selectedBranchId = resolveSelectedBranchId(
@@ -68,6 +79,9 @@ export function ProjectWorkbenchRoute({ projectId }: { projectId: string }) {
     project?.defaultBranchId ?? null,
   );
   const selectedBranch = sortedBranches.find((item) => item.id === selectedBranchId) ?? null;
+  const selectedBranchHeadCommitId = selectedBranch
+    ? (branchHeadCommitIdById.get(selectedBranch.id) ?? null)
+    : null;
 
   const commitHistoryQuery = rpc.useQuery(
     "commits.history",
@@ -237,7 +251,7 @@ export function ProjectWorkbenchRoute({ projectId }: { projectId: string }) {
     }
 
     try {
-      const sourceCommitId = resolveNewBranchSourceCommitId(branches, project.defaultBranchId);
+      const sourceCommitId = resolveNewBranchSourceCommitId(branchHeads, project.defaultBranchId);
       const workspace = await createBranchWithWorkspace.mutate({
         projectId: project.id,
         name: trimmedName,
@@ -284,7 +298,7 @@ export function ProjectWorkbenchRoute({ projectId }: { projectId: string }) {
   };
 
   const handleDiscardChanges = async () => {
-    if (!selectedBranch || !selectedWorkspace || !selectedBranch.headCommitId) {
+    if (!selectedBranch || !selectedWorkspace || !workingTreeStatus?.headCommitId) {
       return;
     }
 
@@ -296,7 +310,7 @@ export function ProjectWorkbenchRoute({ projectId }: { projectId: string }) {
       workbenchStore.getState().setDiscardError(null);
       await checkoutCommit.mutate({
         workspaceId: selectedWorkspace.id,
-        commitId: selectedBranch.headCommitId,
+        commitId: workingTreeStatus.headCommitId,
       });
     } catch (mutationError) {
       workbenchStore
@@ -390,6 +404,7 @@ export function ProjectWorkbenchRoute({ projectId }: { projectId: string }) {
               <ProjectWorkbenchSidebar
                 project={project}
                 branches={sortedBranches}
+                branchHeadCommitIdById={branchHeadCommitIdById}
                 branchesLoading={branchesQuery.isInitialLoading && sortedBranches.length === 0}
                 branchesError={branchesQuery.error?.message ?? null}
                 selectedBranch={selectedBranch}
@@ -421,6 +436,7 @@ export function ProjectWorkbenchRoute({ projectId }: { projectId: string }) {
           <ProjectWorkbenchMain
             project={project}
             selectedBranch={selectedBranch}
+            selectedBranchHeadCommitId={selectedBranchHeadCommitId}
             selectedWorkspace={selectedWorkspace}
             commitHistory={commitHistory}
             commitHistoryLoading={commitHistoryQuery.isInitialLoading && commitHistory.length === 0}

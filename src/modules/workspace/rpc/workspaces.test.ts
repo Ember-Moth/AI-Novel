@@ -28,4 +28,5 @@ test("workspace detail query watches the workspace tag and returns the workspace
     name: "main",
     branchId: workspace.branchId,
   });
+  expect(result.data).not.toHaveProperty("worktreePath");
 });

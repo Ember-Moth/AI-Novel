@@ -23,6 +23,19 @@ test("branch list watches the project branches tag and includes the default bran
 
   expect(result.watch).toEqual([rpcTags.branchesByProject("rpc_branch_list")]);
   expect(result.data.map((branch) => branch.id)).toContain(workspace.branchId);
+  expect(result.data[0]).not.toHaveProperty("headCommitId");
+  expect(result.data[0]).not.toHaveProperty("ref");
+});
+
+test("branch heads watches the project branch-heads tag and resolves current heads", async () => {
+  const workspace = seedProject("rpc_branch_heads");
+  const result = await branchHandlers.heads.handler({ projectId: "rpc_branch_heads" }, requestCtx);
+
+  expect(result.watch).toEqual([rpcTags.branchHeadsByProject("rpc_branch_heads")]);
+  expect(result.data).toContainEqual({
+    branchId: workspace.branchId,
+    headCommitId: null,
+  });
 });
 
 test("creating a branch with workspace invalidates branches and workspaces", async () => {
@@ -41,6 +54,7 @@ test("creating a branch with workspace invalidates branches and workspaces", asy
 
   expect(result.invalidate).toEqual([
     rpcTags.branchesByProject("rpc_branch_create"),
+    rpcTags.branchHeadsByProject("rpc_branch_create"),
     rpcTags.workspacesByProject("rpc_branch_create"),
     rpcTags.project("rpc_branch_create"),
     rpcTags.projectsList(),
@@ -65,6 +79,7 @@ test("deleting a branch invalidates branch, workspace, and project tags", async 
 
   expect(result.invalidate).toEqual([
     rpcTags.branchesByProject("rpc_branch_delete"),
+    rpcTags.branchHeadsByProject("rpc_branch_delete"),
     rpcTags.branch(featureWorkspace.branchId),
     rpcTags.workspacesByProject("rpc_branch_delete"),
     rpcTags.project("rpc_branch_delete"),
@@ -89,6 +104,7 @@ test("commit create invalidates history and branch tags", async () => {
   expect(result.invalidate).toEqual([
     rpcTags.commitHistory(workspace.branchId),
     rpcTags.branch(workspace.branchId),
+    rpcTags.branchHeadsByProject("rpc_commit_create"),
     rpcTags.branchesByProject("rpc_commit_create"),
     rpcTags.project("rpc_commit_create"),
     rpcTags.projectsList(),

@@ -2,7 +2,8 @@ import fs from "node:fs";
 
 import { createId, invariant, now } from "@/shared/lib/domain";
 
-import { toBranchRef } from "./git-storage/git-store";
+import { branchRef, deleteRefSync, resolveRef, writeRefSync } from "./git-storage/git-store";
+import { getProjectWorktreeDir } from "./git-storage/paths";
 import type { BranchIndexRow, ProjectIndexRow } from "./git-storage/types";
 import {
   findProjectMetaByBranchIdSync,
@@ -12,6 +13,11 @@ import {
 import { getWorkspaceForBranchId } from "./lifecycle";
 
 export type BranchRow = BranchIndexRow;
+
+export interface BranchHeadRow {
+  branchId: string;
+  headCommitId: string | null;
+}
 
 function getProject(projectId: string): ProjectIndexRow {
   return readProjectMetaSync(projectId).project;
@@ -31,8 +37,15 @@ export function createBranch(input: {
 
   const branchId = createId("branch");
   const timestamp = now();
-  const ref = toBranchRef(name);
-  const headCommitId = input.fromCommitId ?? null;
+  const initialHeadCommitId = input.fromCommitId ?? null;
+  if (initialHeadCommitId) {
+    writeRefSync({
+      projectId: project.id,
+      ref: branchRef(branchId),
+      value: initialHeadCommitId,
+    });
+  }
+
   updateProjectMetaSync(
     project.id,
     (current) => ({
@@ -47,8 +60,6 @@ export function createBranch(input: {
           id: branchId,
           projectId: project.id,
           name,
-          ref,
-          headCommitId,
           forkedFromCommitId: input.fromCommitId ?? null,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -71,6 +82,21 @@ export function getBranch(branchId: string) {
   return branch;
 }
 
+export async function getBranchHeadCommitId(branchId: string) {
+  const branch = getBranch(branchId);
+  return await resolveRef(branch.projectId, branchRef(branch.id));
+}
+
+export async function listBranchHeads(projectId: string): Promise<BranchHeadRow[]> {
+  const branches = listBranches(projectId);
+  return await Promise.all(
+    branches.map(async (branch) => ({
+      branchId: branch.id,
+      headCommitId: await resolveRef(projectId, branchRef(branch.id)),
+    })),
+  );
+}
+
 export async function deleteBranch(branchId: string) {
   const branch = getBranch(branchId);
   const project = getProject(branch.projectId);
@@ -80,8 +106,12 @@ export async function deleteBranch(branchId: string) {
   );
   const workspace = getWorkspaceForBranchId(branch.id);
   if (workspace) {
-    await fs.promises.rm(workspace.worktreePath, { recursive: true, force: true });
+    await fs.promises.rm(getProjectWorktreeDir(workspace.projectId, workspace.id), {
+      recursive: true,
+      force: true,
+    });
   }
+  deleteRefSync({ projectId: branch.projectId, ref: branchRef(branch.id) });
   updateProjectMetaSync(
     project.id,
     (payload) => {

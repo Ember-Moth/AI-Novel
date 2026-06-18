@@ -22,7 +22,7 @@ test("default workspace creates a default branch and links project", async () =>
 
   const branch = service.getBranch(workspace.branchId);
   expect(branch.name).toBe("main");
-  expect(branch.headCommitId).toBeNull();
+  expect(await service.getBranchHeadCommitId(workspace.branchId)).toBeNull();
 });
 
 test("commit then checkout round-trips content, timeline and aux state", async () => {
@@ -122,7 +122,7 @@ test("branch off a commit shares the same head and forked metadata", async () =>
 
   const branch = service.getBranch(featureWorkspace.branchId);
   expect(branch.forkedFromCommitId).toBe(commit.id);
-  expect(branch.headCommitId).toBe(commit.id);
+  expect(await service.getBranchHeadCommitId(featureWorkspace.branchId)).toBe(commit.id);
 
   // The new workspace is checked out from the commit and has the same content.
   const exported = service.exportContentSubtree(featureWorkspace.id);

@@ -11,8 +11,6 @@ export interface BranchIndexRow {
   id: string;
   projectId: string;
   name: string;
-  ref: string;
-  headCommitId: string | null;
   forkedFromCommitId: string | null;
   createdAt: number;
   updatedAt: number;
@@ -23,7 +21,6 @@ export interface WorkspaceIndexRow {
   projectId: string;
   branchId: string;
   name: string;
-  worktreePath: string;
   createdAt: number;
   updatedAt: number;
 }

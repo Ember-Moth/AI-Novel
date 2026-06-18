@@ -26,6 +26,7 @@ import { useProjectWorkbenchState } from "./state/projectWorkbenchStore";
 export function ProjectWorkbenchMain({
   project,
   selectedBranch,
+  selectedBranchHeadCommitId,
   selectedWorkspace,
   commitHistory,
   commitHistoryLoading,
@@ -49,6 +50,7 @@ export function ProjectWorkbenchMain({
 }: {
   project: ProjectRow;
   selectedBranch: BranchRow | null;
+  selectedBranchHeadCommitId: string | null;
   selectedWorkspace: WorkspaceRow | null;
   commitHistory: CommitHistory;
   commitHistoryLoading: boolean;
@@ -88,6 +90,7 @@ export function ProjectWorkbenchMain({
         <BranchDetailPanel
           project={project}
           selectedBranch={selectedBranch}
+          selectedBranchHeadCommitId={selectedBranchHeadCommitId}
           selectedWorkspace={selectedWorkspace}
           commitHistory={commitHistory}
           commitHistoryLoading={commitHistoryLoading}
@@ -116,6 +119,7 @@ export function ProjectWorkbenchMain({
 function BranchDetailPanel({
   project,
   selectedBranch,
+  selectedBranchHeadCommitId,
   selectedWorkspace,
   commitHistory,
   commitHistoryLoading,
@@ -138,6 +142,7 @@ function BranchDetailPanel({
 }: {
   project: ProjectRow;
   selectedBranch: BranchRow | null;
+  selectedBranchHeadCommitId: string | null;
   selectedWorkspace: WorkspaceRow | null;
   commitHistory: CommitHistory;
   commitHistoryLoading: boolean;
@@ -204,8 +209,8 @@ function BranchDetailPanel({
                 <span>更新时间 {dateFormatter.format(selectedBranch.updatedAt)}</span>
                 <span>
                   HEAD{" "}
-                  {selectedBranch.headCommitId ? (
-                    <span className="font-mono">{formatCommitId(selectedBranch.headCommitId)}</span>
+                  {selectedBranchHeadCommitId ? (
+                    <span className="font-mono">{formatCommitId(selectedBranchHeadCommitId)}</span>
                   ) : (
                     "—"
                   )}
@@ -294,7 +299,7 @@ function BranchDetailPanel({
                   <CommitHistoryRow
                     key={commit.id}
                     commit={commit}
-                    isHead={commit.id === selectedBranch.headCommitId}
+                    isHead={commit.id === selectedBranchHeadCommitId}
                     onFork={() => onOpenFork(commit)}
                   />
                 ))}
