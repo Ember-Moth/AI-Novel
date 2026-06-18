@@ -83,3 +83,44 @@ test("MessageList renders structured tool cards in chat", () => {
   expect(html).toContain("原点");
   expect(html).toContain("原始数据");
 });
+
+test("MessageList keeps ask_user card mounted while tool input is streaming", () => {
+  const html = renderToStaticMarkup(
+    <MessageList
+      messages={[
+        {
+          id: "assistant_streaming_ask",
+          role: "assistant",
+          parts: [
+            {
+              type: "dynamic-tool",
+              toolName: "ask_user",
+              toolCallId: "tool_ask_stream",
+              state: "input-streaming",
+              input: {
+                title: "补充设定",
+                questions: [
+                  {
+                    id: "genre",
+                    prompt: "故事更接近哪种风格？",
+                    kind: "single_choice",
+                    options: [{ id: "xuanhuan" }],
+                  },
+                ],
+              },
+            },
+          ],
+        } as any,
+      ]}
+      allMessages={[]}
+      candidateGroups={[]}
+      isStreaming
+      onSelectBranch={() => {}}
+      onSubmitAskUser={() => {}}
+    />,
+  );
+
+  expect(html).toContain("补充设定");
+  expect(html).toContain("故事更接近哪种风格？");
+  expect(html).toContain("生成中");
+});

@@ -47,22 +47,42 @@ function getToolName(part: { type: string; toolName?: string }) {
   return part.type.startsWith("tool-") ? part.type.slice(5) : null;
 }
 
-function parseAskUserQuestion(input: unknown): AssistantAskUserQuestion | null {
+function parseAskUserQuestionWithMode(
+  input: unknown,
+  mode: "strict" | "streaming",
+  index = 0,
+): AssistantAskUserQuestion | null {
   if (!input || typeof input !== "object") {
     return null;
   }
   const record = input as Record<string, unknown>;
-  const id = typeof record.id === "string" ? record.id : null;
-  const prompt = typeof record.prompt === "string" ? record.prompt : null;
+  const id =
+    typeof record.id === "string" && record.id.trim().length > 0
+      ? record.id
+      : mode === "streaming"
+        ? `streaming-question-${index}`
+        : null;
+  const prompt =
+    typeof record.prompt === "string" && record.prompt.trim().length > 0
+      ? record.prompt
+      : mode === "streaming"
+        ? "正在生成问题..."
+        : null;
   const kind = record.kind;
-  if (!id || !prompt || (kind !== "single_choice" && kind !== "free_text")) {
+  if (!id || !prompt) {
     return null;
   }
   if (kind === "free_text") {
     return { id, prompt, kind };
   }
-  if (!Array.isArray(record.options)) {
+  if (kind !== "single_choice") {
+    if (mode === "streaming") {
+      return { id, prompt, kind: "free_text" };
+    }
     return null;
+  }
+  if (!Array.isArray(record.options)) {
+    return mode === "streaming" ? { id, prompt, kind, options: [] } : null;
   }
   const options = record.options.flatMap((option) => {
     if (!option || typeof option !== "object") {
@@ -82,7 +102,10 @@ function parseAskUserQuestion(input: unknown): AssistantAskUserQuestion | null {
       },
     ];
   });
-  return options.length === record.options.length ? { id, prompt, kind, options } : null;
+  if (mode === "strict" && options.length !== record.options.length) {
+    return null;
+  }
+  return { id, prompt, kind, options };
 }
 
 function parseAskUserAnswers(output: unknown): AssistantAskUserAnswer[] | null {
@@ -283,11 +306,19 @@ export function MessageList({
                     }
 
                     if (toolName === "ask_user" && "input" in part && part.input) {
+                      const questionParseMode =
+                        part.state === "input-streaming" ? "streaming" : "strict";
                       const questions = Array.isArray(
                         (part.input as { questions?: unknown[] }).questions,
                       )
                         ? (part.input as { questions: unknown[] }).questions
-                            .map(parseAskUserQuestion)
+                            .map((question, questionIndex) =>
+                              parseAskUserQuestionWithMode(
+                                question,
+                                questionParseMode,
+                                questionIndex,
+                              ),
+                            )
                             .filter(
                               (question): question is AssistantAskUserQuestion => question != null,
                             )
@@ -313,7 +344,26 @@ export function MessageList({
                           submittedAnswers={submittedAnswers}
                           isSubmitting={false}
                           canSubmit={part.state === "input-available"}
+                          isStreamingInput={part.state === "input-streaming"}
                           onSubmit={(answers) => onSubmitAskUser(part.toolCallId, request, answers)}
+                        />
+                      ) : part.state === "input-streaming" ? (
+                        <AskUserInlineCard
+                          key={`${message.id}:ask-user:${part.toolCallId}`}
+                          entry={{
+                            toolCallId: part.toolCallId,
+                            title:
+                              typeof (part.input as { title?: unknown }).title === "string"
+                                ? (part.input as { title: string }).title
+                                : null,
+                            questions: [],
+                            answers: null,
+                          }}
+                          submittedAnswers={null}
+                          isSubmitting={false}
+                          canSubmit={false}
+                          isStreamingInput
+                          onSubmit={() => {}}
                         />
                       ) : null;
                     }

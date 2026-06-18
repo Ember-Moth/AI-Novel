@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { cn } from "@/shared/lib/cn";
+
 import {
   formatAskUserAnswer,
   type AssistantAskUserAnswer,
@@ -20,13 +22,17 @@ function AskUserQuestionBlock({
   question,
   answer,
   resolved,
+  streaming,
   onChange,
 }: {
   question: AssistantAskUserQuestion;
   answer: AssistantAskUserAnswer | null;
   resolved: boolean;
+  streaming: boolean;
   onChange: (_value: string, _mode?: "option" | "text") => void;
 }) {
+  const showPreview = streaming && !resolved;
+
   return (
     <section className="py-2.5 first:pt-2 last:pb-2">
       <div className="text-[12px] leading-5 text-foreground">{question.prompt}</div>
@@ -37,6 +43,36 @@ function AskUserQuestionBlock({
             {formatAskUserAnswer(question, answer)}
           </span>
         </div>
+      ) : showPreview ? (
+        question.kind === "single_choice" ? (
+          <div className="mt-2 flex flex-col gap-1.5">
+            {question.options.length > 0 ? (
+              question.options.map((option) => (
+                <div
+                  key={option.id}
+                  className="flex items-start gap-2 rounded-md border border-border bg-sidebar-background/35 px-2 py-2 text-[12px] leading-5 text-foreground-muted"
+                >
+                  <span className="mt-0.5 icon-[material-symbols--radio-button-unchecked] shrink-0 text-[16px]" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-foreground">{option.label}</span>
+                    {option.description ? (
+                      <span className="mt-0.5 block text-[11px] leading-4 text-foreground-muted">
+                        {option.description}
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="space-y-1.5">
+                <div className="h-8 rounded-md border border-border/70 bg-sidebar-background/35" />
+                <div className="h-8 rounded-md border border-border/50 bg-sidebar-background/20" />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="mt-2 h-16 rounded-md border border-border/70 bg-sidebar-background/30" />
+        )
       ) : question.kind === "single_choice" ? (
         <div className="mt-2 flex flex-col gap-1.5">
           {question.options.map((option) => {
@@ -99,18 +135,21 @@ export function AskUserInlineCard({
   submittedAnswers,
   isSubmitting,
   canSubmit,
+  isStreamingInput = false,
   onSubmit,
 }: {
   entry: AssistantAskUserEntry;
   submittedAnswers: AssistantAskUserAnswer[] | null;
   isSubmitting: boolean;
   canSubmit: boolean;
+  isStreamingInput?: boolean;
   onSubmit: (_answers: AssistantAskUserAnswer[]) => void;
 }) {
   const [draftAnswers, setDraftAnswers] = useState<Record<string, AssistantAskUserAnswer>>(() =>
     indexAskUserAnswers(submittedAnswers),
   );
   const isResolved = submittedAnswers != null;
+  const hasQuestions = entry.questions.length > 0;
 
   useEffect(() => {
     if (submittedAnswers == null) {
@@ -143,7 +182,7 @@ export function AskUserInlineCard({
       }
     }
   });
-  const isComplete = normalizedAnswers.length === entry.questions.length;
+  const isComplete = hasQuestions && normalizedAnswers.length === entry.questions.length;
 
   function updateAnswer(
     question: AssistantAskUserQuestion,
@@ -187,25 +226,38 @@ export function AskUserInlineCard({
       <div className="flex items-center gap-2 border-b border-border/70 px-2.5 py-2 text-[11px] leading-4 text-foreground-muted">
         <span className="icon-[material-symbols--help-outline] shrink-0 text-[14px] text-accent-foreground" />
         <span className="min-w-0 flex-1 truncate">
-          {entry.title ?? (isResolved ? "已提交回答" : "等待回答")}
+          {entry.title ??
+            (isResolved ? "已提交回答" : isStreamingInput ? "正在生成提问" : "等待回答")}
         </span>
-        {isSubmitting ? <span className="text-accent-foreground">提交中</span> : null}
+        {isSubmitting ? (
+          <span className="text-accent-foreground">提交中</span>
+        ) : isStreamingInput ? (
+          <span className="text-accent-foreground">生成中</span>
+        ) : null}
       </div>
 
-      <div className="px-2.5">
-        <div className="divide-y divide-border/60">
-          {entry.questions.map((question) => (
-            <AskUserQuestionBlock
-              key={question.id}
-              question={question}
-              answer={draftAnswers[question.id] ?? null}
-              resolved={isResolved}
-              onChange={(value, mode) => updateAnswer(question, value, mode)}
-            />
-          ))}
-        </div>
+      <div className={cn("px-2.5", isStreamingInput && !hasQuestions && "py-2.5")}>
+        {hasQuestions ? (
+          <div className="divide-y divide-border/60">
+            {entry.questions.map((question) => (
+              <AskUserQuestionBlock
+                key={question.id}
+                question={question}
+                answer={draftAnswers[question.id] ?? null}
+                resolved={isResolved}
+                streaming={isStreamingInput}
+                onChange={(value, mode) => updateAnswer(question, value, mode)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-h-24 items-center gap-2 rounded-md border border-dashed border-border/70 bg-sidebar-background/25 px-3 py-3 text-[12px] leading-5 text-foreground-muted">
+            <span className="icon-[material-symbols--progress-activity] shrink-0 animate-spin text-[16px] text-accent-foreground" />
+            <span className="min-w-0 flex-1">正在整理提问内容...</span>
+          </div>
+        )}
 
-        {!isResolved ? (
+        {!isResolved && hasQuestions && !isStreamingInput ? (
           <div className="flex justify-end border-t border-border/60 py-2">
             <button
               type="button"
