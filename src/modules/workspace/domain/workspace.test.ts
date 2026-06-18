@@ -35,10 +35,7 @@ function listManuscriptFiles(worktreePath: string) {
 
 function expectNoOrphanManuscriptFiles(worktreePath: string) {
   // 所有 .md 文件应在 index.jsonl 中有对应条目
-  const indexContent = fs.readFileSync(
-    path.join(worktreePath, "manuscript", "index.jsonl"),
-    "utf8",
-  );
+  const indexContent = fs.readFileSync(path.join(worktreePath, "index.jsonl"), "utf8");
   const indexIds = new Set(
     indexContent
       .split("\n")

@@ -100,8 +100,7 @@ function rebuildTree(
 }
 
 export function readWorktreeState(dir: string): WorktreeState {
-  const indexFilePath = path.join(dir, MANUSCRIPT_DIR, INDEX_FILE);
-  const indexContent = readTextSync(indexFilePath);
+  const indexContent = readTextSync(path.join(dir, INDEX_FILE));
   const rows: IndexRow[] = indexContent ? parseJsonl<IndexRow>(indexContent) : [];
 
   // 读正文文件
@@ -144,7 +143,7 @@ function writeManuscriptFiles(dir: string, roots: ManuscriptNodeDiskState[]) {
   indexLines.push(""); // trailing newline
 
   // 写 index.jsonl
-  fs.writeFileSync(path.join(manuscriptDir, INDEX_FILE), indexLines.join("\n"), "utf8");
+  fs.writeFileSync(path.join(dir, INDEX_FILE), indexLines.join("\n"), "utf8");
 
   // 增量同步 .md 文件
   const existingFiles = new Set<string>();
@@ -175,6 +174,7 @@ function writeManuscriptFiles(dir: string, roots: ManuscriptNodeDiskState[]) {
 }
 
 export async function writeWorktreeState(dir: string, state: WorktreeState) {
+  await fs.promises.mkdir(dir, { recursive: true });
   await fs.promises.writeFile(
     path.join(dir, TIMELINE_FILE),
     stringifyJsonl(state.timeline),
@@ -185,6 +185,7 @@ export async function writeWorktreeState(dir: string, state: WorktreeState) {
 }
 
 export function writeWorktreeStateSync(dir: string, state: WorktreeState) {
+  ensureDirSync(dir);
   fs.writeFileSync(path.join(dir, TIMELINE_FILE), stringifyJsonl(state.timeline), "utf8");
   writeManuscriptFiles(dir, state.content);
   ensureDirSync(path.join(dir, AUX_ORIGIN_DIR));
