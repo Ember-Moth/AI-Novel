@@ -21,6 +21,24 @@ function createManuscriptInsertQueueKey(input: { workspaceId: string; parentId: 
   return `${input.workspaceId}:${input.parentId ?? "top"}`;
 }
 
+function normalizeOptionalManuscriptParentId(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeOptionalSiblingId(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeRequiredNodeId(value: string, fieldName: string) {
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new Error(`${fieldName} 不能为空。`);
+  }
+  return normalized;
+}
+
 function buildContentAnchorTimelineWarnings(input: {
   workspaceId: string;
   currentTimelinePointId: string;
@@ -49,24 +67,24 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
   return {
     create_manuscript_node: tool({
       description:
-        "在正文树中创建新的章节节点，并自动锚定到当前故事时间轴的时间点。仅在用户明确要求新增正文/章节时使用；parentId 决定新节点归属在哪个父节点下，afterSiblingId 只决定同一父节点下的排序位置。同一轮里连续创建到同一位置的节点会按工具调用顺序排列。",
+        "在正文树中创建新的章节节点，并自动锚定到当前故事时间轴的时间点。仅在用户明确要求新增正文/章节时使用；parentId 决定新节点归属在哪个父节点下，省略、null 或空字符串表示创建到顶层；afterSiblingId 只决定同一父节点下的排序位置，省略、null 或空字符串表示插入为该层级的第一个节点。同一轮里连续创建到同一位置的节点会按工具调用顺序排列。",
       inputSchema: jsonSchema<{
-        parentId: string;
-        afterSiblingId?: string;
+        parentId?: string | null;
+        afterSiblingId?: string | null;
         title?: string;
         body?: string;
       }>({
         type: "object",
-        required: ["parentId"],
         properties: {
           parentId: {
-            type: "string",
-            description: "父正文节点 ID。新节点会作为该节点的子节点。",
+            type: ["string", "null"],
+            description:
+              "父正文节点 ID。新节点会作为该节点的子节点；省略、null 或空字符串表示创建到顶层。",
           },
           afterSiblingId: {
-            type: "string",
+            type: ["string", "null"],
             description:
-              "插入到该兄弟节点之后。省略时插入为父节点的第一个子节点；同一轮里连续省略时按工具调用顺序排列。",
+              "插入到该兄弟节点之后。省略、null 或空字符串时插入为该层级的第一个节点；同一轮里连续省略时按工具调用顺序排列。",
           },
           title: {
             type: "string",
@@ -84,10 +102,11 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
           return failure(new Error("当前项目没有默认工作区。"));
         }
 
-        const normalizedAfterSiblingId = afterSiblingId ?? null;
+        const normalizedParentId = normalizeOptionalManuscriptParentId(parentId);
+        const normalizedAfterSiblingId = normalizeOptionalSiblingId(afterSiblingId);
         const queueKey = createManuscriptInsertQueueKey({
           workspaceId: workspace.id,
-          parentId,
+          parentId: normalizedParentId,
         });
         const previousCreate = createManuscriptNodeQueues.get(queueKey) ?? Promise.resolve(null);
 
@@ -99,7 +118,7 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
               const resolvedTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
               const node = createContentNode({
                 workspaceId: workspace.id,
-                parentId,
+                parentId: normalizedParentId,
                 afterSiblingId: effectiveAfterSiblingId ?? undefined,
                 anchorPointId: resolvedTimelinePointId,
                 title: title ?? undefined,
@@ -149,8 +168,8 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
         "更新正文节点的标题、正文或锚定时间点。仅在用户明确要求修改正文时使用；省略的字段不会改变。",
       inputSchema: jsonSchema<{
         nodeId: string;
-        title?: string;
-        body?: string;
+        title?: string | null;
+        body?: string | null;
         anchorPointId?: string;
       }>({
         type: "object",
@@ -161,11 +180,11 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
             description: "要更新的正文节点 ID。",
           },
           title: {
-            type: "string",
+            type: ["string", "null"],
             description: "新的章节标题。省略则不修改；传 null 可清除。",
           },
           body: {
-            type: "string",
+            type: ["string", "null"],
             description: "新的正文完整内容。省略则不修改；传 null 可清除。",
           },
           anchorPointId: {
@@ -181,10 +200,11 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
         }
 
         return withEnvelope(() => {
+          const normalizedNodeId = normalizeRequiredNodeId(nodeId, "nodeId");
           const currentTimelinePointId = resolveCurrentTimelinePointId(runtimeContext);
           const node = updateContentNode({
             workspaceId: workspace.id,
-            nodeId,
+            nodeId: normalizedNodeId,
             title: title === undefined ? undefined : (title ?? null),
             body: body === undefined ? undefined : (body ?? null),
             anchorPointId: anchorPointId ?? undefined,
@@ -215,28 +235,28 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
     }),
     move_manuscript_node: tool({
       description:
-        "移动或重排正文节点。会改变正文结构和章节顺序；newParentId 决定移动后归属在哪个父节点下，afterSiblingId 只决定同一父节点下的排序位置。",
+        "移动或重排正文节点。会改变正文结构和章节顺序；newParentId 决定移动后归属在哪个父节点下，省略、null 或空字符串表示移动到顶层；afterSiblingId 只决定同一父节点下的排序位置，省略、null 或空字符串表示插入为该层级的第一个节点。",
       inputSchema: jsonSchema<{
         nodeId: string;
-        newParentId: string;
-        afterSiblingId?: string;
+        newParentId?: string | null;
+        afterSiblingId?: string | null;
       }>({
         type: "object",
-        required: ["nodeId", "newParentId"],
+        required: ["nodeId"],
         properties: {
           nodeId: {
             type: "string",
             description: "要移动的正文节点 ID。",
           },
           newParentId: {
-            type: "string",
+            type: ["string", "null"],
             description:
-              "新父正文节点 ID。目标节点会被移动为该节点的直接子节点；不要填“要移动到其后”的节点 ID。",
+              "新父正文节点 ID。目标节点会被移动为该节点的直接子节点；省略、null 或空字符串表示移动到顶层；不要填“要移动到其后”的节点 ID。",
           },
           afterSiblingId: {
-            type: "string",
+            type: ["string", "null"],
             description:
-              "移动后的前一个同级正文节点 ID。该节点必须已经在 newParentId 下；目标节点会插入到它后面。省略时插入为 newParentId 的第一个子节点；不要用父节点 ID 填这里。",
+              "移动后的前一个同级正文节点 ID。该节点必须已经在 newParentId 下；目标节点会插入到它后面。省略、null 或空字符串时插入为该层级的第一个节点；不要用父节点 ID 填这里。",
           },
         },
       }),
@@ -247,11 +267,14 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
         }
 
         return withEnvelope(() => {
+          const normalizedNodeId = normalizeRequiredNodeId(nodeId, "nodeId");
+          const normalizedParentId = normalizeOptionalManuscriptParentId(newParentId);
+          const normalizedAfterSiblingId = normalizeOptionalSiblingId(afterSiblingId);
           const node = moveContentNode({
             workspaceId: workspace.id,
-            nodeId,
-            newParentId,
-            afterSiblingId: afterSiblingId ?? undefined,
+            nodeId: normalizedNodeId,
+            newParentId: normalizedParentId,
+            afterSiblingId: normalizedAfterSiblingId ?? undefined,
           });
 
           return {
@@ -287,10 +310,11 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
         }
 
         return withEnvelope(() => {
-          const node = readManuscriptNode(workspace.id, nodeId);
+          const normalizedNodeId = normalizeRequiredNodeId(nodeId, "nodeId");
+          const node = readManuscriptNode(workspace.id, normalizedNodeId);
           deleteContentNode({
             workspaceId: workspace.id,
-            nodeId,
+            nodeId: normalizedNodeId,
           });
 
           return {
@@ -298,7 +322,7 @@ export function buildContentWriteTools({ projectId, runtimeContext }: ToolBuildC
             truncated: false,
             data: {
               action: "deleted" as const,
-              nodeId,
+              nodeId: normalizedNodeId,
               title: node.title,
             },
           };

@@ -462,6 +462,63 @@ test("create_manuscript_node anchors new content to the current timeline point",
   });
 });
 
+test("create_manuscript_node creates a top-level node when parentId is omitted", async () => {
+  const workspace = seedProject("assistant_tools_create_manuscript_top_level_omitted_parent");
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_create_manuscript_top_level_omitted_parent",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  const result = await executeTool(tools.create_manuscript_node!, {
+    title: "顶层章节",
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    data: {
+      action: "created",
+      parentId: null,
+      title: "顶层章节",
+    },
+  });
+
+  const nodeId = (result as { data: { nodeId: string } }).data.nodeId;
+  expect(
+    workspaceDomain
+      .listManuscriptNodes(workspace.id, undefined, { depth: 1 })
+      .nodes.map((node) => node.id),
+  ).toContain(nodeId);
+  expect(workspaceDomain.readManuscriptNode(workspace.id, nodeId)).toMatchObject({
+    id: nodeId,
+    title: "顶层章节",
+  });
+});
+
+test("create_manuscript_node treats empty parent and sibling ids as top-level insertion", async () => {
+  const workspace = seedProject("assistant_tools_create_manuscript_empty_parent");
+  workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: null,
+    title: "已存在章节",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_create_manuscript_empty_parent",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  await executeTool(tools.create_manuscript_node!, {
+    parentId: "   ",
+    afterSiblingId: "   ",
+    title: "新顶层章节",
+  });
+
+  expect(
+    workspaceDomain
+      .listManuscriptNodes(workspace.id, undefined, { depth: 1 })
+      .nodes.map((node) => node.title),
+  ).toEqual(["新顶层章节", "已存在章节"]);
+});
+
 test("create_manuscript_node preserves call order when parallel calls share an insertion point", async () => {
   const workspace = seedProject("assistant_tools_create_manuscript_parallel_order");
   const chapter7 = workspaceDomain.createContentNode({
@@ -552,6 +609,22 @@ test("content write tools return manuscript titles for model and UI summaries", 
   });
 
   await expect(
+    executeTool(tools.move_manuscript_node!, {
+      nodeId: chapter.id,
+      newParentId: "",
+      afterSiblingId: "",
+    }),
+  ).resolves.toMatchObject({
+    ok: true,
+    data: {
+      action: "moved",
+      nodeId: chapter.id,
+      title: "新标题",
+      newParentId: null,
+    },
+  });
+
+  await expect(
     executeTool(tools.delete_manuscript_node!, { nodeId: chapter.id }),
   ).resolves.toMatchObject({
     ok: true,
@@ -560,6 +633,40 @@ test("content write tools return manuscript titles for model and UI summaries", 
       nodeId: chapter.id,
       title: "新标题",
     },
+  });
+});
+
+test("update_manuscript_node accepts null to clear title and body", async () => {
+  const workspace = seedProject("assistant_tools_update_manuscript_nullable_fields");
+  const chapter = workspaceDomain.createContentNode({
+    workspaceId: workspace.id,
+    parentId: null,
+    title: "原标题",
+    body: "原正文",
+  });
+  const tools = createAssistantTools({
+    projectId: "assistant_tools_update_manuscript_nullable_fields",
+    runtimeContext: createRuntimeContext(),
+  });
+
+  const result = await executeTool(tools.update_manuscript_node!, {
+    nodeId: chapter.id,
+    title: null,
+    body: null,
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    data: {
+      action: "updated",
+      nodeId: chapter.id,
+      title: null,
+    },
+  });
+  expect(workspaceDomain.readManuscriptNode(workspace.id, chapter.id)).toMatchObject({
+    id: chapter.id,
+    title: null,
+    body: "",
   });
 });
 
