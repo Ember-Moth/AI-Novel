@@ -39,17 +39,21 @@ export function SidebarMarkdownTable({
   }
 
   return (
-    <div className="my-4 space-y-2" data-ai-sidebar-table="root" data-streamdown="table-wrapper">
-      {parsedRows.map((row) => (
+    <div
+      className="my-4 overflow-hidden rounded-md border border-border bg-editor-background"
+      data-ai-sidebar-table="root"
+      data-streamdown="table-wrapper"
+    >
+      {parsedRows.map((row, rowIndex) => (
         <div
           key={row.key}
-          className="overflow-hidden rounded-md border border-border bg-editor-background"
+          className={cn(rowIndex > 0 ? "border-t border-border/70" : undefined)}
           data-ai-sidebar-table="row"
         >
           {row.cells.map((cell, cellIndex) => (
             <div
               key={cell.key}
-              className={cn("px-2.5 py-2", cellIndex > 0 ? "border-t border-border/70" : undefined)}
+              className={cn("px-2.5 py-2", cellIndex > 0 ? "pt-1" : undefined)}
               data-ai-sidebar-table="cell"
             >
               <div
