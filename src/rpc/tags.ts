@@ -34,13 +34,6 @@ export const rpcTags = defineTags({
   aiConnectionModels: (connectionId: string) =>
     ["ai", "connections", "models", connectionId] as const,
   aiGlobalPrompts: () => ["ai", "global-prompts"] as const,
-  aiProjectAssistantOverview: (projectId: string) =>
-    ["ai", "project-assistant-overview", projectId] as const,
-  aiProjectThreads: (projectId: string) => ["ai", "project-threads", projectId] as const,
-  aiThreadView: (threadId: string) => ["ai", "thread-view", threadId] as const,
-  aiNodeCandidates: (parentNodeId: string) => ["ai", "node-candidates", parentNodeId] as const,
-  aiRunTrace: (runId: string) => ["ai", "run-trace", runId] as const,
-  aiChildRuns: (runId: string) => ["ai", "child-runs", runId] as const,
 });
 
 export type RpcTag = TagValue<typeof rpcTags>;

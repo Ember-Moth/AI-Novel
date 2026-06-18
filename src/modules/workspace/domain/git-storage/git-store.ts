@@ -21,10 +21,6 @@ export function metaRef() {
   return `refs/novel-evolver/meta`;
 }
 
-export function aiRunsRef() {
-  return `refs/novel-evolver/ai-runs`;
-}
-
 export async function ensureProjectRepo(projectId: string) {
   const gitdir = getProjectRepoGitDir(projectId);
   await fs.promises.mkdir(gitdir, { recursive: true });

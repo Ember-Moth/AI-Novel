@@ -379,34 +379,7 @@ export async function handleProjectChatRequest(request: Request) {
     const selection = resolveProjectChatModelSelection(chat.modelConfig);
     const activeTools = resolveProjectAssistantActiveTools({
       selection: {
-        storedSelection: {
-          connectionId: selection.modelConfig.connectionId,
-          modelId: selection.modelConfig.modelId,
-        },
-        connection: selection.connection,
         resolvedModel: selection.resolvedModel,
-        snapshot: {
-          connectionId: selection.connection.id,
-          catalogModelId: selection.resolvedModel.catalogModelId,
-          customModelId: selection.resolvedModel.customModelId,
-          connectionName: selection.connection.name,
-          sdkPackage: selection.connection.sdkPackage,
-          baseUrl: selection.connection.baseUrl,
-          modelOrigin: selection.resolvedModel.origin,
-          modelId: selection.resolvedModel.modelId,
-          modelDisplayName: selection.resolvedModel.displayName,
-          modelFamily: selection.resolvedModel.family,
-          capabilities: {
-            supportsVision: selection.resolvedModel.supportsVision,
-            supportsToolUse: selection.resolvedModel.supportsToolUse,
-            supportsReasoning: selection.resolvedModel.supportsReasoning,
-            supportsTemperature: selection.resolvedModel.supportsTemperature,
-          },
-          pricing: {
-            inputPricePer1m: selection.resolvedModel.inputPricePer1m,
-            outputPricePer1m: selection.resolvedModel.outputPricePer1m,
-          },
-        },
       },
       activeTools: body.activeTools,
     });

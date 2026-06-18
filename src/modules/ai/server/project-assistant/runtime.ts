@@ -1,12 +1,6 @@
 import type { ModelMessage } from "ai";
 
-import { getRunStepResponseBody } from "@/modules/ai/domain/logs/runs";
-import { resolveThreadPath } from "@/modules/ai/domain/logs/threads";
 import type {
-  AgentRunTraceView,
-  AgentThreadNodeView,
-  AgentThreadStateView,
-  AiConnectionRow,
   AssistantInputRefSnapshot,
   ProjectAssistantContextSnapshot,
   ProjectAssistantToolName,
@@ -15,17 +9,9 @@ import {
   PROJECT_ASSISTANT_READ_ONLY_TOOL_NAMES,
   PROJECT_ASSISTANT_TOOL_NAMES,
 } from "@/modules/ai/domain/types";
-import { listResolvedModelsForConnection } from "@/modules/ai/domain/catalog";
-import * as userConfig from "@/modules/ai/domain/user-config";
-import {
-  getAiAssistantModelSelection,
-  type AiAssistantModelSelection,
-} from "@/modules/config/domain/ai-assistant-model-selection";
-import { getAiAssistantMaxSteps } from "@/modules/config/domain/ai-assistant-options";
 import { invariant } from "@/shared/lib/domain";
 
 import type { ToolRuntimeContext } from "../assistant-tools/context";
-import type { AssistantModelSelection, StreamProviderOptions } from "./types-internal";
 
 export const PROJECT_ASSISTANT_SYSTEM_PROMPT_ID = "writing-assistant-v3";
 
@@ -53,12 +39,6 @@ export function createToolRuntimeContext(
       currentSnapshot = updater(currentSnapshot);
     },
   };
-}
-
-export function normalizeUserText(text: string) {
-  const normalized = text.trim();
-  invariant(normalized.length > 0, "消息不能为空。");
-  return normalized;
 }
 
 function normalizeOptionalString(value: string | null | undefined) {
@@ -167,7 +147,9 @@ export function resolveProjectAssistantActiveTools({
   selection,
   activeTools,
 }: {
-  selection: AssistantModelSelection;
+  selection: {
+    resolvedModel: { supportsToolUse: boolean };
+  };
   activeTools?: readonly ProjectAssistantToolName[] | null;
 }) {
   const normalizedActiveTools =
@@ -196,258 +178,9 @@ export function normalizeError(error: unknown) {
   };
 }
 
-function isOpenAIResponsesConnection(connection: AiConnectionRow) {
-  return connection.sdkPackage === "@ai-sdk/openai";
-}
-
-function extractResponseId(value: unknown) {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const id = Reflect.get(value as Record<string, unknown>, "id");
-  return typeof id === "string" && id.trim().length > 0 ? id : null;
-}
-
-function getStepResponseId(projectId: string, stepId: string | null | undefined) {
-  const normalizedStepId = normalizeOptionalString(stepId);
-  if (!normalizedStepId) {
-    return null;
-  }
-
-  try {
-    return extractResponseId(getRunStepResponseBody(projectId, normalizedStepId));
-  } catch {
-    return null;
-  }
-}
-
-export function resolveAssistantRequest({
-  projectId,
-  threadId,
-  triggerNodeId,
-  system,
-  selection,
-  context,
-  inputRefs,
-}: {
-  projectId: string;
-  threadId: string;
-  triggerNodeId: string;
-  system: string;
-  selection: AssistantModelSelection;
-  context?: ProjectAssistantContextSnapshot | null;
-  inputRefs?: readonly AssistantInputRefSnapshot[] | null;
-}): {
-  messages: ModelMessage[];
-  transportSystem: string | null;
-  providerOptions?: StreamProviderOptions;
-} {
-  const path = resolveThreadPath(projectId, threadId, triggerNodeId);
-  const contextMessage = buildProjectAssistantContextMessage(context ?? null);
-  const refsMessage = buildProjectAssistantRefsMessage(inputRefs);
-  const appendedMessages = [contextMessage, refsMessage].filter(
-    (message): message is ModelMessage => message != null,
-  );
-  const appendContextMessages = (messages: ModelMessage[]) =>
-    appendedMessages.length === 0 ? messages : [...messages, ...appendedMessages];
-
-  if (!isOpenAIResponsesConnection(selection.connection)) {
-    return {
-      messages: appendContextMessages(path.map((node) => node.message)),
-      transportSystem: system,
-      providerOptions: undefined,
-    };
-  }
-
-  const pathMessages = path.map((node) => node.message);
-  const lastAssistantIndex = [...path].map((node) => node.role).lastIndexOf("assistant");
-  const previousAssistant = lastAssistantIndex >= 0 ? path[lastAssistantIndex] : null;
-  const previousResponseId = getStepResponseId(projectId, previousAssistant?.sourceStepId);
-  const messages =
-    previousAssistant && previousResponseId
-      ? path.slice(lastAssistantIndex + 1).map((node) => node.message)
-      : pathMessages;
-  const openaiOptions = {
-    ...(selection.resolvedModel.supportsReasoning ? { reasoningSummary: "auto" } : {}),
-    ...(previousResponseId ? { previousResponseId, instructions: system } : {}),
-  };
-
-  return {
-    messages: appendContextMessages(messages),
-    transportSystem: previousResponseId ? null : system,
-    providerOptions:
-      Object.keys(openaiOptions).length > 0
-        ? ({
-            openai: openaiOptions,
-          } satisfies NonNullable<StreamProviderOptions>)
-        : undefined,
-  };
-}
-
-export function resolveProjectAssistantModelSelection(
-  readStoredSelection: () => AiAssistantModelSelection | null = getAiAssistantModelSelection,
-): AssistantModelSelection {
-  const storedSelection = readStoredSelection();
-  invariant(storedSelection, "请先在 AI 助手里选择连接和模型。");
-
-  const connection = userConfig.aiConnections.get(storedSelection.connectionId);
-  invariant(connection, "未找到已选择的 AI 连接。");
-  invariant(connection.isEnabled, "已选择的 AI 连接已被停用。");
-
-  const resolvedModel = listResolvedModelsForConnection({
-    connectionId: connection.id,
-  }).find((model) => model.id === storedSelection.modelId);
-  invariant(resolvedModel, "未找到已选择的 AI 模型。");
-  invariant(resolvedModel.isEnabled, "已选择的 AI 模型已被停用。");
-
-  return {
-    storedSelection,
-    connection,
-    resolvedModel,
-    snapshot: {
-      connectionId: connection.id,
-      catalogModelId: resolvedModel.catalogModelId,
-      customModelId: resolvedModel.customModelId,
-      connectionName: connection.name,
-      sdkPackage: connection.sdkPackage,
-      baseUrl: connection.baseUrl,
-      modelOrigin: resolvedModel.origin,
-      modelId: resolvedModel.modelId,
-      modelDisplayName: resolvedModel.displayName,
-      modelFamily: resolvedModel.family,
-      capabilities: {
-        supportsVision: resolvedModel.supportsVision,
-        supportsToolUse: resolvedModel.supportsToolUse,
-        supportsReasoning: resolvedModel.supportsReasoning,
-        supportsTemperature: resolvedModel.supportsTemperature,
-      },
-      pricing: {
-        inputPricePer1m: resolvedModel.inputPricePer1m,
-        outputPricePer1m: resolvedModel.outputPricePer1m,
-      },
-    },
-  };
-}
-
-export function resolveProjectAssistantModelSelectionFromSnapshot(
-  snapshot: unknown,
-): AssistantModelSelection {
-  invariant(snapshot && typeof snapshot === "object", "原 run 缺少模型选择快照，无法继续。");
-  const snapshotRecord = snapshot as AssistantModelSelection["snapshot"];
-  const connectionId = normalizeOptionalString(snapshotRecord.connectionId);
-  const catalogModelId = normalizeOptionalString(snapshotRecord.catalogModelId);
-  const customModelId = normalizeOptionalString(snapshotRecord.customModelId);
-  invariant(connectionId, "原 run 缺少连接信息，无法继续。");
-
-  const connection = userConfig.aiConnections.get(connectionId);
-  invariant(connection, "原 run 使用的 AI 连接已不存在，无法继续。");
-  invariant(connection.isEnabled, "原 run 使用的 AI 连接已停用，无法继续。");
-
-  const resolvedModel = listResolvedModelsForConnection({
-    connectionId: connection.id,
-  }).find((model) => {
-    if (customModelId) {
-      return model.customModelId === customModelId;
-    }
-    if (catalogModelId) {
-      return model.catalogModelId === catalogModelId;
-    }
-    return model.modelId === normalizeOptionalString(snapshotRecord.modelId);
-  });
-  invariant(resolvedModel, "原 run 使用的 AI 模型已不存在，无法继续。");
-  invariant(resolvedModel.isEnabled, "原 run 使用的 AI 模型已停用，无法继续。");
-
-  return {
-    storedSelection: {
-      connectionId: connection.id,
-      modelId: resolvedModel.id,
-    },
-    connection,
-    resolvedModel,
-    snapshot: {
-      ...snapshotRecord,
-      connectionId: connection.id,
-      catalogModelId: resolvedModel.catalogModelId,
-      customModelId: resolvedModel.customModelId,
-      connectionName: connection.name,
-      sdkPackage: connection.sdkPackage,
-      baseUrl: connection.baseUrl,
-      modelOrigin: resolvedModel.origin,
-      modelId: resolvedModel.modelId,
-      modelDisplayName: resolvedModel.displayName,
-      modelFamily: resolvedModel.family,
-      capabilities: {
-        supportsVision: resolvedModel.supportsVision,
-        supportsToolUse: resolvedModel.supportsToolUse,
-        supportsReasoning: resolvedModel.supportsReasoning,
-        supportsTemperature: resolvedModel.supportsTemperature,
-      },
-      pricing: {
-        inputPricePer1m: resolvedModel.inputPricePer1m,
-        outputPricePer1m: resolvedModel.outputPricePer1m,
-      },
-    },
-  };
-}
-
 export function buildUserTextMessage(text: string): ModelMessage {
   return {
     role: "user",
     content: [{ type: "text", text }],
   };
-}
-
-export function extractAssistantText(node: AgentThreadNodeView | null) {
-  if (!node) {
-    return null;
-  }
-  const content = (node.message as { content?: unknown }).content;
-  if (typeof content === "string") {
-    return content.trim();
-  }
-  if (!Array.isArray(content)) {
-    return null;
-  }
-  const text = content
-    .flatMap((part) => {
-      if (!part || typeof part !== "object") {
-        return [];
-      }
-      return Reflect.get(part as Record<string, unknown>, "type") === "text"
-        ? [Reflect.get(part as Record<string, unknown>, "text")]
-        : [];
-    })
-    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
-  return text?.trim() ?? null;
-}
-
-export function findLastAssistantNode(state: AgentThreadStateView) {
-  for (let index = state.activePath.length - 1; index >= 0; index -= 1) {
-    const node = state.activePath[index];
-    if (node?.role === "assistant") {
-      return node;
-    }
-  }
-  return null;
-}
-
-export function createAbortPromise(signal: AbortSignal) {
-  if (signal.aborted) {
-    return Promise.resolve();
-  }
-  return new Promise<void>((resolve) => {
-    signal.addEventListener("abort", () => resolve(), { once: true });
-  });
-}
-
-export function runNeedsContinuation(trace: AgentRunTraceView) {
-  const lastStep = trace.steps.at(-1);
-  const maxSteps = getAiAssistantMaxSteps();
-  return (
-    trace.run.status === "succeeded" &&
-    trace.run.activeTools != null &&
-    trace.steps.length >= maxSteps &&
-    lastStep?.finishReason === "tool-calls"
-  );
 }
