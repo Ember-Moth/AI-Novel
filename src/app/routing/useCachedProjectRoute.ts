@@ -103,12 +103,32 @@ export function resolveLastWorkspaceRoute(
   return lastWorkspaceRoute;
 }
 
-export function resolveProjectRouteTarget(route: AppRoute, lastProjectId: string | null) {
-  if (route.kind === "project" || route.kind === "project-branch" || route.kind === "workspace") {
+export function resolveProjectRouteTarget(
+  route: AppRoute,
+  lastProjectId: string | null,
+  lastWorkspaceRoute: { projectId: string; workspaceId: string; branchId?: string | null } | null,
+) {
+  if (route.kind === "project") {
+    return `/project/${route.projectId}`;
+  }
+
+  if (route.kind === "project-branch") {
+    return `/project/${route.projectId}/branch/${route.branchId}`;
+  }
+
+  if (route.kind === "workspace") {
+    if (lastWorkspaceRoute?.projectId === route.projectId && lastWorkspaceRoute.branchId) {
+      return `/project/${route.projectId}/branch/${lastWorkspaceRoute.branchId}`;
+    }
+
     return `/project/${route.projectId}`;
   }
 
   if (route.kind === "settings" && lastProjectId) {
+    if (lastWorkspaceRoute?.projectId === lastProjectId && lastWorkspaceRoute.branchId) {
+      return `/project/${lastProjectId}/branch/${lastWorkspaceRoute.branchId}`;
+    }
+
     return `/project/${lastProjectId}`;
   }
 

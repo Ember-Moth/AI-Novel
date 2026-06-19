@@ -115,7 +115,7 @@ test("resolveLastWorkspaceRoute clears recent workspace on home route", () => {
 });
 
 test("resolveProjectRouteTarget reopens the current or last project detail route", () => {
-  expect(resolveProjectRouteTarget({ kind: "project", projectId: "project_1" }, null)).toBe(
+  expect(resolveProjectRouteTarget({ kind: "project", projectId: "project_1" }, null, null)).toBe(
     "/project/project_1",
   );
   expect(
@@ -126,8 +126,9 @@ test("resolveProjectRouteTarget reopens the current or last project detail route
         branchId: "branch_1",
       },
       null,
+      null,
     ),
-  ).toBe("/project/project_1");
+  ).toBe("/project/project_1/branch/branch_1");
 
   expect(
     resolveProjectRouteTarget(
@@ -136,6 +137,23 @@ test("resolveProjectRouteTarget reopens the current or last project detail route
         projectId: "project_1",
         workspaceId: "workspace_1",
       },
+      null,
+      {
+        projectId: "project_1",
+        workspaceId: "workspace_1",
+        branchId: "branch_1",
+      },
+    ),
+  ).toBe("/project/project_1/branch/branch_1");
+
+  expect(
+    resolveProjectRouteTarget(
+      {
+        kind: "workspace",
+        projectId: "project_1",
+        workspaceId: "workspace_1",
+      },
+      null,
       null,
     ),
   ).toBe("/project/project_1");
@@ -147,8 +165,13 @@ test("resolveProjectRouteTarget reopens the current or last project detail route
         section: "ai-connections",
       },
       "project_2",
+      {
+        projectId: "project_2",
+        workspaceId: "workspace_2",
+        branchId: "branch_2",
+      },
     ),
-  ).toBe("/project/project_2");
+  ).toBe("/project/project_2/branch/branch_2");
 
   expect(
     resolveProjectRouteTarget(
@@ -156,6 +179,7 @@ test("resolveProjectRouteTarget reopens the current or last project detail route
         kind: "settings",
         section: "ai",
       },
+      null,
       null,
     ),
   ).toBe("/");

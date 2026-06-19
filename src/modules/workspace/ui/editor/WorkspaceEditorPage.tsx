@@ -1,7 +1,8 @@
 import { ScopeProvider } from "bunshi/react";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
 import { AppShell, AppSidebar } from "@/app/shell/AppShell";
+import { useLastProjectStore } from "@/app/state/lastProject";
 import type {
   TimelineSelectionUpdatedEvent,
   WorkspaceRefreshRequestedEvent,
@@ -117,6 +118,7 @@ function ProjectWorkspace({
   workspaceId: string;
 }) {
   const identity = useProjectWorkspaceIdentity(projectId, requestedWorkspaceId);
+  const setLastWorkspaceRoute = useLastProjectStore((state) => state.setLastWorkspaceRoute);
   const content = useProjectContentData(projectId, identity.workspaceId);
   const timeline = useProjectTimelineData(projectId, identity.workspaceId);
   const rawActiveTimelinePointId = useWorkspaceState((state) => state.activeTimelinePointId);
@@ -144,6 +146,33 @@ function ProjectWorkspace({
   useProjectWorkspaceEffects(workspace, actions.flushBodySave, actions.flushAuxSave);
 
   const { workspaceId, workspaceQuery, workspaceInitialLoading, routeMismatch } = identity;
+  const workspaceDetail = workspaceQuery.data ?? null;
+  useEffect(() => {
+    if (
+      !workspaceId ||
+      !workspaceDetail ||
+      workspaceDetail.projectId !== projectId ||
+      workspaceDetail.id !== workspaceId
+    ) {
+      return;
+    }
+
+    setLastWorkspaceRoute((current) => {
+      if (
+        current?.projectId === workspaceDetail.projectId &&
+        current.workspaceId === workspaceDetail.id &&
+        current.branchId === workspaceDetail.branchId
+      ) {
+        return current;
+      }
+
+      return {
+        projectId: workspaceDetail.projectId,
+        workspaceId: workspaceDetail.id,
+        branchId: workspaceDetail.branchId,
+      };
+    });
+  }, [projectId, setLastWorkspaceRoute, workspaceDetail, workspaceId]);
   const {
     query: contentQuery,
     pending: contentPending,

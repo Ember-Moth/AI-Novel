@@ -54,7 +54,7 @@ export function ActivityBar({ active }: { active: ActivityBarItem }) {
   const lastProjectId = useLastProjectStore((state) => state.lastProjectId);
   const lastWorkspaceRoute = useLastProjectStore((state) => state.lastWorkspaceRoute);
   const route = parseAppRoute(location);
-  const projectTarget = resolveProjectRouteTarget(route, lastProjectId);
+  const projectTarget = resolveProjectRouteTarget(route, lastProjectId, lastWorkspaceRoute);
 
   return (
     <div className="flex w-12 shrink-0 flex-col items-center gap-1 bg-activity-bar-background pt-2">

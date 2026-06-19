@@ -1,7 +1,11 @@
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-export type WorkspaceRouteRef = { projectId: string; workspaceId: string };
+export type WorkspaceRouteRef = {
+  projectId: string;
+  workspaceId: string;
+  branchId?: string | null;
+};
 
 type LastProjectState = {
   lastProjectId: string | null;
