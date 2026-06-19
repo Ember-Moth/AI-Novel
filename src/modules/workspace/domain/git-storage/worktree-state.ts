@@ -307,7 +307,7 @@ export function insertManuscriptNode(
   parent.children.splice(insertIndex, 0, input.node);
 }
 
-function removeNodeFromTree(
+export function removeNodeFromTree(
   nodes: ManuscriptNodeDiskState[],
   nodeId: string,
 ): ManuscriptNodeDiskState | null {

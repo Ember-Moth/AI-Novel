@@ -175,6 +175,8 @@ export interface WorkingTreeContentChangeItem {
   previousParentPathLabel: string | null;
   previousAnchorTimelinePointId: string | typeof ORIGIN_TIMELINE_POINT_ID | null;
   previousAnchorTimelinePointLabel: string | null;
+  /** 该变更项是否可单独撤回。对于「删除」变更，若父节点一并被删除则为 false。 */
+  revertable: boolean;
 }
 
 export interface WorkingTreeAreaSummary<TChange = WorkingTreePathChangeItem> {

@@ -1,7 +1,9 @@
-import { createId, now } from "@/shared/lib/domain";
+import { createId, invariant, now } from "@/shared/lib/domain";
 
-import { getWorkspace, touchWorkspaceMeta } from "./lifecycle";
+import { getBranch, getBranchHeadCommitId } from "./branches";
+import { getWorkspace, getWorkspaceForBranchId, touchWorkspaceMeta } from "./lifecycle";
 import { getProjectWorktreeDir } from "./git-storage/paths";
+import { readFilesAtCommit } from "./git-storage/git-store";
 import type {
   ExportedContentNode,
   ExportedContentSubtree,
@@ -20,9 +22,12 @@ import {
   pointIdOrOrigin,
   readWorktreeState,
   removeManuscriptNode,
+  readWorktreeStateFromFiles,
+  removeNodeFromTree,
   writeWorktreeStateSync,
 } from "./git-storage/worktree-state";
 import type { ManuscriptNodeDiskState } from "./git-storage/types";
+import type { WorktreeState } from "./git-storage/worktree-state";
 
 async function touchWorkspace(projectId: string, workspaceId: string) {
   await touchWorkspaceMeta(projectId, workspaceId, now());
@@ -263,4 +268,144 @@ export async function listAnchoredTimelinePointIds(projectId: string, workspaceI
       .map((node) => node.anchorTimelinePointId)
       .filter((pointId): pointId is string => Boolean(pointId)),
   );
+}
+
+function cloneNode(node: ManuscriptNodeDiskState): ManuscriptNodeDiskState {
+  return {
+    id: node.id,
+    parentId: node.parentId,
+    title: node.title,
+    anchorTimelinePointId: node.anchorTimelinePointId,
+    body: node.body,
+    children: node.children.map((child) => cloneNode(child)),
+  };
+}
+
+/**
+ * 撤回一条正文修改（新增 / 删除 / 修改），将工作树中的该变更恢复至 HEAD 状态。
+ *
+ * - "added"：从工作树中删除该节点及所有子节点。
+ * - "deleted"：从 HEAD 中恢复该节点及其子树，插入至 HEAD 中记录的原始位置。
+ * - "modified"：将节点的 title / body / anchorTimelinePointId / parent / order 恢复为 HEAD 的值，
+ *   子节点不受影响（子节点变更视为独立变更项）。
+ *
+ * 对于 "deleted" 类型，如果父节点也在工作树中被删除（即 `revertable` 为 false），
+ * 调用方应禁用交互，不传入此类型。
+ */
+export async function revertContentChange(input: {
+  projectId: string;
+  branchId: string;
+  nodeId: string;
+  kind: "added" | "deleted" | "modified";
+}) {
+  const branch = await getBranch(input.projectId, input.branchId);
+  const headCommitId = await getBranchHeadCommitId(input.projectId, branch.id);
+  const workspace = await getWorkspaceForBranchId(input.projectId, branch.id);
+  invariant(workspace, "该分支没有关联的工作区。");
+
+  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
+  const state = readWorktreeState(worktreePath);
+
+  // 读取 HEAD 状态作为撤回基线。无 HEAD（空仓库）时previousState为空。
+  const previousFiles = headCommitId
+    ? await readFilesAtCommit({ projectId: input.projectId, commitId: headCommitId })
+    : {};
+  const previousState = readWorktreeStateFromFiles(previousFiles);
+
+  if (input.kind === "added") {
+    // 新增→删除：直接删除该节点及所有子节点
+    removeManuscriptNode(worktreePath, state, input.nodeId);
+  } else if (input.kind === "deleted") {
+    // 删除→恢复：从 HEAD 中取出节点及其完整子树，插入回 HEAD 中的位置
+    const previousNode = findManuscriptNode(previousState, input.nodeId);
+    const restored = cloneNode(previousNode);
+
+    const flatCurrent = flattenManuscriptNodes(state);
+    invariant(
+      restored.parentId === null || flatCurrent.some((n) => n.id === restored.parentId),
+      "无法恢复章节：父节点已被删除。",
+    );
+
+    const afterSiblingId = findHeadSiblingId(previousState, input.nodeId, flatCurrent);
+    insertManuscriptNode(worktreePath, state, {
+      node: restored,
+      parentId: restored.parentId,
+      afterSiblingId,
+    });
+  } else if (input.kind === "modified") {
+    // 修改→恢复：将节点属性覆盖回 HEAD 值。若 parent/order 变了则需先移除再重新插入。
+    const previousNode = findManuscriptNode(previousState, input.nodeId);
+    const currentNode = findManuscriptNode(state, input.nodeId);
+
+    const parentChanged = currentNode.parentId !== previousNode.parentId;
+    const headOrder = siblingIndexInState(previousState, input.nodeId);
+    const currentOrder = siblingIndexInState(state, input.nodeId);
+    const orderChanged = currentOrder !== headOrder;
+    const needsReinsert = parentChanged || orderChanged;
+
+    if (needsReinsert) {
+      const removed = removeNodeFromTree(state.content, input.nodeId);
+      invariant(removed, "未找到章节。");
+
+      // 还原字段
+      removed.title = previousNode.title;
+      removed.body = previousNode.body;
+      removed.anchorTimelinePointId = previousNode.anchorTimelinePointId;
+
+      // 若 HEAD 中的父节点在当前工作树中已不存在，则保留当前父级
+      const flatCurrent = flattenManuscriptNodes(state);
+      const headParentExists =
+        previousNode.parentId === null || flatCurrent.some((n) => n.id === previousNode.parentId);
+      removed.parentId = headParentExists ? previousNode.parentId : currentNode.parentId;
+
+      const afterSiblingId = headParentExists
+        ? findHeadSiblingId(previousState, input.nodeId, flatCurrent)
+        : null;
+
+      insertManuscriptNode(worktreePath, state, {
+        node: removed,
+        parentId: removed.parentId,
+        afterSiblingId,
+      });
+    } else {
+      // 原地覆盖 title/body/anchor
+      currentNode.title = previousNode.title;
+      currentNode.body = previousNode.body;
+      currentNode.anchorTimelinePointId = previousNode.anchorTimelinePointId;
+    }
+  }
+
+  writeWorktreeStateSync(worktreePath, state);
+  await touchWorkspace(workspace.projectId, workspace.id);
+}
+
+/** 在 state 中查找 nodeId 在同级中的索引。 */
+function siblingIndexInState(state: WorktreeState, nodeId: string): number {
+  const node = findManuscriptNode(state, nodeId);
+  const siblings =
+    node.parentId === null ? state.content : findManuscriptNode(state, node.parentId).children;
+  return siblings.findIndex((s) => s.id === nodeId);
+}
+
+/**
+ * 在 HEAD 快照中查找 nodeId 的前序兄弟，取其中最接近的、且当前工作树仍存在的节点作为插入锚点。
+ * 若无合适锚点则返回 null（插入到开头）。
+ */
+function findHeadSiblingId(
+  headState: WorktreeState,
+  nodeId: string,
+  flatCurrent: ManuscriptNodeDiskState[],
+): string | null {
+  const node = findManuscriptNode(headState, nodeId);
+  const flatPrevious = flattenManuscriptNodes(headState);
+  const siblings = flatPrevious.filter((n) => n.parentId === node.parentId);
+  const headIndex = siblings.findIndex((n) => n.id === nodeId);
+
+  for (let i = headIndex - 1; i >= 0; i--) {
+    const candidate = siblings[i]!;
+    if (flatCurrent.some((n) => n.id === candidate.id)) {
+      return candidate.id;
+    }
+  }
+  return null;
 }

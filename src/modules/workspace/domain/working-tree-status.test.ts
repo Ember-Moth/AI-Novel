@@ -71,6 +71,7 @@ test("uncommitted edits before first commit appear as additions", async () => {
     previousParentPathLabel: null,
     previousAnchorTimelinePointId: null,
     previousAnchorTimelinePointLabel: null,
+    revertable: true,
   });
   expect(status.areas.timeline.changes).toContainEqual({
     label: "timeline.jsonl",
@@ -249,6 +250,7 @@ test("content move and anchor updates are summarized semantically", async () => 
     previousAnchorTimelinePointId: introPoint.id,
     previousAnchorTimelinePointLabel: "Intro",
     bodyCharDelta: null,
+    revertable: true,
   });
   expect(chapterChange?.changedAspects).toEqual(expect.arrayContaining(["parent", "anchor"]));
 });

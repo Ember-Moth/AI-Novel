@@ -5,7 +5,9 @@ import {
   createContentNode,
   deleteContentNode,
   exportContentSubtree,
+  getWorkspaceForBranchId,
   moveContentNode,
+  revertContentChange,
   updateContentNode,
 } from "@/modules/workspace/domain";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
@@ -67,3 +69,13 @@ export const composeWritingContext = query<
   handler: async ({ projectId, workspaceId, contentNodeId }) =>
     await buildWritingContext(projectId, workspaceId, contentNodeId),
 });
+
+export const revert = mutation<Parameters<typeof revertContentChange>[0], void, RpcTagList>(
+  async (input, ctx) => {
+    await revertContentChange(input);
+    const workspace = await getWorkspaceForBranchId(input.projectId, input.branchId);
+    if (workspace) {
+      ctx.invalidate(rpcTags.contentTree(workspace.id), rpcTags.commitHistory(input.branchId));
+    }
+  },
+);

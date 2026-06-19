@@ -254,11 +254,13 @@ export function compareContentStates(
         previousParentPathLabel: null,
         previousAnchorTimelinePointId: null,
         previousAnchorTimelinePointLabel: null,
+        revertable: true,
       });
       continue;
     }
 
     if (previousNode && !nextNode) {
+      const revertable = previousNode.parentId === null || nextById.has(previousNode.parentId);
       changes.push({
         nodeId,
         label: buildContentLabel({
@@ -288,6 +290,7 @@ export function compareContentStates(
           previousTimelineLabels,
           pointIdOrOrigin(previousNode.anchorTimelinePointId),
         ),
+        revertable,
       });
       continue;
     }
@@ -351,6 +354,7 @@ export function compareContentStates(
         previousTimelineLabels,
         pointIdOrOrigin(previousNode.anchorTimelinePointId),
       ),
+      revertable: true,
     });
   }
 

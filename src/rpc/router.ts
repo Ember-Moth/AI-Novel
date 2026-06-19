@@ -87,6 +87,7 @@ export const content = {
   delete: contentHandlers.deleteMutation,
   exportSubtree: contentHandlers.exportSubtree,
   composeWritingContext: contentHandlers.composeWritingContext,
+  revert: contentHandlers.revert,
 };
 
 export const aux = {
