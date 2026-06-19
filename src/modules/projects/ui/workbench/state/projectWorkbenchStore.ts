@@ -6,6 +6,12 @@ import type { CommitRow } from "../../shared/projectTypes";
 import { resolveNext, type Updater } from "../../shared/state/storeUtils";
 import { ProjectWorkbenchProjectScope } from "../core/projectWorkbenchScopes";
 
+/**
+ * 历史时间线的选中项。仿照 GitHub Desktop / Fork：顶部一个「未提交更改」伪节点，
+ * 其余为具体 commit。选中项驱动右侧详情面板展示的内容。
+ */
+export type ProjectHistorySelection = { kind: "working" } | { kind: "commit"; commitId: string };
+
 type ProjectWorkbenchStateData = {
   detailName: string;
   detailDescription: string;
@@ -20,6 +26,7 @@ type ProjectWorkbenchStateData = {
   commitMessage: string;
   commitError: string | null;
   discardError: string | null;
+  historySelection: ProjectHistorySelection;
 };
 
 type ProjectWorkbenchStateActions = {
@@ -36,6 +43,7 @@ type ProjectWorkbenchStateActions = {
   setCommitMessage: (updater: Updater<string>) => void;
   setCommitError: (updater: Updater<string | null>) => void;
   setDiscardError: (updater: Updater<string | null>) => void;
+  setHistorySelection: (updater: Updater<ProjectHistorySelection>) => void;
   resetCreateBranchDialog: () => void;
   resetForkBranchDialog: () => void;
   resetCommitDraft: () => void;
@@ -69,6 +77,7 @@ export function createProjectWorkbenchStore() {
       commitMessage: "",
       commitError: null,
       discardError: null,
+      historySelection: { kind: "working" },
       setDetailName: field("detailName"),
       setDetailDescription: field("detailDescription"),
       setDetailError: field("detailError"),
@@ -82,6 +91,7 @@ export function createProjectWorkbenchStore() {
       setCommitMessage: field("commitMessage"),
       setCommitError: field("commitError"),
       setDiscardError: field("discardError"),
+      setHistorySelection: field("historySelection"),
       resetCreateBranchDialog: () =>
         set({
           isCreateBranchDialogOpen: false,
@@ -99,6 +109,8 @@ export function createProjectWorkbenchStore() {
         set({
           commitMessage: "",
           commitError: null,
+          discardError: null,
+          historySelection: { kind: "working" },
         }),
       syncProjectDetail: (project) =>
         set({
@@ -196,5 +208,15 @@ export function useProjectForkBranchDialogState() {
   return {
     isDialogOpen,
     setDialogOpen,
+  };
+}
+
+export function useProjectHistorySelection() {
+  const selection = useProjectWorkbenchState((state) => state.historySelection);
+  const setSelection = useProjectWorkbenchState((state) => state.setHistorySelection);
+
+  return {
+    selection,
+    setSelection,
   };
 }
