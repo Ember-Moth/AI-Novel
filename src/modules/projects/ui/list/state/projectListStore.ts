@@ -2,7 +2,7 @@ import { molecule, useMolecule } from "bunshi/react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import { resolveNext, type Updater } from "./storeUtils";
+import { resolveNext, type Updater } from "../../shared/state/storeUtils";
 
 type ProjectListStateData = {
   createProjectName: string;

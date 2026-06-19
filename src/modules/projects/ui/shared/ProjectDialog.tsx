@@ -32,6 +32,7 @@ export function ProjectDialog({
   return (
     <dialog
       ref={dialogRef}
+      onClose={onClose}
       className={cn(
         "overflow-hidden rounded-lg border border-border bg-sidebar-background p-0 text-foreground shadow-lg backdrop:bg-black/50",
         widthClassName ?? "w-[min(28rem,calc(100vw-2rem))]",

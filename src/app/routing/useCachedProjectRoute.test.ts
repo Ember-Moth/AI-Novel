@@ -20,7 +20,11 @@ test("parseAppRoute recognizes home, project, workspace, settings, and unknown r
     projectId: "project_1",
   });
   expect(parseAppRoute("/project/project_1/branches")).toEqual({ kind: "unknown" });
-  expect(parseAppRoute("/project/project_1/branches/branch_1")).toEqual({ kind: "unknown" });
+  expect(parseAppRoute("/project/project_1/branch/branch_1")).toEqual({
+    kind: "project-branch",
+    projectId: "project_1",
+    branchId: "branch_1",
+  });
   expect(parseAppRoute("/project/project_1/workspace/workspace_1")).toEqual({
     kind: "workspace",
     projectId: "project_1",
@@ -34,8 +38,10 @@ test("parseAppRoute accepts non-uuid project and workspace ids", () => {
     kind: "project",
     projectId: "V1sibl4A5sWB6UlUjzT4w",
   });
-  expect(parseAppRoute("/project/V1sibl4A5sWB6UlUjzT4w/branches/branch_4A5sWB6UlUjzT4w")).toEqual({
-    kind: "unknown",
+  expect(parseAppRoute("/project/V1sibl4A5sWB6UlUjzT4w/branch/branch_4A5sWB6UlUjzT4w")).toEqual({
+    kind: "project-branch",
+    projectId: "V1sibl4A5sWB6UlUjzT4w",
+    branchId: "branch_4A5sWB6UlUjzT4w",
   });
   expect(
     parseAppRoute("/project/V1sibl4A5sWB6UlUjzT4w/workspace/workspace_4A5sWB6UlUjzT4w"),
@@ -112,6 +118,16 @@ test("resolveProjectRouteTarget reopens the current or last project detail route
   expect(resolveProjectRouteTarget({ kind: "project", projectId: "project_1" }, null)).toBe(
     "/project/project_1",
   );
+  expect(
+    resolveProjectRouteTarget(
+      {
+        kind: "project-branch",
+        projectId: "project_1",
+        branchId: "branch_1",
+      },
+      null,
+    ),
+  ).toBe("/project/project_1");
 
   expect(
     resolveProjectRouteTarget(

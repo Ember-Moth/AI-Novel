@@ -1,8 +1,8 @@
 import { cn } from "@/shared/lib/cn";
 import { LoadingBlock } from "@/shared/ui/Loading";
 
-import type { ProjectList } from "./projectTypes";
-import { dateFormatter, PageHeader } from "./projectUi";
+import type { ProjectList } from "../shared/projectTypes";
+import { dateFormatter, PageHeader } from "../shared/projectUi";
 import { useProjectListState } from "./state/projectListStore";
 
 export function ProjectListView({

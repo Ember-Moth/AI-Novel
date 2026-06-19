@@ -4,7 +4,7 @@ import { useCachedProjectRoute } from "@/app/routing/useCachedProjectRoute";
 import { AiConfigSettingsPage } from "@/modules/ai/ui/settings/AiConfigSettingsPage";
 import { AiSettingsPage } from "@/modules/ai/ui/settings/AiSettingsPage";
 import { PromptLibrarySettingsPage } from "@/modules/ai/ui/settings/PromptLibrarySettingsPage";
-import { ProjectsPage } from "@/modules/projects/ui/ProjectsPage";
+import { ProjectsPage } from "@/modules/projects/ui/routes/ProjectsPage";
 import { WorkspaceEditorPage } from "@/modules/workspace/ui/editor/WorkspaceEditorPage";
 
 import "./styles.css";
@@ -19,6 +19,7 @@ export function App() {
     projectRouteId,
     cachedWorkspaceRoute,
   } = useCachedProjectRoute();
+  const projectBranchId = route.kind === "project-branch" ? route.branchId : null;
 
   if (!isKnownRoute) {
     return (
@@ -31,7 +32,7 @@ export function App() {
   return (
     <>
       <Activity mode={isProjectsPage ? "visible" : "hidden"}>
-        <ProjectsPage projectId={projectRouteId} />
+        <ProjectsPage projectId={projectRouteId} branchId={projectBranchId} />
       </Activity>
 
       <Activity mode={isSettings ? "visible" : "hidden"}>

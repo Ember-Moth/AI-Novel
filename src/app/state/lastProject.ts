@@ -6,7 +6,6 @@ export type WorkspaceRouteRef = { projectId: string; workspaceId: string };
 type LastProjectState = {
   lastProjectId: string | null;
   lastWorkspaceRoute: WorkspaceRouteRef | null;
-  projectBranchSelection: Record<string, string | null>;
 };
 
 type LastProjectActions = {
@@ -16,11 +15,6 @@ type LastProjectActions = {
       | WorkspaceRouteRef
       | null
       | ((current: WorkspaceRouteRef | null) => WorkspaceRouteRef | null),
-  ) => void;
-  setProjectBranchSelection: (
-    updater:
-      | Record<string, string | null>
-      | ((current: Record<string, string | null>) => Record<string, string | null>),
   ) => void;
 };
 
@@ -34,15 +28,10 @@ export function createLastProjectStore() {
   return createStore<LastProjectStoreState>()((set) => ({
     lastProjectId: null,
     lastWorkspaceRoute: null,
-    projectBranchSelection: {},
     setLastProjectId: (updater) =>
       set((state) => ({ lastProjectId: resolveNext(updater, state.lastProjectId) })),
     setLastWorkspaceRoute: (updater) =>
       set((state) => ({ lastWorkspaceRoute: resolveNext(updater, state.lastWorkspaceRoute) })),
-    setProjectBranchSelection: (updater) =>
-      set((state) => ({
-        projectBranchSelection: resolveNext(updater, state.projectBranchSelection),
-      })),
   }));
 }
 

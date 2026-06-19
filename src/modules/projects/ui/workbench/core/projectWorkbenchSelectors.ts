@@ -68,3 +68,17 @@ export function resolveWorkspaceRouteAfterBranchDelete<TWorkspace extends Worksp
 
   return currentRoute;
 }
+
+export function resolveSelectedBranchIdAfterDelete<TBranch extends BranchLike>(
+  branches: readonly TBranch[],
+  deletedBranchId: string,
+  selectedBranchId: string | null,
+  defaultBranchId: string | null,
+) {
+  const remainingBranches = branches.filter((branch) => branch.id !== deletedBranchId);
+  return resolveSelectedBranchId(
+    remainingBranches,
+    selectedBranchId === deletedBranchId ? null : selectedBranchId,
+    defaultBranchId,
+  );
+}

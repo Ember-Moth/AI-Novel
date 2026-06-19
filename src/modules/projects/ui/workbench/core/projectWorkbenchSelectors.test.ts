@@ -2,10 +2,11 @@ import { expect, test } from "bun:test";
 
 import {
   resolveNewBranchSourceCommitId,
+  resolveSelectedBranchIdAfterDelete,
   resolveSelectedBranchId,
   resolveWorkspaceRouteAfterBranchDelete,
   sortProjectBranches,
-} from "./projectCockpit";
+} from "./projectWorkbenchSelectors";
 
 const branches = [
   { id: "branch_old", updatedAt: 10 },
@@ -66,4 +67,16 @@ test("resolveWorkspaceRouteAfterBranchDelete closes only the deleted workspace",
     }),
   ).toEqual(currentRoute);
   expect(resolveWorkspaceRouteAfterBranchDelete(currentRoute, null)).toEqual(currentRoute);
+});
+
+test("resolveSelectedBranchIdAfterDelete falls back from the deleted selected branch", () => {
+  expect(
+    resolveSelectedBranchIdAfterDelete(branches, "branch_new", "branch_new", "branch_default"),
+  ).toBe("branch_default");
+  expect(
+    resolveSelectedBranchIdAfterDelete(branches, "branch_old", "branch_new", "branch_default"),
+  ).toBe("branch_new");
+  expect(
+    resolveSelectedBranchIdAfterDelete(branches, "branch_default", "branch_default", null),
+  ).toBe("branch_new");
 });

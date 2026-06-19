@@ -5,35 +5,25 @@ import { OverlayScrollbar } from "@/shared/ui/OverlayScrollbar";
 import { SidebarPanels } from "@/shared/ui/sidebar";
 import { SidebarListRow } from "@/shared/ui/tree";
 
-import type { BranchList, BranchRow, ProjectRow } from "./projectTypes";
-import { dateFormatter, formatCommitId, InlineError } from "./projectUi";
-import { useProjectWorkbenchState } from "./state/projectWorkbenchStore";
+import type { BranchList, BranchRow, ProjectRow } from "../../shared/projectTypes";
+import { dateFormatter, formatCommitId, InlineError } from "../../shared/projectUi";
+import { useProjectMetadataDraft } from "../state/projectWorkbenchStore";
+import { useCreateBranchDialogControls } from "../features/useCreateBranchFeature";
+import { useProjectMetadataFeature } from "../features/useProjectMetadataFeature";
+import {
+  useProjectWorkbenchNavigation,
+  useProjectWorkbenchViewModel,
+} from "../core/useProjectWorkbench";
 
-export function ProjectWorkbenchSidebar({
-  project,
-  branches,
-  branchHeadCommitIdById,
-  branchesLoading,
-  branchesError,
-  selectedBranch,
-  metadataErrorMessage,
-  isSaving,
-  onMetadataCommit,
-  onSelectBranch,
-  onCreateBranch,
-}: {
-  project: ProjectRow;
-  branches: BranchList;
-  branchHeadCommitIdById: ReadonlyMap<string, string | null>;
-  branchesLoading: boolean;
-  branchesError: string | null;
-  selectedBranch: BranchRow | null;
-  metadataErrorMessage: string | null;
-  isSaving: boolean;
-  onMetadataCommit: () => void;
-  onSelectBranch: (_branchId: string | null) => void;
-  onCreateBranch: () => void;
-}) {
+export function ProjectWorkbenchSidebar() {
+  const model = useProjectWorkbenchViewModel();
+  const { navigateToBranch } = useProjectWorkbenchNavigation();
+  const createBranchDialog = useCreateBranchDialogControls();
+  const project = model.project;
+  if (!project) {
+    return null;
+  }
+
   return (
     <AppSidebar>
       <div className="border-b border-border px-3 py-3">
@@ -46,36 +36,30 @@ export function ProjectWorkbenchSidebar({
       <SidebarPanels
         panels={[
           {
-            title: `Branches · ${branches.length}`,
+            title: `Branches · ${model.sortedBranches.length}`,
             actions: (
               <IconButton
                 icon="icon-[material-symbols--add]"
                 title="新建分支"
-                onClick={onCreateBranch}
+                onClick={createBranchDialog.openDialog}
               />
             ),
             content: (
               <ProjectBranchListPanel
                 project={project}
-                branches={branches}
-                branchHeadCommitIdById={branchHeadCommitIdById}
-                branchesLoading={branchesLoading}
-                branchesError={branchesError}
-                selectedBranch={selectedBranch}
-                onSelectBranch={onSelectBranch}
+                branches={model.sortedBranches}
+                branchHeadCommitIdById={model.branchHeadCommitIdById}
+                branchesLoading={model.branchesLoading}
+                branchesError={model.branchesErrorMessage}
+                selectedBranch={model.selectedBranch}
+                onSelectBranch={navigateToBranch}
               />
             ),
           },
           {
             title: "Project Meta",
             content: (
-              <ProjectMetaPanel
-                project={project}
-                metadataErrorMessage={metadataErrorMessage}
-                isSaving={isSaving}
-                branchCount={branches.length}
-                onMetadataCommit={onMetadataCommit}
-              />
+              <ProjectMetaPanel project={project} branchCount={model.sortedBranches.length} />
             ),
           },
         ]}
@@ -158,24 +142,10 @@ function ProjectBranchListPanel({
   );
 }
 
-function ProjectMetaPanel({
-  project,
-  metadataErrorMessage,
-  isSaving,
-  branchCount,
-  onMetadataCommit,
-}: {
-  project: ProjectRow;
-  metadataErrorMessage: string | null;
-  isSaving: boolean;
-  branchCount: number;
-  onMetadataCommit: () => void;
-}) {
-  const detailName = useProjectWorkbenchState((state) => state.detailName);
-  const detailDescription = useProjectWorkbenchState((state) => state.detailDescription);
-  const detailError = useProjectWorkbenchState((state) => state.detailError);
-  const setDetailName = useProjectWorkbenchState((state) => state.setDetailName);
-  const setDetailDescription = useProjectWorkbenchState((state) => state.setDetailDescription);
+function ProjectMetaPanel({ project, branchCount }: { project: ProjectRow; branchCount: number }) {
+  const { detailName, detailDescription, detailError, setDetailName, setDetailDescription } =
+    useProjectMetadataDraft();
+  const metadata = useProjectMetadataFeature();
 
   return (
     <OverlayScrollbar className="h-full min-h-0 w-full">
@@ -184,9 +154,9 @@ function ProjectMetaPanel({
           <span className="text-xs font-medium text-foreground-muted">项目名</span>
           <input
             value={detailName}
-            disabled={isSaving}
+            disabled={metadata.isPending}
             onChange={(event) => setDetailName(event.target.value)}
-            onBlur={onMetadataCommit}
+            onBlur={() => void metadata.commit()}
             className="w-full rounded-md border border-border bg-editor-background px-3 py-2 text-sm text-foreground transition outline-none focus:border-accent-foreground disabled:cursor-wait disabled:opacity-70"
           />
         </label>
@@ -195,17 +165,17 @@ function ProjectMetaPanel({
           <span className="text-xs font-medium text-foreground-muted">描述</span>
           <textarea
             value={detailDescription}
-            disabled={isSaving}
+            disabled={metadata.isPending}
             rows={5}
             onChange={(event) => setDetailDescription(event.target.value)}
-            onBlur={onMetadataCommit}
+            onBlur={() => void metadata.commit()}
             className="field-sizing-content w-full resize-none rounded-md border border-border bg-editor-background px-3 py-2 text-sm leading-relaxed text-foreground transition outline-none focus:border-accent-foreground disabled:cursor-wait disabled:opacity-70"
             placeholder="为这个项目补充背景、目标或当前进度。"
           />
         </label>
 
-        {detailError || metadataErrorMessage ? (
-          <InlineError message={detailError ?? metadataErrorMessage ?? ""} />
+        {detailError || metadata.errorMessage ? (
+          <InlineError message={detailError ?? metadata.errorMessage ?? ""} />
         ) : null}
 
         <div className="rounded-md border border-border bg-editor-background p-3">

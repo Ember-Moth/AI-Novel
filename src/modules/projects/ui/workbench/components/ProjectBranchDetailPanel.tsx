@@ -1,78 +1,39 @@
-import { type FormEvent } from "react";
-
 import { cn } from "@/shared/lib/cn";
 import { FullPageMessage } from "@/shared/ui/FullPageMessage";
 
 import { CommitHistorySection } from "./CommitHistorySection";
-import type {
-  BranchRow,
-  CommitHistory,
-  CommitRow,
-  ProjectRow,
-  WorkingTreeStatus,
-  WorkspaceRow,
-} from "./projectTypes";
+import { useProjectBranchAdminFeature } from "../features/useProjectBranchAdminFeature";
+import { useProjectCommitFeature } from "../features/useProjectCommitFeature";
+import { useForkBranchDialogControls } from "../features/useForkBranchFeature";
 import {
   dateFormatter,
   formatCommitId,
   InlineError,
   primaryButton,
   secondaryButton,
-} from "./projectUi";
-import { useProjectWorkbenchState } from "./state/projectWorkbenchStore";
+} from "../../shared/projectUi";
+import { useProjectCommitDraft } from "../state/projectWorkbenchStore";
+import {
+  useProjectWorkbenchNavigation,
+  useProjectWorkbenchViewModel,
+} from "../core/useProjectWorkbench";
 import { WorkingTreeStatusPanel } from "./WorkingTreeStatusPanel";
 
-export function ProjectBranchDetailPanel({
-  project,
-  selectedBranch,
-  selectedBranchHeadCommitId,
-  selectedWorkspace,
-  commitHistory,
-  commitHistoryLoading,
-  commitHistoryError,
-  workingTreeStatus,
-  workingTreeStatusLoading,
-  workingTreeStatusError,
-  discardErrorMessage,
-  commitErrorMessage,
-  isCommitting,
-  isDiscardingChanges,
-  isSettingDefault,
-  isDeletingBranch,
-  onOpenWorkspace,
-  onSetDefaultBranch,
-  onDeleteBranch,
-  onOpenFork,
-  onSubmitCommit,
-  onDiscardChanges,
-}: {
-  project: ProjectRow;
-  selectedBranch: BranchRow | null;
-  selectedBranchHeadCommitId: string | null;
-  selectedWorkspace: WorkspaceRow | null;
-  commitHistory: CommitHistory;
-  commitHistoryLoading: boolean;
-  commitHistoryError: string | null;
-  workingTreeStatus: WorkingTreeStatus | null;
-  workingTreeStatusLoading: boolean;
-  workingTreeStatusError: string | null;
-  discardErrorMessage: string | null;
-  commitErrorMessage: string | null;
-  isCommitting: boolean;
-  isDiscardingChanges: boolean;
-  isSettingDefault: boolean;
-  isDeletingBranch: boolean;
-  onOpenWorkspace: (_workspaceId: string) => void;
-  onSetDefaultBranch: (_branch: BranchRow) => void;
-  onDeleteBranch: () => void;
-  onOpenFork: (_commit: CommitRow) => void;
-  onSubmitCommit: (_event: FormEvent<HTMLFormElement>) => void;
-  onDiscardChanges: () => void;
-}) {
-  const commitMessage = useProjectWorkbenchState((state) => state.commitMessage);
-  const commitError = useProjectWorkbenchState((state) => state.commitError);
-  const discardError = useProjectWorkbenchState((state) => state.discardError);
-  const setCommitMessage = useProjectWorkbenchState((state) => state.setCommitMessage);
+export function ProjectBranchDetailPanel() {
+  const model = useProjectWorkbenchViewModel();
+  const { navigate } = useProjectWorkbenchNavigation();
+  const { commitMessage, commitError, discardError, setCommitMessage } = useProjectCommitDraft();
+  const forkBranchDialog = useForkBranchDialogControls();
+  const branchAdmin = useProjectBranchAdminFeature();
+  const commitFeature = useProjectCommitFeature();
+  const project = model.project;
+  const selectedBranch = model.selectedBranch;
+  const selectedWorkspace = model.selectedWorkspace;
+  const workingTreeStatus = model.workingTreeStatus;
+
+  if (!project) {
+    return null;
+  }
 
   if (!selectedBranch) {
     return (
@@ -93,7 +54,10 @@ export function ProjectBranchDetailPanel({
     workingTreeStatus?.headCommitId != null &&
     workingTreeStatus.hasChanges === true;
   const commitDisabled =
-    workspaceMissing || isCommitting || isDiscardingChanges || commitDisabledByCleanTree;
+    workspaceMissing ||
+    commitFeature.isCommitting ||
+    commitFeature.isDiscardingChanges ||
+    commitDisabledByCleanTree;
 
   return (
     <div className="mx-auto grid min-h-full w-full max-w-6xl gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]">
@@ -115,8 +79,10 @@ export function ProjectBranchDetailPanel({
                 <span>更新时间 {dateFormatter.format(selectedBranch.updatedAt)}</span>
                 <span>
                   HEAD{" "}
-                  {selectedBranchHeadCommitId ? (
-                    <span className="font-mono">{formatCommitId(selectedBranchHeadCommitId)}</span>
+                  {model.selectedBranchHeadCommitId ? (
+                    <span className="font-mono">
+                      {formatCommitId(model.selectedBranchHeadCommitId)}
+                    </span>
                   ) : (
                     "—"
                   )}
@@ -138,7 +104,9 @@ export function ProjectBranchDetailPanel({
               {selectedWorkspace ? (
                 <button
                   type="button"
-                  onClick={() => onOpenWorkspace(selectedWorkspace.id)}
+                  onClick={() =>
+                    navigate(`/project/${project.id}/workspace/${selectedWorkspace.id}`)
+                  }
                   className={primaryButton}
                 >
                   <span className="icon-[material-symbols--edit] text-base" />
@@ -151,8 +119,10 @@ export function ProjectBranchDetailPanel({
               )}
               <button
                 type="button"
-                onClick={() => onSetDefaultBranch(selectedBranch)}
-                disabled={project.defaultBranchId === selectedBranch.id || isSettingDefault}
+                onClick={() => void branchAdmin.handleSetDefaultBranch(selectedBranch)}
+                disabled={
+                  project.defaultBranchId === selectedBranch.id || branchAdmin.isSettingDefault
+                }
                 className={secondaryButton}
               >
                 <span className="icon-[material-symbols--target] text-base" />
@@ -160,8 +130,10 @@ export function ProjectBranchDetailPanel({
               </button>
               <button
                 type="button"
-                onClick={onDeleteBranch}
-                disabled={project.defaultBranchId === selectedBranch.id || isDeletingBranch}
+                onClick={() => void branchAdmin.handleDeleteBranch(selectedBranch)}
+                disabled={
+                  project.defaultBranchId === selectedBranch.id || branchAdmin.isDeletingBranch
+                }
                 className={cn(
                   secondaryButton,
                   "text-accent-foreground hover:bg-red-500/10 hover:text-red-200",
@@ -181,11 +153,11 @@ export function ProjectBranchDetailPanel({
         </div>
 
         <CommitHistorySection
-          commitHistory={commitHistory}
-          commitHistoryLoading={commitHistoryLoading}
-          commitHistoryError={commitHistoryError}
-          selectedBranchHeadCommitId={selectedBranchHeadCommitId}
-          onOpenFork={onOpenFork}
+          commitHistory={model.commitHistory}
+          commitHistoryLoading={model.commitHistoryLoading}
+          commitHistoryError={model.commitHistoryErrorMessage}
+          selectedBranchHeadCommitId={model.selectedBranchHeadCommitId}
+          onOpenFork={forkBranchDialog.openDialog}
         />
       </section>
 
@@ -198,16 +170,19 @@ export function ProjectBranchDetailPanel({
         {!workspaceMissing ? (
           <WorkingTreeStatusPanel
             status={workingTreeStatus}
-            loading={workingTreeStatusLoading}
-            error={workingTreeStatusError}
-            discardError={discardError ?? discardErrorMessage}
+            loading={model.workingTreeStatusLoading}
+            error={model.workingTreeStatusErrorMessage}
+            discardError={discardError ?? commitFeature.discardErrorMessage}
             canDiscardChanges={canDiscardChanges}
-            isDiscardingChanges={isDiscardingChanges}
-            onDiscardChanges={onDiscardChanges}
+            isDiscardingChanges={commitFeature.isDiscardingChanges}
+            onDiscardChanges={() => void commitFeature.handleDiscardChanges()}
           />
         ) : null}
 
-        <form className="mt-2 grid gap-2" onSubmit={onSubmitCommit}>
+        <form
+          className="mt-2 grid gap-2"
+          onSubmit={(event) => void commitFeature.handleCommit(event)}
+        >
           <textarea
             value={commitMessage}
             onChange={(event) => setCommitMessage(event.target.value)}
@@ -216,15 +191,15 @@ export function ProjectBranchDetailPanel({
             placeholder="描述这次提交做了什么。"
             className="field-sizing-content w-full resize-none rounded-md border border-border bg-editor-background px-3 py-2 text-sm leading-relaxed text-foreground transition outline-none focus:border-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
           />
-          {commitError || commitErrorMessage ? (
-            <InlineError message={commitError ?? commitErrorMessage ?? ""} />
+          {commitError || commitFeature.commitErrorMessage ? (
+            <InlineError message={commitError ?? commitFeature.commitErrorMessage ?? ""} />
           ) : null}
           <div className="flex justify-end">
             <button type="submit" disabled={commitDisabled} className={primaryButton}>
               <span
                 className={cn(
                   "text-base",
-                  isCommitting
+                  commitFeature.isCommitting
                     ? "icon-[material-symbols--sync] animate-spin"
                     : "icon-[material-symbols--check-circle]",
                 )}

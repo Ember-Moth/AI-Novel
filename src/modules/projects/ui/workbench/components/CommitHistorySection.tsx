@@ -1,7 +1,7 @@
 import { RowActionButton } from "@/shared/ui/tree";
 
-import type { CommitHistory, CommitRow } from "./projectTypes";
-import { dateFormatter, formatCommitId, InlineError } from "./projectUi";
+import type { CommitHistory, CommitRow } from "../../shared/projectTypes";
+import { dateFormatter, formatCommitId, InlineError } from "../../shared/projectUi";
 import { LoadingBlock } from "@/shared/ui/Loading";
 
 export function CommitHistorySection({

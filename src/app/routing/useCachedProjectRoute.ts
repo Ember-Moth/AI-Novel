@@ -7,6 +7,7 @@ export type AppRoute =
   | { kind: "home" }
   | { kind: "settings"; section: "ai-connections" | "ai" | "prompts" }
   | { kind: "project"; projectId: string }
+  | { kind: "project-branch"; projectId: string; branchId: string }
   | { kind: "workspace"; projectId: string; workspaceId: string }
   | { kind: "unknown" };
 
@@ -43,6 +44,15 @@ export function parseAppRoute(location: string): AppRoute {
       kind: "workspace",
       projectId: decodePathSegment(workspaceMatch[1]!),
       workspaceId: decodePathSegment(workspaceMatch[2]!),
+    };
+  }
+
+  const projectBranchMatch = normalizedLocation.match(/^\/project\/([^/]+)\/branch\/([^/]+)$/);
+  if (projectBranchMatch) {
+    return {
+      kind: "project-branch",
+      projectId: decodePathSegment(projectBranchMatch[1]!),
+      branchId: decodePathSegment(projectBranchMatch[2]!),
     };
   }
 
@@ -94,7 +104,7 @@ export function resolveLastWorkspaceRoute(
 }
 
 export function resolveProjectRouteTarget(route: AppRoute, lastProjectId: string | null) {
-  if (route.kind === "project" || route.kind === "workspace") {
+  if (route.kind === "project" || route.kind === "project-branch" || route.kind === "workspace") {
     return `/project/${route.projectId}`;
   }
 
@@ -113,7 +123,9 @@ export function useCachedProjectRoute() {
   const setLastWorkspaceRoute = useLastProjectStore((state) => state.setLastWorkspaceRoute);
   const route = parseAppRoute(location);
   const routeProjectId =
-    route.kind === "project" || route.kind === "workspace" ? route.projectId : null;
+    route.kind === "project" || route.kind === "project-branch" || route.kind === "workspace"
+      ? route.projectId
+      : null;
   const routeWorkspaceProjectId = route.kind === "workspace" ? route.projectId : null;
   const routeWorkspaceId = route.kind === "workspace" ? route.workspaceId : null;
   const routeWorkspace =
@@ -145,9 +157,10 @@ export function useCachedProjectRoute() {
   return {
     route,
     isHome: route.kind === "home",
-    isProjectDetailRoute: route.kind === "project",
+    isProjectDetailRoute: route.kind === "project" || route.kind === "project-branch",
     isWorkspaceRoute: route.kind === "workspace",
-    isProjectsPage: route.kind === "home" || route.kind === "project",
+    isProjectsPage:
+      route.kind === "home" || route.kind === "project" || route.kind === "project-branch",
     isSettings: route.kind === "settings",
     isKnownRoute: route.kind !== "unknown",
     projectRouteId: routeProjectId,

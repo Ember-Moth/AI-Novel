@@ -6,11 +6,11 @@ import { useLastProjectStore } from "@/app/state/lastProject";
 import { rpc } from "@/rpc/client";
 import { createProjectId } from "@/shared/lib/domain";
 
-import { CreateProjectDialog } from "./ProjectDialogFields";
-import { insertProjectOptimistically, removeProjectOptimistically } from "./projectCache";
+import { CreateProjectDialog } from "./CreateProjectDialog";
+import { insertProjectOptimistically, removeProjectOptimistically } from "../shared/projectCache";
 import { ProjectListView } from "./ProjectListView";
-import type { ProjectList } from "./projectTypes";
-import { InlineError } from "./projectUi";
+import type { ProjectList } from "../shared/projectTypes";
+import { InlineError } from "../shared/projectUi";
 import { useProjectListStoreApi } from "./state/projectListStore";
 
 type ProjectListMutationContext = {
@@ -22,7 +22,6 @@ export function ProjectListRoute() {
   const lastProjectId = useLastProjectStore((state) => state.lastProjectId);
   const setLastProjectId = useLastProjectStore((state) => state.setLastProjectId);
   const setLastWorkspaceRoute = useLastProjectStore((state) => state.setLastWorkspaceRoute);
-  const setProjectBranchSelection = useLastProjectStore((state) => state.setProjectBranchSelection);
   const projectListStore = useProjectListStoreApi();
   const createProjectDialogRef = useRef<HTMLDialogElement>(null);
 
@@ -96,18 +95,6 @@ export function ProjectListRoute() {
     projectListStore.getState().resetCreateProjectDialog();
   };
 
-  const forgetProjectBranch = (nextProjectId: string) => {
-    setProjectBranchSelection((current) => {
-      if (!(nextProjectId in current)) {
-        return current;
-      }
-
-      const next = { ...current };
-      delete next[nextProjectId];
-      return next;
-    });
-  };
-
   const handleCreateProject = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const { createProjectName, createProjectDescription, setCreateProjectError } =
@@ -148,7 +135,6 @@ export function ProjectListRoute() {
       await deleteProject.mutate({ id });
       setLastProjectId((current) => (current === id ? null : current));
       setLastWorkspaceRoute((current) => (current?.projectId === id ? null : current));
-      forgetProjectBranch(id);
     } finally {
       setDeletingProjectId(null);
     }

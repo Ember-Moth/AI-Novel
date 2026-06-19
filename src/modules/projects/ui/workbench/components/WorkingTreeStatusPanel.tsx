@@ -1,8 +1,8 @@
 import { cn } from "@/shared/lib/cn";
 import { LoadingBlock } from "@/shared/ui/Loading";
 
-import type { WorkingTreeStatus } from "./projectTypes";
-import { InlineError, secondaryButton } from "./projectUi";
+import type { WorkingTreeStatus } from "../../shared/projectTypes";
+import { InlineError, secondaryButton } from "../../shared/projectUi";
 
 const workingTreeChangeKindLabels: Record<
   WorkingTreeStatus["areas"]["content"]["changes"][number]["kind"],
