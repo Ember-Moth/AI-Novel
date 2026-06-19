@@ -50,11 +50,20 @@ function buildTimelineLabelMap(points: TimelinePointLike[]) {
   return new Map(points.map((point) => [point.id, point.label] as const));
 }
 
-function buildSiblingIndexMap(nodes: FlatContentNode[]) {
+/**
+ * 构建「共同节点」在同级中的相对顺序索引。
+ * 对每个 parent 组，仅保留在 previous 和 next 中都存在的节点，然后分配位置索引。
+ * 用于判断真正的相对顺序是否发生了变化，而非因新增/删除节点导致的绝对索引偏移。
+ */
+function buildRelativeOrderMap(
+  nodes: FlatContentNode[],
+  commonIds: Set<string>,
+): Map<string, number> {
   const order = new Map<string, number>();
   const siblingBuckets = new Map<string | null, FlatContentNode[]>();
 
   for (const node of nodes) {
+    if (!commonIds.has(node.id)) continue;
     const bucket = siblingBuckets.get(node.parentId) ?? [];
     bucket.push(node);
     siblingBuckets.set(node.parentId, bucket);
@@ -213,8 +222,16 @@ export function compareContentStates(
 ): WorkingTreeContentChangeItem[] {
   const previousById = buildNodeMap(previousNodes);
   const nextById = buildNodeMap(nextNodes);
-  const previousOrder = buildSiblingIndexMap(previousNodes);
-  const nextOrder = buildSiblingIndexMap(nextNodes);
+
+  // 对「修改」节点，仅比较共同节点的相对顺序变化，忽略新增/删除导致的绝对索引偏移
+  const commonIds = new Set<string>();
+  for (const id of previousById.keys()) {
+    if (nextById.has(id)) {
+      commonIds.add(id);
+    }
+  }
+  const previousRelativeOrder = buildRelativeOrderMap(previousNodes, commonIds);
+  const nextRelativeOrder = buildRelativeOrderMap(nextNodes, commonIds);
   const previousTimelineLabels = buildTimelineLabelMap(previousTimeline);
   const nextTimelineLabels = buildTimelineLabelMap(nextTimeline);
 
@@ -309,7 +326,7 @@ export function compareContentStates(
     if (previousNode.parentId !== nextNode.parentId) {
       changedAspects.push("parent");
     }
-    if ((previousOrder.get(nodeId) ?? -1) !== (nextOrder.get(nodeId) ?? -1)) {
+    if ((previousRelativeOrder.get(nodeId) ?? -1) !== (nextRelativeOrder.get(nodeId) ?? -1)) {
       changedAspects.push("order");
     }
     if (
