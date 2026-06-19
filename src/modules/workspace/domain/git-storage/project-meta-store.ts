@@ -4,9 +4,8 @@ import path from "node:path";
 import { invariant } from "@/shared/lib/domain";
 
 import { commitCustomRef, metaRef, readFilesAtRef, touchProjectRepo } from "./git-store";
-import { parseJsonl, stringifyJsonl } from "./jsonl";
 import { ensureStorageRoot, getProjectRepoGitDir } from "./paths";
-import type { BranchIndexRow, ProjectIndexRow, ProjectMetaPayload } from "./types";
+import type { ProjectIndexRow, ProjectMetaPayload } from "./types";
 
 function repoProjectIdFromDirname(dirname: string) {
   return dirname.endsWith(".git") ? dirname.slice(0, -4) : null;
@@ -19,10 +18,6 @@ function normalizePayload(payload: ProjectMetaPayload): ProjectMetaPayload {
       defaultBranchId: payload.project.defaultBranchId ?? null,
       description: payload.project.description ?? null,
     },
-    branches: payload.branches.map((branch) => ({
-      ...branch,
-      forkedFromCommitId: branch.forkedFromCommitId ?? null,
-    })),
   };
 }
 
@@ -30,14 +25,12 @@ function parsePayload(files: Record<string, string>): ProjectMetaPayload {
   const projectJson = files["project.json"];
   invariant(projectJson, "缺少 project.json。");
   const project = JSON.parse(projectJson) as ProjectIndexRow;
-  const branches = parseJsonl<BranchIndexRow>(files["branches.jsonl"]);
   return normalizePayload({
     project: {
       ...project,
       description: project.description ?? null,
       defaultBranchId: project.defaultBranchId ?? null,
     },
-    branches,
   });
 }
 
@@ -102,7 +95,6 @@ export async function writeProjectMeta(
     replace: true,
     files: {
       "project.json": `${JSON.stringify(storableProject, null, 2)}\n`,
-      "branches.jsonl": stringifyJsonl(normalized.branches),
     },
   });
   await touchProjectRepo(normalized.project.id);
@@ -110,13 +102,7 @@ export async function writeProjectMeta(
 }
 
 export async function createProjectMeta(project: ProjectIndexRow) {
-  return await writeProjectMeta(
-    {
-      project,
-      branches: [],
-    },
-    "Create project metadata",
-  );
+  return await writeProjectMeta({ project }, "Create project metadata");
 }
 
 export async function updateProjectMeta(

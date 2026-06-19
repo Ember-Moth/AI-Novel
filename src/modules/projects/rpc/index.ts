@@ -2,6 +2,7 @@ import { mutation, query } from "@codehz/rpc/core";
 import { rmSync } from "node:fs";
 
 import { createDefaultWorkspace } from "@/modules/workspace/domain";
+import { getBranch } from "@/modules/workspace/domain/branches";
 import {
   createProjectMeta,
   listProjectRows,
@@ -14,7 +15,6 @@ import {
   getProjectWorktreeRoot,
 } from "@/modules/workspace/domain/git-storage/paths";
 import type { ProjectIndexRow } from "@/modules/workspace/domain/git-storage/types";
-import { invariant } from "@/shared/lib/domain";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
 
 type ProjectMutationInput = Pick<ProjectIndexRow, "id" | "name" | "description">;
@@ -69,9 +69,7 @@ export const setDefaultBranch = mutation<{ projectId: string; branchId: string }
   {
     invalidate: ({ projectId }) => [rpcTags.projectsList(), rpcTags.project(projectId)],
     handler: async ({ projectId, branchId }) => {
-      const payload = await readProjectMeta(projectId);
-      const branch = payload.branches.find((item) => item.id === branchId);
-      invariant(branch, "无法设置默认分支：该分支不属于当前项目。");
+      const branch = await getBranch(projectId, branchId);
 
       await updateProjectMeta(
         projectId,

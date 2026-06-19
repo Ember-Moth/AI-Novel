@@ -3,7 +3,6 @@ import { invariant } from "@/shared/lib/domain";
 import { branchRef, touchProjectRepo } from "./git-storage/git-store";
 import { getBranch, getBranchHeadCommitId } from "./branches";
 import { addAllAndCommit, checkoutCommitToWorktree, listLog } from "./git-storage/git-store";
-import { readProjectMeta } from "./git-storage/project-meta-store";
 import { getWorkspace, getWorkspaceForBranchId } from "./lifecycle";
 
 export interface CommitParentRow {
@@ -69,10 +68,10 @@ export async function checkoutCommit(input: {
 }
 
 export async function getCommit(commitId: string, projectId: string): Promise<CommitRow> {
-  const meta = await readProjectMeta(projectId);
-  const branches = meta.branches.map((branch) => branch.id);
-  for (const branchId of branches) {
-    const commits = await listLog({ projectId, ref: branchRef(branchId) });
+  const { listBranches } = await import("./branches");
+  const branches = await listBranches(projectId);
+  for (const branch of branches) {
+    const commits = await listLog({ projectId, ref: branchRef(branch.id) });
     const found = commits.find((entry) => entry.oid === commitId);
     if (found) {
       return mapLogEntry(projectId, found);

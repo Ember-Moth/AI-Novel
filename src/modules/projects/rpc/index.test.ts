@@ -12,6 +12,7 @@ import {
   getProjectWorktreeRoot,
 } from "@/modules/workspace/domain/git-storage/paths";
 import * as workspaceService from "@/modules/workspace/domain";
+import { listBranches } from "@/modules/workspace/domain/branches";
 import { rpcTags } from "@/rpc/tags";
 import * as projectHandlers from "./index";
 const requestCtx = { req: new Request("http://localhost/api/rpc") } as unknown as Parameters<
@@ -35,14 +36,10 @@ async function projectIndexCounts() {
   return {
     projects: rows.length,
     branches: (
-      await Promise.all(
-        rows.map(async (project) => (await readProjectMeta(project.id)).branches.length),
-      )
+      await Promise.all(rows.map(async (project) => (await listBranches(project.id)).length))
     ).reduce((a, b) => a + b, 0),
     workspaces: (
-      await Promise.all(
-        rows.map(async (project) => (await readProjectMeta(project.id)).branches.length),
-      )
+      await Promise.all(rows.map(async (project) => (await listBranches(project.id)).length))
     ).reduce((a, b) => a + b, 0),
   };
 }
@@ -71,7 +68,7 @@ test("setDefaultBranch rejects branches from another project", async () => {
       },
       requestCtx,
     ),
-  ).rejects.toThrow("无法设置默认分支：该分支不属于当前项目。");
+  ).rejects.toThrow("未找到分支。");
 });
 
 test("setDefaultBranch invalidates project list and detail tags", async () => {

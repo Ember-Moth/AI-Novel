@@ -1,19 +1,24 @@
 import fs from "node:fs";
+import { mkdirSync } from "node:fs";
 
 import { createId, invariant } from "@/shared/lib/domain";
 
 import {
   branchRef,
   checkoutCommitToWorktree,
+  deleteBranchMeta,
   deleteRef,
+  listBranchMetaIds,
+  readBranchMeta,
   readCommit,
   resolveRef,
+  touchProjectRepo,
+  writeBranchMeta,
   writeRef,
 } from "./git-storage/git-store";
 import { getProjectWorktreeDir } from "./git-storage/paths";
 import type { BranchIndexRow, ProjectIndexRow } from "./git-storage/types";
-import { readProjectMeta, updateProjectMeta } from "./git-storage/project-meta-store";
-import { mkdirSync } from "node:fs";
+import { readProjectMeta } from "./git-storage/project-meta-store";
 import { seedEmptyWorktree } from "./git-storage/worktree-state";
 
 export type BranchRow = BranchIndexRow;
@@ -36,9 +41,13 @@ export async function createBranch(input: {
   const project = await getProject(input.projectId);
   const name = input.name.trim();
   invariant(name, "无法创建分支：分支名称不能为空。");
-  const payload = await readProjectMeta(project.id);
-  const existing = payload.branches.find((branch) => branch.name === name);
-  invariant(!existing, `无法创建分支：已存在名为「${name}」的分支。`);
+
+  // 检查同名分支
+  const existing = await listBranches(project.id);
+  invariant(
+    !existing.find((branch) => branch.name === name),
+    `无法创建分支：已存在名为「${name}」的分支。`,
+  );
 
   const branchId = createId("branch");
   const initialHeadCommitId = input.fromCommitId ?? null;
@@ -50,22 +59,14 @@ export async function createBranch(input: {
     });
   }
 
-  await updateProjectMeta(
-    project.id,
-    (current) => ({
-      ...current,
-      branches: [
-        ...current.branches,
-        {
-          id: branchId,
-          projectId: project.id,
-          name,
-          forkedFromCommitId: input.fromCommitId ?? null,
-        },
-      ],
-    }),
-    "Create branch metadata",
-  );
+  // 分支元数据写入独立 ref（直接指向 blob）
+  await writeBranchMeta(project.id, branchId, {
+    id: branchId,
+    projectId: project.id,
+    name,
+    forkedFromCommitId: input.fromCommitId ?? null,
+  });
+  await touchProjectRepo(project.id);
 
   // worktree 目录直接使用 branchId
   const worktreePath = getProjectWorktreeDir(project.id, branchId);
@@ -79,15 +80,17 @@ export async function createBranch(input: {
     });
   }
 
-  return await getBranch(project.id, branchId);
+  return (await getBranch(project.id, branchId))!;
 }
 
-export async function listBranches(projectId: string) {
-  return (await readProjectMeta(projectId)).branches;
+export async function listBranches(projectId: string): Promise<BranchIndexRow[]> {
+  const ids = await listBranchMetaIds(projectId);
+  const rows = await Promise.all(ids.map((id) => readBranchMeta<BranchIndexRow>(projectId, id)));
+  return rows.filter((r): r is BranchIndexRow => r != null);
 }
 
-export async function getBranch(projectId: string, branchId: string) {
-  const branch = (await readProjectMeta(projectId)).branches.find((item) => item.id === branchId);
+export async function getBranch(projectId: string, branchId: string): Promise<BranchIndexRow> {
+  const branch = await readBranchMeta<BranchIndexRow>(projectId, branchId);
   invariant(branch, "未找到分支。");
   return branch;
 }
@@ -128,12 +131,6 @@ export async function deleteBranch(projectId: string, branchId: string) {
     force: true,
   });
   await deleteRef({ projectId, ref: branchRef(branch.id) });
-  await updateProjectMeta(
-    project.id,
-    (payload) => ({
-      ...payload,
-      branches: payload.branches.filter((item) => item.id !== branch.id),
-    }),
-    "Delete branch metadata",
-  );
+  await deleteBranchMeta(projectId, branch.id);
+  await touchProjectRepo(projectId);
 }

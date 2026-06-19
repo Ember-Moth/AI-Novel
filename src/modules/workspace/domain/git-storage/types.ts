@@ -31,5 +31,4 @@ export interface TimelineMetaRow {
 
 export interface ProjectMetaPayload {
   project: ProjectIndexRow;
-  branches: BranchIndexRow[];
 }

@@ -19,6 +19,10 @@ export function metaRef() {
   return `refs/novel-evolver/meta`;
 }
 
+export function branchMetaRef(branchId: string) {
+  return `refs/novel-evolver/branches/${branchId}/meta`;
+}
+
 export async function ensureProjectRepo(projectId: string) {
   const gitdir = getProjectRepoGitDir(projectId);
   await fs.promises.mkdir(gitdir, { recursive: true });
@@ -189,6 +193,51 @@ export async function writeRef(input: { projectId: string; ref: string; value: s
 export async function deleteRef(input: { projectId: string; ref: string }) {
   const gitdir = await ensureProjectRepo(input.projectId);
   await fs.promises.rm(path.join(gitdir, input.ref), { force: true });
+}
+
+// ---------------------------------------------------------------------------
+// Branch metadata (stored as individual blobs, one per branch)
+// ---------------------------------------------------------------------------
+
+export async function writeBranchMeta(
+  projectId: string,
+  branchId: string,
+  data: Record<string, unknown>,
+) {
+  const gitdir = await ensureProjectRepo(projectId);
+  const blob = Buffer.from(JSON.stringify(data), "utf8");
+  const oid = await git.writeBlob({ fs, gitdir, blob });
+  await git.writeRef({ fs, gitdir, ref: branchMetaRef(branchId), value: oid, force: true });
+}
+
+export async function readBranchMeta<T = Record<string, unknown>>(
+  projectId: string,
+  branchId: string,
+): Promise<T | null> {
+  const gitdir = await ensureProjectRepo(projectId);
+  const ref = branchMetaRef(branchId);
+  const oid = await git.resolveRef({ fs, gitdir, ref }).catch(() => null);
+  if (!oid) return null;
+  const { blob } = await git.readBlob({ fs, gitdir, oid });
+  return JSON.parse(Buffer.from(blob).toString("utf8")) as T;
+}
+
+export async function deleteBranchMeta(projectId: string, branchId: string) {
+  await deleteRef({ projectId, ref: branchMetaRef(branchId) });
+}
+
+export async function listBranchMetaIds(projectId: string): Promise<string[]> {
+  const gitdir = await ensureProjectRepo(projectId);
+  const branchesDir = path.join(gitdir, "refs", "novel-evolver", "branches");
+  try {
+    const entries = await fs.promises.readdir(branchesDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
 }
 
 export async function commitCustomRef(input: {
