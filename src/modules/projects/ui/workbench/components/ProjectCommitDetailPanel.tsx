@@ -11,14 +11,15 @@ import {
   InlineError,
   secondaryButton,
 } from "../../shared/projectUi";
+import { ChangeAreasView } from "./ChangeAreasView";
 
 /**
  * 选中某个 commit 时展示的详情面板（仿专业版本控制软件的 commit inspector）：
- * 元信息（message / 作者 / 时间 / hash / 父提交）+ 操作入口。
+ * 元信息（message / 作者 / 时间 / hash / 父提交）+ 操作入口 + 改动文件与差异。
  *
  * 简化版说明：
- * - 「改动文件清单 / 内容 diff」依赖一个「按 commit 取 diff」的后端能力，目前 RPC 尚未提供，
- *   因此这里以占位形式呈现（见下方 DiffPlaceholder），并保留 TODO。
+ * - 「改动文件清单 / 内容 diff」通过「commits.diff」RPC 取得：对比该 commit 与其首个父提交
+ *   （根提交则与空树对比），复用与「未提交变更」一致的语义化呈现（见 DiffSection）。
  * - 「Reset 到此提交 / Merge」同样留待后续实现，目前仅暴露 Fork 入口。
  */
 export function ProjectCommitDetailPanel({
@@ -48,7 +49,7 @@ export function ProjectCommitDetailPanel({
       <div>
         <div className="flex items-start gap-2">
           <span className="mt-0.5 icon-[material-symbols--commit] shrink-0 text-base text-accent-foreground" />
-          <h3 className="min-w-0 text-sm leading-snug font-semibold break-words text-foreground">
+          <h3 className="min-w-0 text-sm leading-snug font-semibold wrap-break-word text-foreground">
             {commit.message}
           </h3>
           {isHead ? (
@@ -93,7 +94,7 @@ export function ProjectCommitDetailPanel({
         {/* TODO: Reset 到此提交 / Merge 入口待后端能力补齐后接入。 */}
       </div>
 
-      <DiffPlaceholder />
+      <DiffSection commitId={commit.id} />
     </div>
   );
 }
@@ -108,17 +109,33 @@ function MetaRow({ label, children }: { label: string; children: React.ReactNode
 }
 
 /**
- * 占位：单个 commit 的改动文件清单 / 内容 diff。
- * TODO: 待新增「commits.diff」之类的 RPC（对比该 commit 与其首个父提交）后替换为真实视图。
+ * 单个 commit 的改动文件清单 / 内容 diff（对比该 commit 与其首个父提交）。
  */
-function DiffPlaceholder() {
+function DiffSection({ commitId }: { commitId: string }) {
+  const projectId = useProjectWorkbenchProjectId();
+  const diffQuery = rpc.useQuery("commits.diff", commitId ? { projectId, commitId } : skipToken);
+  const diff = diffQuery.data ?? null;
+
   return (
-    <div className="rounded-md border border-dashed border-border bg-editor-background px-3 py-6 text-center">
-      <span className="icon-[material-symbols--difference] text-xl text-foreground-muted/60" />
-      <p className="mt-1 text-xs text-foreground-muted">改动文件与差异视图待实现</p>
-      <p className="mt-0.5 text-[10px] text-foreground-muted/70">
-        需要按 commit 计算 diff 的后端能力，当前版本暂未提供。
-      </p>
+    <div className="rounded-md border border-border bg-editor-background p-3">
+      <div className="flex items-center gap-1">
+        <span className="icon-[material-symbols--difference] text-base text-accent-foreground" />
+        <h4 className="text-xs font-medium text-foreground-muted">
+          {diff?.isRoot ? "本次改动（根提交）" : "本次改动"}
+        </h4>
+      </div>
+
+      <div className="mt-2">
+        {diffQuery.error ? (
+          <InlineError message={diffQuery.error.message} />
+        ) : diff == null ? (
+          <LoadingBlock label="正在计算差异..." />
+        ) : !diff.hasChanges ? (
+          <p className="text-sm text-foreground-muted">该提交相对父提交无内容变更。</p>
+        ) : (
+          <ChangeAreasView areas={diff.areas} />
+        )}
+      </div>
     </div>
   );
 }

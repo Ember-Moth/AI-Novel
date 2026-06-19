@@ -5,6 +5,7 @@ import {
   createCommit,
   getBranch,
   getCommit,
+  getCommitDiff,
   getWorkspace,
   getWorkspaceForBranchId,
   getWorkingTreeStatus,
@@ -49,6 +50,15 @@ export const get = query<
 >({
   watch: ({ commitId }) => [rpcTags.commit(commitId)],
   handler: async ({ commitId, projectId }) => await getCommit(commitId, projectId),
+});
+
+export const diff = query<
+  { commitId: string; projectId: string },
+  Awaited<ReturnType<typeof getCommitDiff>>,
+  RpcTagList
+>({
+  watch: ({ commitId }) => [rpcTags.commit(commitId)],
+  handler: async ({ commitId, projectId }) => await getCommitDiff(projectId, commitId),
 });
 
 export const create = mutation<

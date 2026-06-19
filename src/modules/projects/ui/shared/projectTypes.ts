@@ -13,3 +13,5 @@ export type CommitRow = CommitHistory[number];
 export type WorkingTreeStatus = NonNullable<
   ReturnType<typeof rpc.useQuery<"commits.workingTreeStatus">>["data"]
 >;
+export type CommitDiff = NonNullable<ReturnType<typeof rpc.useQuery<"commits.diff">>["data"]>;
+export type ChangeAreas = WorkingTreeStatus["areas"];

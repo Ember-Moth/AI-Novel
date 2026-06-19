@@ -191,3 +191,17 @@ export interface WorkingTreeStatus {
     aux: WorkingTreeAreaSummary<WorkingTreePathChangeItem>;
   };
 }
+
+export interface CommitDiff {
+  commitId: string;
+  /** 用于对比的基线父提交（首个父提交），根提交时为 null。 */
+  baseCommitId: string | null;
+  /** 是否为根提交（无父提交，与空树对比）。 */
+  isRoot: boolean;
+  hasChanges: boolean;
+  areas: {
+    content: WorkingTreeAreaSummary<WorkingTreeContentChangeItem>;
+    timeline: WorkingTreeAreaSummary<WorkingTreePathChangeItem>;
+    aux: WorkingTreeAreaSummary<WorkingTreePathChangeItem>;
+  };
+}

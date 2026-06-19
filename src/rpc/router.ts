@@ -66,6 +66,7 @@ export const branches = {
 export const commits = {
   history: commitHandlers.history,
   get: commitHandlers.get,
+  diff: commitHandlers.diff,
   create: commitHandlers.create,
   checkout: commitHandlers.checkout,
   workingTreeStatus: commitHandlers.workingTreeStatus,

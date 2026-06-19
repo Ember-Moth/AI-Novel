@@ -34,7 +34,7 @@ function kindFromMatrix(head: number, workdir: number): WorkingTreePathChangeIte
   return null;
 }
 
-function areaForPath(
+export function areaForPath(
   filepath: string,
 ): keyof Omit<WorkingTreeStatus["areas"], "content"> | "content" {
   if (filepath === "timeline.jsonl") return "timeline";
@@ -205,7 +205,7 @@ function resolveTimelinePointLabel(
   return labelMap.get(pointId) ?? pointId;
 }
 
-function compareContentStates(
+export function compareContentStates(
   previousNodes: FlatContentNode[],
   nextNodes: FlatContentNode[],
   previousTimeline: TimelinePointLike[],
