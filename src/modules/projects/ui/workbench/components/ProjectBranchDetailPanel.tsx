@@ -19,6 +19,7 @@ import {
   useProjectWorkbenchNavigation,
   useProjectWorkbenchViewModel,
 } from "../core/useProjectWorkbench";
+import { useRevertContentChangeFeature } from "../features/useRevertContentChangeFeature";
 import { WorkingTreeStatusPanel } from "./WorkingTreeStatusPanel";
 
 export function ProjectBranchDetailPanel() {
@@ -181,6 +182,7 @@ function WorkingChangesDetail({ workspaceMissing }: { workspaceMissing: boolean 
   const model = useProjectWorkbenchViewModel();
   const { commitMessage, commitError, discardError, setCommitMessage } = useProjectCommitDraft();
   const commitFeature = useProjectCommitFeature();
+  const revertFeature = useRevertContentChangeFeature();
   const workingTreeStatus = model.workingTreeStatus;
 
   if (workspaceMissing) {
@@ -216,6 +218,7 @@ function WorkingChangesDetail({ workspaceMissing }: { workspaceMissing: boolean 
         canDiscardChanges={canDiscardChanges}
         isDiscardingChanges={commitFeature.isDiscardingChanges}
         onDiscardChanges={() => void commitFeature.handleDiscardChanges()}
+        onRevertContentChange={revertFeature.handleRevertContentChange}
       />
 
       <form

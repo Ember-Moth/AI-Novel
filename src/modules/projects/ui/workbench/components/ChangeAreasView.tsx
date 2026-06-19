@@ -20,8 +20,19 @@ const workingTreeAreaLabels = {
 /**
  * 渲染一组语义化变更（正文 / 时间线 / 辅助信息）。
  * 由「未提交变更」面板与「提交差异」面板共用，保证两处呈现一致。
+ *
+ * 当提供 `onRevertContentChange` 时，正文区域的变更项会在 chip 上显示撤回按钮。
  */
-export function ChangeAreasView({ areas }: { areas: ChangeAreas }) {
+export function ChangeAreasView({
+  areas,
+  onRevertContentChange,
+}: {
+  areas: ChangeAreas;
+  onRevertContentChange?: (
+    nodeId: string,
+    kind: ChangeAreas["content"]["changes"][number]["kind"],
+  ) => void;
+}) {
   return (
     <div className="space-y-2">
       {(Object.keys(workingTreeAreaLabels) as Array<keyof typeof workingTreeAreaLabels>).map(
@@ -37,7 +48,7 @@ export function ChangeAreasView({ areas }: { areas: ChangeAreas }) {
                 {workingTreeAreaLabels[areaKey]}
               </div>
               {areaKey === "content"
-                ? renderContentArea(areas.content.changes)
+                ? renderContentArea(areas.content.changes, onRevertContentChange)
                 : renderPathArea(area.changes, areaKey === "aux")}
             </div>
           );
@@ -47,7 +58,13 @@ export function ChangeAreasView({ areas }: { areas: ChangeAreas }) {
   );
 }
 
-function renderContentArea(changes: ChangeAreas["content"]["changes"]) {
+function renderContentArea(
+  changes: ChangeAreas["content"]["changes"],
+  onRevertContentChange?: (
+    nodeId: string,
+    kind: ChangeAreas["content"]["changes"][number]["kind"],
+  ) => void,
+) {
   return (
     <ul className="mt-1 space-y-1">
       {changes.map((change) => (
@@ -56,7 +73,12 @@ function renderContentArea(changes: ChangeAreas["content"]["changes"]) {
           className="flex flex-col gap-1 text-sm text-foreground"
         >
           <div className="flex items-center gap-2">
-            <WorkingTreeChangeBadge kind={change.kind} />
+            <WorkingTreeChangeBadge
+              kind={change.kind}
+              nodeId={change.nodeId}
+              revertable={change.revertable}
+              onRevert={onRevertContentChange}
+            />
             <ContentChangeBreadcrumb change={change} />
           </div>
           <WorkingTreeContentChangeDetails change={change} />
@@ -111,8 +133,14 @@ function WorkingTreeChangeLabel({
 
 function WorkingTreeChangeBadge({
   kind,
+  nodeId,
+  revertable,
+  onRevert,
 }: {
   kind: ChangeAreas["timeline"]["changes"][number]["kind"];
+  nodeId?: string;
+  revertable?: boolean;
+  onRevert?: (nodeId: string, kind: ChangeAreas["content"]["changes"][number]["kind"]) => void;
 }) {
   const label = workingTreeChangeKindLabels[kind];
   const className =
@@ -122,9 +150,39 @@ function WorkingTreeChangeBadge({
         ? "bg-red-500/15 text-red-200"
         : "bg-amber-500/15 text-amber-200";
 
+  const revertLabel = kind === "added" ? "删除" : kind === "deleted" ? "恢复" : "恢复";
+  const canRevert = revertable !== false;
+  const hasRevert = typeof nodeId === "string" && typeof onRevert === "function";
+
   return (
-    <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium", className)}>
-      {label}
+    <span
+      className={cn(
+        "group relative shrink-0 overflow-hidden rounded px-1.5 py-0.5 text-[10px] font-medium",
+        className,
+      )}
+    >
+      <span className={cn("transition-opacity", hasRevert && "group-hover:opacity-0")}>
+        {label}
+      </span>
+      {hasRevert ? (
+        <button
+          type="button"
+          disabled={!canRevert}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (canRevert) {
+              onRevert(nodeId, kind);
+            }
+          }}
+          className={cn(
+            "absolute inset-0 flex items-center justify-center rounded px-1.5 text-[10px] font-medium opacity-0 transition-opacity",
+            "group-hover:opacity-100",
+            canRevert ? "cursor-pointer hover:brightness-110" : "cursor-default opacity-30",
+          )}
+        >
+          {revertLabel}
+        </button>
+      ) : null}
     </span>
   );
 }

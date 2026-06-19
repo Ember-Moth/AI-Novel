@@ -1,7 +1,7 @@
 import { cn } from "@/shared/lib/cn";
 import { LoadingBlock } from "@/shared/ui/Loading";
 
-import type { WorkingTreeStatus } from "../../shared/projectTypes";
+import type { ChangeAreas, WorkingTreeStatus } from "../../shared/projectTypes";
 import { InlineError, secondaryButton } from "../../shared/projectUi";
 import { ChangeAreasView } from "./ChangeAreasView";
 
@@ -13,6 +13,7 @@ export function WorkingTreeStatusPanel({
   canDiscardChanges,
   isDiscardingChanges,
   onDiscardChanges,
+  onRevertContentChange,
 }: {
   status: WorkingTreeStatus | null;
   loading: boolean;
@@ -21,6 +22,10 @@ export function WorkingTreeStatusPanel({
   canDiscardChanges: boolean;
   isDiscardingChanges: boolean;
   onDiscardChanges: () => void;
+  onRevertContentChange?: (
+    nodeId: string,
+    kind: ChangeAreas["content"]["changes"][number]["kind"],
+  ) => void;
 }) {
   return (
     <section className="relative mt-2 rounded-md border border-border bg-editor-background p-3">
@@ -63,7 +68,7 @@ export function WorkingTreeStatusPanel({
               : "工作区与 HEAD 一致，无未提交变更。"}
           </p>
         ) : (
-          <ChangeAreasView areas={status.areas} />
+          <ChangeAreasView areas={status.areas} onRevertContentChange={onRevertContentChange} />
         )}
       </div>
     </section>
