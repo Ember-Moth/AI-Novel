@@ -309,7 +309,7 @@ function ProjectWorkspace({
 
   if (workspaceInitialLoading) {
     return (
-      <AppShell active="project">
+      <AppShell>
         <FullPageMessage
           icon="icon-[material-symbols--sync] animate-spin"
           title="正在加载工作区"
@@ -322,7 +322,7 @@ function ProjectWorkspace({
 
   if (workspaceQuery.error || routeMismatch) {
     return (
-      <AppShell active="project">
+      <AppShell>
         <FullPageMessage
           icon="icon-[material-symbols--warning]"
           title={routeMismatch ? "工作区与项目不匹配" : "工作区加载失败"}
@@ -335,7 +335,7 @@ function ProjectWorkspace({
 
   if (!workspaceId) {
     return (
-      <AppShell active="project">
+      <AppShell>
         <FullPageMessage
           icon="icon-[material-symbols--folder-off]"
           title="未找到工作区"
@@ -376,7 +376,6 @@ function ProjectWorkspace({
       />
 
       <AppShell
-        active="project"
         className="relative"
         data-project-editor
         sidebar={

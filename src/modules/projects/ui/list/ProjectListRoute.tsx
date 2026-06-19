@@ -146,7 +146,7 @@ export function ProjectListRoute() {
 
   return (
     <>
-      <AppShell active="home">
+      <AppShell>
         <ProjectListView
           projectList={projectList}
           lastProjectId={lastProjectId}

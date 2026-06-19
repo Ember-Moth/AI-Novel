@@ -38,7 +38,6 @@ function ProjectWorkbenchRouteContent() {
   return (
     <>
       <AppShell
-        active="home"
         sidebar={
           project ? (
             <ScopeProvider scope={SidebarLayoutScope} value={`projects:${project.id}`}>

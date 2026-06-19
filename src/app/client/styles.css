@@ -88,14 +88,6 @@
   --color-sidebar: var(--color-sidebar-background);
 }
 
-@utility view-transition-name-* {
-  view-transition-name: --value([*]);
-
-  @variant motion-reduce {
-    view-transition-name: none;
-  }
-}
-
 @custom-variant fine-pointer {
   @media (pointer: fine) {
     @slot;
@@ -293,12 +285,6 @@
   .scrollbar-card .simplebar-track,
   .scrollbar-inline .simplebar-track {
     display: none !important;
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  ::view-transition-group(*) {
-    animation-duration: 220ms;
   }
 }
 

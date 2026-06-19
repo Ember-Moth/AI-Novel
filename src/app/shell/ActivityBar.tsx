@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import { useLocation } from "wouter";
 
 import { parseAppRoute, resolveProjectRouteTarget } from "@/app/routing/useCachedProjectRoute";
@@ -33,8 +34,10 @@ function ActivityBarButton({
       )}
     >
       {active ? (
-        <div
-          className="pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-activity-bar-active-foreground view-transition-name-[activity-bar-indicator]"
+        <motion.div
+          layoutId="activity-bar-indicator"
+          className="pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-activity-bar-active-foreground"
+          transition={{ duration: 0.22, ease: "easeOut" }}
           aria-hidden
         />
       ) : null}

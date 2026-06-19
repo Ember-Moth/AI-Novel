@@ -1,6 +1,8 @@
 import { Activity } from "react";
+import { MotionConfig } from "motion/react";
 
 import { useCachedProjectRoute } from "@/app/routing/useCachedProjectRoute";
+import { ActivityBar, type ActivityBarItem } from "@/app/shell/ActivityBar";
 import { AiConfigSettingsPage } from "@/modules/ai/ui/settings/AiConfigSettingsPage";
 import { AiSettingsPage } from "@/modules/ai/ui/settings/AiSettingsPage";
 import { PromptLibrarySettingsPage } from "@/modules/ai/ui/settings/PromptLibrarySettingsPage";
@@ -29,26 +31,32 @@ export function App() {
     );
   }
 
+  const active: ActivityBarItem = isSettings ? "settings" : isWorkspaceRoute ? "project" : "home";
+
   return (
-    <>
-      <Activity mode={isProjectsPage ? "visible" : "hidden"}>
-        <ProjectsPage projectId={projectRouteId} branchId={projectBranchId} />
-      </Activity>
+    <MotionConfig reducedMotion="user">
+      <div className="flex h-dvh w-full overflow-hidden bg-editor-background text-foreground select-none">
+        <ActivityBar active={active} />
 
-      <Activity mode={isSettings ? "visible" : "hidden"}>
-        {route.kind === "settings" ? <SettingsPage section={route.section} /> : null}
-      </Activity>
-
-      {cachedWorkspaceRoute ? (
-        <Activity mode={isWorkspaceRoute ? "visible" : "hidden"}>
-          <WorkspaceEditorPage
-            key={cachedWorkspaceRoute.workspaceId}
-            projectId={cachedWorkspaceRoute.projectId}
-            workspaceId={cachedWorkspaceRoute.workspaceId}
-          />
+        <Activity mode={isProjectsPage ? "visible" : "hidden"}>
+          <ProjectsPage projectId={projectRouteId} branchId={projectBranchId} />
         </Activity>
-      ) : null}
-    </>
+
+        <Activity mode={isSettings ? "visible" : "hidden"}>
+          {route.kind === "settings" ? <SettingsPage section={route.section} /> : null}
+        </Activity>
+
+        {cachedWorkspaceRoute ? (
+          <Activity mode={isWorkspaceRoute ? "visible" : "hidden"}>
+            <WorkspaceEditorPage
+              key={cachedWorkspaceRoute.workspaceId}
+              projectId={cachedWorkspaceRoute.projectId}
+              workspaceId={cachedWorkspaceRoute.workspaceId}
+            />
+          </Activity>
+        ) : null}
+      </div>
+    </MotionConfig>
   );
 }
 
