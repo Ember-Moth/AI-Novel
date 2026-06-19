@@ -8,11 +8,7 @@ import {
   sortProjectBranches,
 } from "./projectWorkbenchSelectors";
 
-const branches = [
-  { id: "branch_old", updatedAt: 10 },
-  { id: "branch_default", updatedAt: 20 },
-  { id: "branch_new", updatedAt: 30 },
-];
+const branches = [{ id: "branch_old" }, { id: "branch_default" }, { id: "branch_new" }];
 
 const branchHeads = [
   { branchId: "branch_old", headCommitId: "commit_old" },
@@ -20,19 +16,35 @@ const branchHeads = [
   { branchId: "branch_new", headCommitId: "commit_new" },
 ];
 
-test("sortProjectBranches keeps the default branch first, then sorts by updatedAt", () => {
+const branchRecency = new Map<string, number>([
+  ["branch_old", 100],
+  ["branch_default", 200],
+  ["branch_new", 300],
+]);
+
+test("sortProjectBranches keeps the default branch first, then sorts by recency", () => {
+  expect(
+    sortProjectBranches(branches, "branch_default", branchRecency).map((branch) => branch.id),
+  ).toEqual(["branch_default", "branch_new", "branch_old"]);
+});
+
+test("sortProjectBranches falls back to insertion order when recency is missing", () => {
   expect(sortProjectBranches(branches, "branch_default").map((branch) => branch.id)).toEqual([
     "branch_default",
-    "branch_new",
     "branch_old",
+    "branch_new",
   ]);
 });
 
 test("resolveSelectedBranchId prefers remembered branch, then default branch, then most recent branch", () => {
-  expect(resolveSelectedBranchId(branches, null, "branch_default")).toBe("branch_default");
-  expect(resolveSelectedBranchId(branches, "branch_new", "branch_default")).toBe("branch_new");
-  expect(resolveSelectedBranchId(branches, "missing", null)).toBe("branch_new");
-  expect(resolveSelectedBranchId([], null, "branch_default")).toBeNull();
+  expect(resolveSelectedBranchId(branches, null, "branch_default", branchRecency)).toBe(
+    "branch_default",
+  );
+  expect(resolveSelectedBranchId(branches, "branch_new", "branch_default", branchRecency)).toBe(
+    "branch_new",
+  );
+  expect(resolveSelectedBranchId(branches, "missing", null, branchRecency)).toBe("branch_new");
+  expect(resolveSelectedBranchId([], null, "branch_default", branchRecency)).toBeNull();
 });
 
 test("resolveNewBranchSourceCommitId uses the default branch head when present", () => {
@@ -78,5 +90,5 @@ test("resolveSelectedBranchIdAfterDelete falls back from the deleted selected br
   ).toBe("branch_new");
   expect(
     resolveSelectedBranchIdAfterDelete(branches, "branch_default", "branch_default", null),
-  ).toBe("branch_new");
+  ).toBe("branch_old");
 });

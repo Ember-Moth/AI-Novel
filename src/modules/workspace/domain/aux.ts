@@ -3,7 +3,7 @@ import path from "node:path";
 import posix from "node:path/posix";
 
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
-import { invariant, now } from "@/shared/lib/domain";
+import { invariant } from "@/shared/lib/domain";
 
 import type {
   AuxDirListTreeNode,
@@ -52,7 +52,7 @@ interface OverlaySnapshotNode extends ResolvedAuxSnapshotNode {
 }
 
 async function touchWorkspace(projectId: string, workspaceId: string) {
-  await touchWorkspaceMeta(projectId, workspaceId, now());
+  await touchWorkspaceMeta(projectId, workspaceId);
 }
 
 export function normalizeTimelinePointId(pointId: TimelinePointRef) {

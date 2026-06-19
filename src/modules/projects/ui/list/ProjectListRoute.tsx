@@ -35,7 +35,6 @@ export function ProjectListRoute() {
       onMutate: (input) => {
         const previousProjects = rpc.getQueryData("projects.list", undefined);
         if (previousProjects) {
-          const timestamp = Date.now();
           rpc.setQueryData(
             "projects.list",
             undefined,
@@ -44,8 +43,7 @@ export function ProjectListRoute() {
               name: input.name,
               description: input.description ?? null,
               defaultBranchId: null,
-              createdAt: timestamp,
-              updatedAt: timestamp,
+              updatedAt: Date.now(),
             }),
           );
         }

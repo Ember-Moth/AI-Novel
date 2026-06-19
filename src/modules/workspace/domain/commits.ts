@@ -1,9 +1,9 @@
-import { invariant, now } from "@/shared/lib/domain";
+import { invariant } from "@/shared/lib/domain";
 
-import { branchRef } from "./git-storage/git-store";
+import { branchRef, touchProjectRepo } from "./git-storage/git-store";
 import { getBranch, getBranchHeadCommitId } from "./branches";
 import { addAllAndCommit, checkoutCommitToWorktree, listLog } from "./git-storage/git-store";
-import { readProjectMeta, updateProjectMeta } from "./git-storage/project-meta-store";
+import { readProjectMeta } from "./git-storage/project-meta-store";
 import { getWorkspace, getWorkspaceForBranchId } from "./lifecycle";
 
 export interface CommitParentRow {
@@ -50,21 +50,7 @@ export async function createCommit(input: {
     author: input.author,
     parents: parents.length ? parents : undefined,
   });
-  const timestamp = now();
-  await updateProjectMeta(
-    branch.projectId,
-    (payload) => ({
-      ...payload,
-      project: {
-        ...payload.project,
-        updatedAt: timestamp,
-      },
-      branches: payload.branches.map((item) =>
-        item.id === branch.id ? { ...item, updatedAt: timestamp } : item,
-      ),
-    }),
-    "Update branch head",
-  );
+  await touchProjectRepo(branch.projectId);
   return await getCommit(oid, branch.projectId);
 }
 

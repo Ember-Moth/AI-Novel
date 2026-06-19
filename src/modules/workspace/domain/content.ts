@@ -1,4 +1,4 @@
-import { createId, invariant, now } from "@/shared/lib/domain";
+import { createId, invariant } from "@/shared/lib/domain";
 
 import { getBranch, getBranchHeadCommitId } from "./branches";
 import { getWorkspace, getWorkspaceForBranchId, touchWorkspaceMeta } from "./lifecycle";
@@ -30,7 +30,7 @@ import type { ManuscriptNodeDiskState } from "./git-storage/types";
 import type { WorktreeState } from "./git-storage/worktree-state";
 
 async function touchWorkspace(projectId: string, workspaceId: string) {
-  await touchWorkspaceMeta(projectId, workspaceId, now());
+  await touchWorkspaceMeta(projectId, workspaceId);
 }
 
 function toExportedNode(node: ManuscriptNodeDiskState): ExportedContentNode {

@@ -247,6 +247,18 @@ export async function readFilesAtCommit(input: { projectId: string; commitId: st
   return await readTreeFiles({ gitdir, treeOid: commit.tree });
 }
 
+export async function readCommit(projectId: string, oid: string) {
+  const gitdir = await ensureProjectRepo(projectId);
+  const { commit } = await git.readCommit({ fs, gitdir, oid });
+  return commit;
+}
+
+export async function touchProjectRepo(projectId: string) {
+  const gitdir = getProjectRepoGitDir(projectId);
+  const now = new Date();
+  await fs.promises.utimes(gitdir, now, now);
+}
+
 export async function resolveRef(projectId: string, ref: string) {
   const gitdir = await ensureProjectRepo(projectId);
   return await git.resolveRef({ fs, gitdir, ref }).catch(() => null);

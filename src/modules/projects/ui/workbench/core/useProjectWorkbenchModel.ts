@@ -65,7 +65,14 @@ export function useProjectWorkbenchModel(
   const branchHeadCommitIdById = new Map(
     branchHeads.map((branchHead) => [branchHead.branchId, branchHead.headCommitId] as const),
   );
-  const sortedBranches = sortProjectBranches(branches, project?.defaultBranchId ?? null);
+  const branchRecency = new Map(
+    branchHeads.map((branchHead) => [branchHead.branchId, branchHead.headCommitTime ?? 0] as const),
+  );
+  const sortedBranches = sortProjectBranches(
+    branches,
+    project?.defaultBranchId ?? null,
+    branchRecency,
+  );
   const selectedBranchId = resolveSelectedBranchId(
     sortedBranches,
     branchIdFromRoute,

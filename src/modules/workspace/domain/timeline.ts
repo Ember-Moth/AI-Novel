@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
-import { createId, invariant, now } from "@/shared/lib/domain";
+import { createId, invariant } from "@/shared/lib/domain";
 
 import { getWorkspace, touchWorkspaceMeta } from "./lifecycle";
 import { getProjectWorktreeDir } from "./git-storage/paths";
@@ -18,7 +18,7 @@ import {
 import { listAnchoredTimelinePointIds } from "./content";
 
 function touchWorkspaceAsync(projectId: string, workspaceId: string) {
-  return touchWorkspaceMeta(projectId, workspaceId, now());
+  return touchWorkspaceMeta(projectId, workspaceId);
 }
 
 function originTimelinePoint(): TimelinePointView {

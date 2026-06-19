@@ -1,8 +1,7 @@
-import { now } from "@/shared/lib/domain";
-
 import { createBranch } from "./branches";
 import { getBranch, listBranches } from "./branches";
 import { readProjectMeta, updateProjectMeta } from "./git-storage/project-meta-store";
+import { touchProjectRepo } from "./git-storage/git-store";
 
 // ---------------------------------------------------------------------------
 // WorkspaceRow 是桥接类型 — workspaceId === branchId
@@ -13,21 +12,17 @@ export interface WorkspaceRow {
   projectId: string;
   branchId: string;
   name: string;
-  createdAt: number;
-  updatedAt: number;
 }
 
 function branchToWorkspaceRow(
   projectId: string,
-  branch: { id: string; name: string; createdAt: number; updatedAt: number },
+  branch: { id: string; name: string },
 ): WorkspaceRow {
   return {
     id: branch.id,
     projectId,
     branchId: branch.id,
     name: branch.name,
-    createdAt: branch.createdAt,
-    updatedAt: branch.updatedAt,
   };
 }
 
@@ -64,7 +59,6 @@ export async function getDefaultWorkspace(projectId: string): Promise<WorkspaceR
 
 export async function createDefaultWorkspace(projectId: string, name = "main") {
   const branch = await createBranch({ projectId, name });
-  const timestamp = now();
   await updateProjectMeta(
     projectId,
     (payload) => ({
@@ -72,7 +66,6 @@ export async function createDefaultWorkspace(projectId: string, name = "main") {
       project: {
         ...payload.project,
         defaultBranchId: branch.id,
-        updatedAt: timestamp,
       },
     }),
     "Create default branch",
@@ -89,24 +82,10 @@ export async function createBranchWorkspace(input: {
   return await getWorkspace(input.projectId, branch.id);
 }
 
-export async function touchWorkspaceMeta(
-  projectId: string,
-  _workspaceId: string,
-  timestamp = now(),
-) {
-  await touchProjectMeta(projectId, timestamp);
+export async function touchWorkspaceMeta(projectId: string, _workspaceId: string) {
+  await touchProjectMeta(projectId);
 }
 
-export async function touchProjectMeta(projectId: string, timestamp = now()) {
-  await updateProjectMeta(
-    projectId,
-    (payload) => ({
-      ...payload,
-      project: {
-        ...payload.project,
-        updatedAt: timestamp,
-      },
-    }),
-    "Touch project metadata",
-  );
+export async function touchProjectMeta(projectId: string) {
+  await touchProjectRepo(projectId);
 }

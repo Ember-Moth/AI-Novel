@@ -13,19 +13,14 @@ export function removeProjectOptimistically<TProject extends { id: string }>(
 }
 
 export function updateProjectOptimistically<
-  TProject extends { id: string; name: string; description: string | null; updatedAt: number },
->(
-  projects: readonly TProject[],
-  update: Pick<TProject, "id" | "name" | "description">,
-  updatedAt = Date.now(),
-) {
+  TProject extends { id: string; name: string; description: string | null },
+>(projects: readonly TProject[], update: Pick<TProject, "id" | "name" | "description">) {
   return projects.map((project) =>
     project.id === update.id
       ? {
           ...project,
           name: update.name,
           description: update.description,
-          updatedAt,
         }
       : project,
   );

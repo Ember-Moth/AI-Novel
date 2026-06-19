@@ -1,6 +1,5 @@
 export interface BranchLike {
   id: string;
-  updatedAt: number;
 }
 
 export interface BranchHeadLike {
@@ -21,6 +20,7 @@ export interface WorkspaceLike {
 export function sortProjectBranches<TBranch extends BranchLike>(
   branches: readonly TBranch[],
   defaultBranchId: string | null,
+  branchRecency?: ReadonlyMap<string, number>,
 ) {
   return [...branches].sort((a, b) => {
     const aDefault = a.id === defaultBranchId;
@@ -28,7 +28,9 @@ export function sortProjectBranches<TBranch extends BranchLike>(
     if (aDefault !== bDefault) {
       return aDefault ? -1 : 1;
     }
-    return b.updatedAt - a.updatedAt;
+    const aTime = branchRecency?.get(a.id) ?? 0;
+    const bTime = branchRecency?.get(b.id) ?? 0;
+    return bTime - aTime;
   });
 }
 
@@ -36,12 +38,13 @@ export function resolveSelectedBranchId<TBranch extends BranchLike>(
   branches: readonly TBranch[],
   rememberedBranchId: string | null,
   defaultBranchId: string | null,
+  branchRecency?: ReadonlyMap<string, number>,
 ) {
   if (rememberedBranchId && branches.some((branch) => branch.id === rememberedBranchId)) {
     return rememberedBranchId;
   }
 
-  const sorted = sortProjectBranches(branches, defaultBranchId);
+  const sorted = sortProjectBranches(branches, defaultBranchId, branchRecency);
   return sorted[0]?.id ?? null;
 }
 

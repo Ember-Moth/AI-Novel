@@ -28,14 +28,14 @@ test("project list optimistic helpers insert, replace, and remove by id", () => 
 
 test("project list optimistic helpers update project metadata in place", () => {
   const projects = [
-    { id: "one", name: "One", description: null, updatedAt: 1 },
-    { id: "two", name: "Two", description: "Before", updatedAt: 2 },
+    { id: "one", name: "One", description: null },
+    { id: "two", name: "Two", description: "Before" },
   ];
 
   expect(
-    updateProjectOptimistically(projects, { id: "two", name: "Two+", description: "After" }, 99),
+    updateProjectOptimistically(projects, { id: "two", name: "Two+", description: "After" }),
   ).toEqual([
-    { id: "one", name: "One", description: null, updatedAt: 1 },
-    { id: "two", name: "Two+", description: "After", updatedAt: 99 },
+    { id: "one", name: "One", description: null },
+    { id: "two", name: "Two+", description: "After" },
   ]);
 });

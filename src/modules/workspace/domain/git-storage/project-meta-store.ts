@@ -3,9 +3,9 @@ import path from "node:path";
 
 import { invariant } from "@/shared/lib/domain";
 
-import { commitCustomRef, metaRef, readFilesAtRef } from "./git-store";
+import { commitCustomRef, metaRef, readFilesAtRef, touchProjectRepo } from "./git-store";
 import { parseJsonl, stringifyJsonl } from "./jsonl";
-import { ensureStorageRoot } from "./paths";
+import { ensureStorageRoot, getProjectRepoGitDir } from "./paths";
 import type { BranchIndexRow, ProjectIndexRow, ProjectMetaPayload } from "./types";
 
 function repoProjectIdFromDirname(dirname: string) {
@@ -43,7 +43,11 @@ function parsePayload(files: Record<string, string>): ProjectMetaPayload {
 
 export async function tryReadProjectMeta(projectId: string): Promise<ProjectMetaPayload | null> {
   try {
-    return parsePayload(await readFilesAtRef({ projectId, ref: metaRef() }));
+    const payload = parsePayload(await readFilesAtRef({ projectId, ref: metaRef() }));
+    const gitdir = getProjectRepoGitDir(projectId);
+    const stat = await fs.promises.stat(gitdir);
+    payload.project.updatedAt = stat.mtime.getTime();
+    return payload;
   } catch {
     return null;
   }
@@ -90,16 +94,18 @@ export async function writeProjectMeta(
   message = "Update project metadata",
 ) {
   const normalized = normalizePayload(payload);
+  const { updatedAt: _, ...storableProject } = normalized.project;
   await commitCustomRef({
     projectId: normalized.project.id,
     ref: metaRef(),
     message,
     replace: true,
     files: {
-      "project.json": `${JSON.stringify(normalized.project, null, 2)}\n`,
+      "project.json": `${JSON.stringify(storableProject, null, 2)}\n`,
       "branches.jsonl": stringifyJsonl(normalized.branches),
     },
   });
+  await touchProjectRepo(normalized.project.id);
   return normalized;
 }
 

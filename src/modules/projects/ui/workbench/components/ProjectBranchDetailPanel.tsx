@@ -9,7 +9,6 @@ import { useForkBranchDialogControls } from "../features/useForkBranchFeature";
 import {
   compactPrimaryButton,
   compactSecondaryButton,
-  dateFormatter,
   formatCommitId,
   InlineError,
   primaryButton,
@@ -116,7 +115,6 @@ function BranchHeader() {
           ) : null}
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] leading-none text-foreground-muted">
-          <span>更新时间 {dateFormatter.format(selectedBranch.updatedAt)}</span>
           <span>
             HEAD{" "}
             {model.selectedBranchHeadCommitId ? (

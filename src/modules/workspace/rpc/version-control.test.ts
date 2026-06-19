@@ -35,6 +35,7 @@ test("branch heads watches the project branch-heads tag and resolves current hea
   expect(result.data).toContainEqual({
     branchId: workspace.branchId,
     headCommitId: null,
+    headCommitTime: null,
   });
 });
 

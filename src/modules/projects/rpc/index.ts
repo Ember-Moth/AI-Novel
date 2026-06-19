@@ -35,14 +35,12 @@ export const get = query<{ projectId: string }, ProjectRow, RpcTagList>({
 export const create = mutation<ProjectMutationInput, { workspaceId: string }, RpcTagList>({
   invalidate: (input) => [rpcTags.projectsList(), rpcTags.project(input.id)],
   handler: async (input) => {
-    const timestamp = Date.now();
     await createProjectMeta({
       id: input.id,
       name: input.name,
       description: input.description ?? null,
       defaultBranchId: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
+      updatedAt: 0,
     });
     const workspace = await createDefaultWorkspace(input.id);
     return { workspaceId: workspace.id };
@@ -60,7 +58,6 @@ export const update = mutation<ProjectMutationInput, void, RpcTagList>({
           ...payload.project,
           name: input.name,
           description: input.description ?? null,
-          updatedAt: Date.now(),
         },
       }),
       "Update project metadata",
@@ -83,7 +80,6 @@ export const setDefaultBranch = mutation<{ projectId: string; branchId: string }
           project: {
             ...current.project,
             defaultBranchId: branch.id,
-            updatedAt: Date.now(),
           },
         }),
         "Set default branch",

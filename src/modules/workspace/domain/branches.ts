@@ -1,11 +1,12 @@
 import fs from "node:fs";
 
-import { createId, invariant, now } from "@/shared/lib/domain";
+import { createId, invariant } from "@/shared/lib/domain";
 
 import {
   branchRef,
   checkoutCommitToWorktree,
   deleteRef,
+  readCommit,
   resolveRef,
   writeRef,
 } from "./git-storage/git-store";
@@ -20,6 +21,7 @@ export type BranchRow = BranchIndexRow;
 export interface BranchHeadRow {
   branchId: string;
   headCommitId: string | null;
+  headCommitTime: number | null;
 }
 
 async function getProject(projectId: string): Promise<ProjectIndexRow> {
@@ -39,7 +41,6 @@ export async function createBranch(input: {
   invariant(!existing, `无法创建分支：已存在名为「${name}」的分支。`);
 
   const branchId = createId("branch");
-  const timestamp = now();
   const initialHeadCommitId = input.fromCommitId ?? null;
   if (initialHeadCommitId) {
     await writeRef({
@@ -53,10 +54,6 @@ export async function createBranch(input: {
     project.id,
     (current) => ({
       ...current,
-      project: {
-        ...current.project,
-        updatedAt: timestamp,
-      },
       branches: [
         ...current.branches,
         {
@@ -64,8 +61,6 @@ export async function createBranch(input: {
           projectId: project.id,
           name,
           forkedFromCommitId: input.fromCommitId ?? null,
-          createdAt: timestamp,
-          updatedAt: timestamp,
         },
       ],
     }),
@@ -105,10 +100,19 @@ export async function getBranchHeadCommitId(projectId: string, branchId: string)
 export async function listBranchHeads(projectId: string): Promise<BranchHeadRow[]> {
   const branches = await listBranches(projectId);
   return await Promise.all(
-    branches.map(async (branch) => ({
-      branchId: branch.id,
-      headCommitId: await resolveRef(projectId, branchRef(branch.id)),
-    })),
+    branches.map(async (branch) => {
+      const headCommitId = await resolveRef(projectId, branchRef(branch.id));
+      let headCommitTime: number | null = null;
+      if (headCommitId) {
+        try {
+          const commit = await readCommit(projectId, headCommitId);
+          headCommitTime = commit.committer.timestamp * 1000;
+        } catch {
+          // ignore broken commits
+        }
+      }
+      return { branchId: branch.id, headCommitId, headCommitTime };
+    }),
   );
 }
 
@@ -126,17 +130,10 @@ export async function deleteBranch(projectId: string, branchId: string) {
   await deleteRef({ projectId, ref: branchRef(branch.id) });
   await updateProjectMeta(
     project.id,
-    (payload) => {
-      const timestamp = now();
-      return {
-        ...payload,
-        project: {
-          ...payload.project,
-          updatedAt: timestamp,
-        },
-        branches: payload.branches.filter((item) => item.id !== branch.id),
-      };
-    },
+    (payload) => ({
+      ...payload,
+      branches: payload.branches.filter((item) => item.id !== branch.id),
+    }),
     "Delete branch metadata",
   );
 }
