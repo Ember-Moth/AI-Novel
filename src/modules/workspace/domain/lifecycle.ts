@@ -59,17 +59,13 @@ export async function getDefaultWorkspace(projectId: string): Promise<WorkspaceR
 
 export async function createDefaultWorkspace(projectId: string, name = "main") {
   const branch = await createBranch({ projectId, name });
-  await updateProjectMeta(
-    projectId,
-    (payload) => ({
-      ...payload,
-      project: {
-        ...payload.project,
-        defaultBranchId: branch.id,
-      },
-    }),
-    "Create default branch",
-  );
+  await updateProjectMeta(projectId, (payload) => ({
+    ...payload,
+    project: {
+      ...payload.project,
+      defaultBranchId: branch.id,
+    },
+  }));
   return await getWorkspace(projectId, branch.id);
 }
 

@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { invariant } from "@/shared/lib/domain";
 
-import { commitCustomRef, metaRef, readFilesAtRef, touchProjectRepo } from "./git-store";
+import { metaRef, readTreeAtRef, touchProjectRepo, writeTreeAtRef } from "./git-store";
 import { ensureStorageRoot, getProjectRepoGitDir } from "./paths";
 import type { ProjectIndexRow, ProjectMetaPayload } from "./types";
 
@@ -36,7 +36,7 @@ function parsePayload(files: Record<string, string>): ProjectMetaPayload {
 
 export async function tryReadProjectMeta(projectId: string): Promise<ProjectMetaPayload | null> {
   try {
-    const payload = parsePayload(await readFilesAtRef({ projectId, ref: metaRef() }));
+    const payload = parsePayload(await readTreeAtRef({ projectId, ref: metaRef() }));
     const gitdir = getProjectRepoGitDir(projectId);
     const stat = await fs.promises.stat(gitdir);
     payload.project.updatedAt = stat.mtime.getTime();
@@ -82,17 +82,12 @@ export async function listProjectRows() {
   return meta.map((payload) => payload.project);
 }
 
-export async function writeProjectMeta(
-  payload: ProjectMetaPayload,
-  message = "Update project metadata",
-) {
+export async function writeProjectMeta(payload: ProjectMetaPayload) {
   const normalized = normalizePayload(payload);
   const { updatedAt: _, ...storableProject } = normalized.project;
-  await commitCustomRef({
+  await writeTreeAtRef({
     projectId: normalized.project.id,
     ref: metaRef(),
-    message,
-    replace: true,
     files: {
       "project.json": `${JSON.stringify(storableProject, null, 2)}\n`,
     },
@@ -102,16 +97,15 @@ export async function writeProjectMeta(
 }
 
 export async function createProjectMeta(project: ProjectIndexRow) {
-  return await writeProjectMeta({ project }, "Create project metadata");
+  return await writeProjectMeta({ project });
 }
 
 export async function updateProjectMeta(
   projectId: string,
   updater: (_payload: ProjectMetaPayload) => ProjectMetaPayload,
-  message = "Update project metadata",
 ) {
   const payload = await readProjectMeta(projectId);
   const next = updater(payload);
   invariant(next.project.id === projectId, "项目 ID 不可变。");
-  return await writeProjectMeta(next, message);
+  return await writeProjectMeta(next);
 }

@@ -50,18 +50,14 @@ export const create = mutation<ProjectMutationInput, { workspaceId: string }, Rp
 export const update = mutation<ProjectMutationInput, void, RpcTagList>({
   invalidate: (input) => [rpcTags.projectsList(), rpcTags.project(input.id)],
   handler: async (input) => {
-    await updateProjectMeta(
-      input.id,
-      (payload) => ({
-        ...payload,
-        project: {
-          ...payload.project,
-          name: input.name,
-          description: input.description ?? null,
-        },
-      }),
-      "Update project metadata",
-    );
+    await updateProjectMeta(input.id, (payload) => ({
+      ...payload,
+      project: {
+        ...payload.project,
+        name: input.name,
+        description: input.description ?? null,
+      },
+    }));
   },
 });
 
@@ -71,17 +67,13 @@ export const setDefaultBranch = mutation<{ projectId: string; branchId: string }
     handler: async ({ projectId, branchId }) => {
       const branch = await getBranch(projectId, branchId);
 
-      await updateProjectMeta(
-        projectId,
-        (current) => ({
-          ...current,
-          project: {
-            ...current.project,
-            defaultBranchId: branch.id,
-          },
-        }),
-        "Set default branch",
-      );
+      await updateProjectMeta(projectId, (current) => ({
+        ...current,
+        project: {
+          ...current.project,
+          defaultBranchId: branch.id,
+        },
+      }));
     },
   },
 );

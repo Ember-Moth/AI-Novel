@@ -195,6 +195,26 @@ export async function deleteRef(input: { projectId: string; ref: string }) {
   await fs.promises.rm(path.join(gitdir, input.ref), { force: true });
 }
 
+export async function writeTreeAtRef(input: {
+  projectId: string;
+  ref: string;
+  files: Record<string, string>;
+}) {
+  const gitdir = await ensureProjectRepo(input.projectId);
+  const tree = await writeTreeFromFiles(gitdir, input.files);
+  await git.writeRef({ fs, gitdir, ref: input.ref, value: tree, force: true });
+  return tree;
+}
+
+export async function readTreeAtRef(input: {
+  projectId: string;
+  ref: string;
+}): Promise<Record<string, string>> {
+  const gitdir = await ensureProjectRepo(input.projectId);
+  const oid = await git.resolveRef({ fs, gitdir, ref: input.ref });
+  return await readTreeFiles({ gitdir, treeOid: oid });
+}
+
 // ---------------------------------------------------------------------------
 // Branch metadata (stored as individual blobs, one per branch)
 // ---------------------------------------------------------------------------
