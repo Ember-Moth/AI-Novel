@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import posix from "node:path/posix";
 
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
@@ -16,13 +14,10 @@ import type {
   TimelinePointRef,
 } from "./types";
 import { getWorkspace, touchWorkspaceMeta } from "./lifecycle";
-import { getProjectWorktreeDir } from "./git-storage/paths";
 import { getWorkdirForBranch } from "./git-storage/nano-git-store";
 import type { VirtualWorkdir } from "nano-git/workdir/core";
 import {
   assertTimelinePoint,
-  AUX_ORIGIN_DIR,
-  AUX_TIMELINE_DIR,
   normalizePointId,
   orderTimelineRows,
   pointIdOrOrigin,
@@ -109,35 +104,8 @@ function auxPathSegments(auxPath: string) {
   return auxPath === "/" ? [] : auxPath.split("/").filter(Boolean);
 }
 
-function layerRoot(worktreePath: string, pointId: string | null) {
-  return path.join(worktreePath, pointId ? path.join(AUX_TIMELINE_DIR, pointId) : AUX_ORIGIN_DIR);
-}
-
-function fsPathForAuxPath(root: string, auxPath: string) {
-  return path.join(root, ...auxPathSegments(auxPath));
-}
-
-function ensureDirSync(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
-
-function removePathSync(targetPath: string) {
-  fs.rmSync(targetPath, { recursive: true, force: true });
-}
-
-function whiteoutPathForAuxPath(root: string, auxPath: string) {
-  return path.join(
-    fsPathForAuxPath(root, posix.dirname(auxPath)),
-    `${WHITEOUT_PREFIX}${posix.basename(auxPath)}`,
-  );
-}
-
-function removeWhiteoutForPath(root: string, auxPath: string) {
-  fs.rmSync(whiteoutPathForAuxPath(root, auxPath), { force: true });
-}
-
 // ---------------------------------------------------------------------------
-// VirtualWorkdir 同步辅助（Phase 2.2）
+// VirtualWorkdir 同步辅助
 // ---------------------------------------------------------------------------
 
 /**
@@ -154,11 +122,6 @@ function auxWorkdirRelPath(pointId: string | null, auxPath: string): string {
 /** 确保 VirtualWorkdir 内路径的所有祖先目录存在 */
 function ensureWorkdirDir(wd: VirtualWorkdir, dirPath: string) {
   wd.mkdir(dirPath, { recursive: true });
-}
-
-function writeKeepFile(dir: string) {
-  ensureDirSync(dir);
-  fs.closeSync(fs.openSync(path.join(dir, KEEP_FILE), "a"));
 }
 
 function removeFromSnapshot(snapshot: Map<string, OverlaySnapshotNode>, auxPath: string) {
@@ -182,74 +145,7 @@ function hasAncestorPath(paths: string[], auxPath: string) {
   return paths.some((pathItem) => auxPath.startsWith(`${pathItem}/`));
 }
 
-function readLayerEntries(worktreePath: string, pointId: string | null): OverlayLayerEntry[] {
-  const root = layerRoot(worktreePath, pointId);
-  if (!fs.existsSync(root)) return [];
-  const entries: OverlayLayerEntry[] = [];
-
-  const walk = (dir: string, logicalDir: string) => {
-    const dirents = fs.readdirSync(dir, { withFileTypes: true });
-    for (const dirent of dirents) {
-      if (dirent.name === KEEP_FILE) continue;
-      const childLogicalPath =
-        logicalDir === "/" ? `/${dirent.name}` : `${logicalDir}/${dirent.name}`;
-      const childFsPath = path.join(dir, dirent.name);
-      if (dirent.name.startsWith(WHITEOUT_PREFIX)) {
-        const name = dirent.name.slice(WHITEOUT_PREFIX.length);
-        if (!name) continue;
-        entries.push({
-          kind: "whiteout",
-          path: logicalDir === "/" ? `/${name}` : `${logicalDir}/${name}`,
-          timelinePointId: pointId,
-        });
-        continue;
-      }
-
-      const stat = fs.lstatSync(childFsPath);
-      if (stat.isSymbolicLink()) {
-        entries.push({
-          kind: "node",
-          path: childLogicalPath,
-          nodeType: "symlink",
-          fsPath: childFsPath,
-          symlinkTargetPath: fs.readlinkSync(childFsPath),
-          timelinePointId: pointId,
-        });
-        continue;
-      }
-      if (stat.isDirectory()) {
-        if (fs.existsSync(path.join(childFsPath, KEEP_FILE))) {
-          entries.push({
-            kind: "node",
-            path: childLogicalPath,
-            nodeType: "dir",
-            fsPath: childFsPath,
-            symlinkTargetPath: null,
-            timelinePointId: pointId,
-          });
-        }
-        walk(childFsPath, childLogicalPath);
-        continue;
-      }
-      if (stat.isFile()) {
-        entries.push({
-          kind: "node",
-          path: childLogicalPath,
-          nodeType: "file",
-          fsPath: childFsPath,
-          symlinkTargetPath: null,
-          timelinePointId: pointId,
-        });
-      }
-    }
-  };
-
-  walk(root, "/");
-  return entries.sort((left, right) => {
-    const depth = auxPathSegments(left.path).length - auxPathSegments(right.path).length;
-    return depth || left.path.localeCompare(right.path);
-  });
-}
+// readLayerEntries (physical fs) removed — only readLayerEntriesFromWorkdir is used
 
 /**
  * 从 VirtualWorkdir 读取指定层的条目，与 readLayerEntries 语义完全一致。
@@ -403,28 +299,6 @@ function assertPathAvailable(
   invariant(!existing || existing.path === exceptPath, "同路径辅助信息已存在。");
 }
 
-function currentLayerRoot(workspacePath: string, pointId: string | null) {
-  const root = layerRoot(workspacePath, pointId);
-  ensureDirSync(root);
-  return root;
-}
-
-function clearUpperNodeForWrite(root: string, auxPath: string) {
-  removeWhiteoutForPath(root, auxPath);
-  removePathSync(fsPathForAuxPath(root, auxPath));
-}
-
-function writeWhiteout(root: string, auxPath: string) {
-  const parentDir = fsPathForAuxPath(root, posix.dirname(auxPath));
-  ensureDirSync(parentDir);
-  clearUpperNodeForWrite(root, auxPath);
-  fs.writeFileSync(
-    path.join(parentDir, `${WHITEOUT_PREFIX}${posix.basename(auxPath)}`),
-    "",
-    "utf8",
-  );
-}
-
 async function lowerSnapshotForLayer(
   projectId: string,
   workspaceId: string,
@@ -439,37 +313,10 @@ async function lowerSnapshotForLayer(
   return (await buildSnapshot(projectId, workspaceId, point.prevPointId ?? null)).snapshot;
 }
 
-function pruneInvalidWhiteouts(root: string, lowerSnapshot: Map<string, OverlaySnapshotNode>) {
-  if (!fs.existsSync(root)) return;
-  const walk = (dir: string, logicalDir: string) => {
-    for (const dirent of fs.readdirSync(dir, { withFileTypes: true })) {
-      const childFsPath = path.join(dir, dirent.name);
-      if (dirent.name.startsWith(WHITEOUT_PREFIX)) {
-        const name = dirent.name.slice(WHITEOUT_PREFIX.length);
-        if (!name) {
-          fs.rmSync(childFsPath, { force: true });
-          continue;
-        }
-        const auxPath = logicalDir === "/" ? `/${name}` : `${logicalDir}/${name}`;
-        if (!snapshotHasPathOrDescendant(lowerSnapshot, auxPath)) {
-          fs.rmSync(childFsPath, { force: true });
-        }
-        continue;
-      }
-      if (dirent.name === KEEP_FILE) continue;
-      if (dirent.isDirectory()) {
-        walk(childFsPath, logicalDir === "/" ? `/${dirent.name}` : `${logicalDir}/${dirent.name}`);
-      }
-    }
-  };
-  walk(root, "/");
-}
-
 async function currentLayerDeletedEntries(input: {
   projectId: string;
   workspaceId: string;
   state: WorktreeState;
-  worktreePath: string;
   pointId: string | null;
 }) {
   if (input.pointId == null) return [];
@@ -481,11 +328,10 @@ async function currentLayerDeletedEntries(input: {
   );
   const selectedPaths: string[] = [];
   const deletedEntries: OverlayLayerEntry[] = [];
-  const cwd = getWorkdirForBranch(input.projectId, input.workspaceId);
+  const wd = getWorkdirForBranch(input.projectId, input.workspaceId);
+  if (!wd) return [];
 
-  for (const entry of cwd
-    ? readLayerEntriesFromWorkdir(cwd, input.pointId)
-    : readLayerEntries(input.worktreePath, input.pointId)) {
+  for (const entry of readLayerEntriesFromWorkdir(wd, input.pointId)) {
     if (entry.kind !== "whiteout") continue;
     if (hasAncestorPath(selectedPaths, entry.path)) continue;
     if (!snapshotHasPathOrDescendant(lowerSnapshot, entry.path)) continue;
@@ -503,65 +349,6 @@ async function currentLayerDeletedEntries(input: {
   });
 }
 
-async function deleteVisiblePathFromLayer(input: {
-  projectId: string;
-  workspaceId: string;
-  state: WorktreeState;
-  worktreePath: string;
-  pointId: string | null;
-  auxPath: string;
-}) {
-  const root = currentLayerRoot(input.worktreePath, input.pointId);
-  const lowerSnapshot = await lowerSnapshotForLayer(
-    input.projectId,
-    input.workspaceId,
-    input.state,
-    input.pointId,
-  );
-  if (snapshotHasPathOrDescendant(lowerSnapshot, input.auxPath)) {
-    writeWhiteout(root, input.auxPath);
-  } else {
-    clearUpperNodeForWrite(root, input.auxPath);
-  }
-  pruneInvalidWhiteouts(root, lowerSnapshot);
-}
-
-function materializeNode(worktreePath: string, pointId: string | null, node: OverlaySnapshotNode) {
-  const root = currentLayerRoot(worktreePath, pointId);
-  const targetPath = fsPathForAuxPath(root, node.path);
-  clearUpperNodeForWrite(root, node.path);
-  ensureDirSync(path.dirname(targetPath));
-  if (node.nodeType === "dir") {
-    writeKeepFile(targetPath);
-    return;
-  }
-  if (node.nodeType === "symlink") {
-    fs.symlinkSync(node.symlinkTargetPath ?? "/", targetPath);
-    return;
-  }
-  fs.writeFileSync(targetPath, node.content ?? "", "utf8");
-}
-
-function materializeSubtreeAt(input: {
-  worktreePath: string;
-  pointId: string | null;
-  snapshot: Map<string, OverlaySnapshotNode>;
-  sourcePath: string;
-  targetPath: string;
-}) {
-  const sourceNodes = sortedSnapshotNodes(input.snapshot).filter(
-    (node) => node.path === input.sourcePath || node.path.startsWith(`${input.sourcePath}/`),
-  );
-  for (const node of sourceNodes) {
-    const suffix = node.path.slice(input.sourcePath.length);
-    materializeNode(input.worktreePath, input.pointId, {
-      ...node,
-      path: `${input.targetPath}${suffix}`,
-      name: posix.basename(`${input.targetPath}${suffix}`),
-    });
-  }
-}
-
 export async function mkdirAt(input: {
   projectId: string;
   workspaceId: string;
@@ -577,20 +364,11 @@ export async function mkdirAt(input: {
   const { normalizedPath, parentPath } = splitAuxPath(input.path, "创建辅助资料目录");
   assertParentDir(snapshot, parentPath);
   assertPathAvailable(snapshot, normalizedPath);
-  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
-  const root = currentLayerRoot(worktreePath, pointId);
-  const targetPath = fsPathForAuxPath(root, normalizedPath);
-  clearUpperNodeForWrite(root, normalizedPath);
-  writeKeepFile(targetPath);
-  // Phase 2.2: sync to VirtualWorkdir
-  {
-    const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
-    if (wd) {
-      const wp = auxWorkdirRelPath(pointId, normalizedPath);
-      wd.mkdir(wp, { recursive: true });
-      wd.writeFile(`${wp}/${KEEP_FILE}`, Buffer.from(""));
-    }
-  }
+  const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
+  invariant(wd, "工作目录未初始化");
+  const wp = auxWorkdirRelPath(pointId, normalizedPath);
+  wd.mkdir(wp, { recursive: true });
+  wd.writeFile(`${wp}/${KEEP_FILE}`, Buffer.from(""));
   await touchWorkspace(workspace.projectId, workspace.id);
   return { path: normalizedPath, workspaceId: workspace.id, nodeType: "dir" as const };
 }
@@ -611,21 +389,11 @@ export async function writeFileAt(input: {
   const existing = snapshot.get(normalizedPath);
   invariant(!existing || existing.nodeType === "file", "目标路径不是文件。");
   assertParentDir(snapshot, parentPath);
-  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
-  const root = currentLayerRoot(worktreePath, pointId);
-  const targetPath = fsPathForAuxPath(root, normalizedPath);
-  clearUpperNodeForWrite(root, normalizedPath);
-  ensureDirSync(path.dirname(targetPath));
-  fs.writeFileSync(targetPath, input.content, "utf8");
-  // Phase 2.2: sync to VirtualWorkdir
-  {
-    const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
-    if (wd) {
-      const wp = auxWorkdirRelPath(pointId, normalizedPath);
-      ensureWorkdirDir(wd, posix.dirname(wp));
-      wd.writeFile(wp, Buffer.from(input.content, "utf8"));
-    }
-  }
+  const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
+  invariant(wd, "工作目录未初始化");
+  const wp = auxWorkdirRelPath(pointId, normalizedPath);
+  ensureWorkdirDir(wd, posix.dirname(wp));
+  wd.writeFile(wp, Buffer.from(input.content, "utf8"));
   await touchWorkspace(workspace.projectId, workspace.id);
   return { path: normalizedPath, workspaceId: workspace.id, nodeType: "file" as const };
 }
@@ -646,21 +414,11 @@ export async function linkAt(input: {
   const normalizedTargetPath = normalizeAuxPath(input.targetPath, "创建辅助资料链接");
   assertParentDir(snapshot, parentPath);
   assertPathAvailable(snapshot, normalizedPath);
-  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
-  const root = currentLayerRoot(worktreePath, pointId);
-  const targetPath = fsPathForAuxPath(root, normalizedPath);
-  clearUpperNodeForWrite(root, normalizedPath);
-  ensureDirSync(path.dirname(targetPath));
-  fs.symlinkSync(normalizedTargetPath, targetPath);
-  // Phase 2.2: sync to VirtualWorkdir
-  {
-    const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
-    if (wd) {
-      const wp = auxWorkdirRelPath(pointId, normalizedPath);
-      ensureWorkdirDir(wd, posix.dirname(wp));
-      wd.writeLink(wp, normalizedTargetPath);
-    }
-  }
+  const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
+  invariant(wd, "工作目录未初始化");
+  const wp = auxWorkdirRelPath(pointId, normalizedPath);
+  ensureWorkdirDir(wd, posix.dirname(wp));
+  wd.writeLink(wp, normalizedTargetPath);
   await touchWorkspace(workspace.projectId, workspace.id);
   return {
     path: normalizedPath,
@@ -676,7 +434,7 @@ export async function moveAuxNodeAt(input: {
   path: string;
   newPath: string;
 }) {
-  const { workspace, state, pointId, snapshot } = await buildSnapshot(
+  const { workspace, pointId, snapshot } = await buildSnapshot(
     input.projectId,
     input.workspaceId,
     input.timelinePointId,
@@ -689,45 +447,21 @@ export async function moveAuxNodeAt(input: {
   invariant(!targetPath.startsWith(`${sourcePath}/`), "不能把目录移动到自身子目录中。");
   assertParentDir(snapshot, parentPath);
   assertPathAvailable(snapshot, targetPath, sourcePath);
-  materializeSubtreeAt({
-    worktreePath: getProjectWorktreeDir(workspace.projectId, workspace.id),
-    pointId,
-    snapshot,
-    sourcePath,
-    targetPath,
-  });
-  await deleteVisiblePathFromLayer({
-    projectId: input.projectId,
-    workspaceId: workspace.id,
-    state,
-    worktreePath: getProjectWorktreeDir(workspace.projectId, workspace.id),
-    pointId,
-    auxPath: sourcePath,
-  });
-  // Phase 2.2: sync to VirtualWorkdir
-  {
-    const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
-    if (wd) {
-      // 从 snapshot 中读取源文件的实际层（可能在 origin 或某个 timeline point）
-      const sourceRawPointId = normalizePointId(existing.timelinePointId);
-      const fromWp = auxWorkdirRelPath(sourceRawPointId, sourcePath);
-      const toWp = auxWorkdirRelPath(pointId, targetPath);
-      if (wd.exists(fromWp)) {
-        // 与物理 fs 的 materializeSubtreeAt 一致：CoW 复制到目标层
-        ensureWorkdirDir(wd, posix.dirname(toWp));
-        wd.copy(fromWp, toWp);
-
-        if (sourceRawPointId === pointId) {
-          // 同层移动：删除源文件
-          wd.delete(fromWp, { force: true });
-        } else {
-          // 跨层移动：在当前层写入 whiteout 隐藏下层版本
-          const whiteoutDir = posix.dirname(toWp);
-          const basename = posix.basename(sourcePath);
-          ensureWorkdirDir(wd, whiteoutDir);
-          wd.writeFile(`${whiteoutDir}/.wh.${basename}`, Buffer.from(""));
-        }
-      }
+  const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
+  invariant(wd, "工作目录未初始化");
+  const sourceRawPointId = normalizePointId(existing.timelinePointId);
+  const fromWp = auxWorkdirRelPath(sourceRawPointId, sourcePath);
+  const toWp = auxWorkdirRelPath(pointId, targetPath);
+  if (wd.exists(fromWp)) {
+    ensureWorkdirDir(wd, posix.dirname(toWp));
+    wd.copy(fromWp, toWp);
+    if (sourceRawPointId === pointId) {
+      wd.delete(fromWp, { force: true });
+    } else {
+      const whiteoutDir = posix.dirname(toWp);
+      const basename = posix.basename(sourcePath);
+      ensureWorkdirDir(wd, whiteoutDir);
+      wd.writeFile(`${whiteoutDir}/.wh.${basename}`, Buffer.from(""));
     }
   }
   await touchWorkspace(workspace.projectId, workspace.id);
@@ -755,21 +489,11 @@ export async function retargetAuxSymlinkAt(input: {
   const normalizedTargetPath = normalizeAuxPath(input.targetPath, "重定向辅助资料链接");
   const existing = snapshot.get(normalizedPath);
   invariant(existing?.nodeType === "symlink", "当前辅助信息不是链接。");
-  const worktreePath = getProjectWorktreeDir(workspace.projectId, workspace.id);
-  const root = currentLayerRoot(worktreePath, pointId);
-  const targetPath = fsPathForAuxPath(root, normalizedPath);
-  clearUpperNodeForWrite(root, normalizedPath);
-  ensureDirSync(path.dirname(targetPath));
-  fs.symlinkSync(normalizedTargetPath, targetPath);
-  // Phase 2.2: sync to VirtualWorkdir
-  {
-    const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
-    if (wd) {
-      const wp = auxWorkdirRelPath(pointId, normalizedPath);
-      ensureWorkdirDir(wd, posix.dirname(wp));
-      wd.writeLink(wp, normalizedTargetPath);
-    }
-  }
+  const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
+  invariant(wd, "工作目录未初始化");
+  const wp = auxWorkdirRelPath(pointId, normalizedPath);
+  ensureWorkdirDir(wd, posix.dirname(wp));
+  wd.writeLink(wp, normalizedTargetPath);
   await touchWorkspace(workspace.projectId, workspace.id);
   return { path: normalizedPath, workspaceId: workspace.id, nodeType: "symlink" as const };
 }
@@ -780,43 +504,26 @@ export async function deleteAuxNodeAt(input: {
   timelinePointId?: TimelinePointRef;
   path: string;
 }) {
-  const { workspace, state, pointId, snapshot } = await buildSnapshot(
+  const { workspace, state } = await buildSnapshot(
     input.projectId,
     input.workspaceId,
     input.timelinePointId,
   );
+  const pointId = assertTimelinePoint(state, input.timelinePointId);
   const normalizedPath = normalizeAuxPath(input.path, "删除辅助资料");
-  invariant(snapshot.has(normalizedPath), "辅助信息不存在。");
-  await deleteVisiblePathFromLayer({
-    projectId: input.projectId,
-    workspaceId: workspace.id,
-    state,
-    worktreePath: getProjectWorktreeDir(workspace.projectId, workspace.id),
-    pointId,
-    auxPath: normalizedPath,
-  });
-  // 同步到 VirtualWorkdir：仅当更低层有该路径时才写入 whiteout，否则直接删除
-  {
-    const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
-    if (wd) {
-      const wp = auxWorkdirRelPath(pointId, normalizedPath);
-      const lowerSnapshot = await lowerSnapshotForLayer(
-        input.projectId,
-        workspace.id,
-        state,
-        pointId,
-      );
-      const hasLower = snapshotHasPathOrDescendant(lowerSnapshot, normalizedPath);
-      if (pointId == null || !hasLower) {
-        wd.delete(wp, { force: true });
-      } else {
-        const whiteoutDir = posix.dirname(wp);
-        const basename = posix.basename(normalizedPath);
-        ensureWorkdirDir(wd, whiteoutDir);
-        wd.delete(wp, { force: true });
-        wd.writeFile(`${whiteoutDir}/.wh.${basename}`, Buffer.from(""));
-      }
-    }
+  const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
+  invariant(wd, "工作目录未初始化");
+  const wp = auxWorkdirRelPath(pointId, normalizedPath);
+  const lowerSnapshot = await lowerSnapshotForLayer(input.projectId, workspace.id, state, pointId);
+  const hasLower = snapshotHasPathOrDescendant(lowerSnapshot, normalizedPath);
+  if (pointId == null || !hasLower) {
+    wd.delete(wp, { force: true });
+  } else {
+    const whiteoutDir = posix.dirname(wp);
+    const basename = posix.basename(normalizedPath);
+    ensureWorkdirDir(wd, whiteoutDir);
+    wd.delete(wp, { force: true });
+    wd.writeFile(`${whiteoutDir}/.wh.${basename}`, Buffer.from(""));
   }
   await touchWorkspace(workspace.projectId, workspace.id);
 }
@@ -928,13 +635,11 @@ export async function exportAuxSnapshotTree(
     state,
     pointId: normalizedPointId,
     snapshot,
-    worktreePath,
   } = await buildSnapshot(projectId, workspaceId, pointId);
   const deletedEntries = await currentLayerDeletedEntries({
     projectId,
     workspaceId,
     state,
-    worktreePath,
     pointId: normalizedPointId,
   });
   const build = (parentPath: string): ExportedAuxNode[] => {
