@@ -255,10 +255,7 @@ function readLayerEntries(worktreePath: string, pointId: string | null): Overlay
 /**
  * 从 VirtualWorkdir 读取指定层的条目，与 readLayerEntries 语义完全一致。
  * 保留 whiteout（.wh.*）和 .gitkeep 的完整语义。
- *
- * 当前未激活（buildSnapshot 使用物理 fs 路径），待 VirtualWorkdir 读路径迁移完成后再启用。
  */
-/*
 function readLayerEntriesFromWorkdir(
   wd: VirtualWorkdir,
   pointId: string | null,
@@ -333,7 +330,6 @@ function readLayerEntriesFromWorkdir(
     return depth || left.path.localeCompare(right.path);
   });
 }
-*/
 
 function readAuxContentFromSnapshot(node: OverlaySnapshotNode) {
   if (node.nodeType !== "file" || node.fsPath == null) return null;
@@ -348,17 +344,23 @@ async function buildSnapshot(projectId: string, workspaceId: string, pointId: Ti
   const snapshot = new Map<string, OverlaySnapshotNode>();
   const layers = [null, ...timelineLayerPointIds(state, normalizedPointId)];
 
-  // Phase 2.2: VirtualWorkdir read path available via readLayerEntriesFromWorkdir.
-  // Currently disabled — cross-layer interactions (moves, whiteouts between layers)
-  // need more thorough validation. Always use physical fs for now.
+  // Phase 2.2: VirtualWorkdir read path
+  const wd = getWorkdirForBranch(projectId, workspaceId);
 
   for (const layerPointId of layers) {
-    for (const entry of readLayerEntries(worktreePath, layerPointId)) {
+    const entries = wd
+      ? readLayerEntriesFromWorkdir(wd, layerPointId)
+      : readLayerEntries(worktreePath, layerPointId);
+    for (const entry of entries) {
       if (entry.kind === "whiteout") {
         removeFromSnapshot(snapshot, entry.path);
         continue;
       }
-      invariant(entry.nodeType && entry.fsPath, "辅助信息层节点缺少类型或路径。");
+      if (!wd) {
+        invariant(entry.nodeType && entry.fsPath, "辅助信息层节点缺少类型或路径。");
+      } else {
+        invariant(entry.nodeType, "辅助信息层节点缺少类型。");
+      }
       if (entry.nodeType !== "dir") {
         removeFromSnapshot(snapshot, entry.path);
       } else {
@@ -375,13 +377,20 @@ async function buildSnapshot(projectId: string, workspaceId: string, pointId: Ti
         symlinkTargetPath: entry.symlinkTargetPath ?? null,
         timelinePointId: pointIdOrOrigin(entry.timelinePointId),
         reachable: true,
-        fsPath: entry.fsPath,
+        fsPath: entry.fsPath ?? null,
       });
     }
   }
 
   for (const node of snapshot.values()) {
-    node.content = readAuxContentFromSnapshot(node);
+    if (wd && node.nodeType === "file" && node.fsPath == null) {
+      const rawPointId = normalizePointId(node.timelinePointId);
+      const wp = auxWorkdirRelPath(rawPointId, node.path);
+      const buf = wd.readFile(wp);
+      node.content = buf ? buf.toString("utf8") : null;
+    } else {
+      node.content = readAuxContentFromSnapshot(node);
+    }
   }
 
   return { workspace, worktreePath, state, pointId: normalizedPointId, snapshot };
@@ -488,8 +497,11 @@ async function currentLayerDeletedEntries(input: {
   );
   const selectedPaths: string[] = [];
   const deletedEntries: OverlayLayerEntry[] = [];
+  const cwd = getWorkdirForBranch(input.projectId, input.workspaceId);
 
-  for (const entry of readLayerEntries(input.worktreePath, input.pointId)) {
+  for (const entry of cwd
+    ? readLayerEntriesFromWorkdir(cwd, input.pointId)
+    : readLayerEntries(input.worktreePath, input.pointId)) {
     if (entry.kind !== "whiteout") continue;
     if (hasAncestorPath(selectedPaths, entry.path)) continue;
     if (!snapshotHasPathOrDescendant(lowerSnapshot, entry.path)) continue;
@@ -708,7 +720,7 @@ export async function moveAuxNodeAt(input: {
     pointId,
     auxPath: sourcePath,
   });
-  // Phase 2.2: sync to VirtualWorkdir via wd.move（支持跨目录树，自动创建中间目录）
+  // Phase 2.2: sync to VirtualWorkdir
   {
     const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
     if (wd) {
@@ -717,7 +729,20 @@ export async function moveAuxNodeAt(input: {
       const fromWp = auxWorkdirRelPath(sourceRawPointId, sourcePath);
       const toWp = auxWorkdirRelPath(pointId, targetPath);
       if (wd.exists(fromWp)) {
-        wd.move(fromWp, toWp);
+        // 与物理 fs 的 materializeSubtreeAt 一致：CoW 复制到目标层
+        ensureWorkdirDir(wd, posix.dirname(toWp));
+        wd.copy(fromWp, toWp);
+
+        if (sourceRawPointId === pointId) {
+          // 同层移动：删除源文件
+          wd.delete(fromWp, { force: true });
+        } else {
+          // 跨层移动：在当前层写入 whiteout 隐藏下层版本
+          const whiteoutDir = posix.dirname(toWp);
+          const basename = posix.basename(sourcePath);
+          ensureWorkdirDir(wd, whiteoutDir);
+          wd.writeFile(`${whiteoutDir}/.wh.${basename}`, Buffer.from(""));
+        }
       }
     }
   }
