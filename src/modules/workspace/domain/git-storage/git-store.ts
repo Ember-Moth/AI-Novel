@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { getProjectRepoGitDir, getProjectWorktreeDir } from "./paths";
-import { withProjectLock } from "./lock";
 import { getOrInitRepo } from "./nano-git-store";
 import type { GitAuthor, GitCommit, SHA1, TreeEntry, FileRepository } from "nano-git";
 import { readTree } from "nano-git/repository/tree/tree-walk";
@@ -58,23 +57,21 @@ export async function addAllAndCommit(input: {
   author?: string | null;
   parents?: string[];
 }) {
-  return withProjectLock(input.projectId, async () => {
-    const repo = getOrInitRepo(input.projectId);
-    const dir = getProjectWorktreeDir(input.projectId, input.workspaceId);
-    const files = readPhysicalWorktreeFiles(dir);
-    const tree = writeTreeFromFiles(repo, files);
-    const timestamp = Math.floor(Date.now() / 1000);
-    const author: GitAuthor = {
-      name: input.author || AUTHOR.name,
-      email: AUTHOR.email,
-      timestamp,
-      timezone: "+0000",
-    };
-    const parentHashes = (input.parents ?? []) as SHA1[];
-    const commitHash = repo.createCommit(tree, parentHashes, input.message, author);
-    repo.updateRef(input.branchRef, commitHash);
-    return commitHash as string;
-  });
+  const repo = getOrInitRepo(input.projectId);
+  const dir = getProjectWorktreeDir(input.projectId, input.workspaceId);
+  const files = readPhysicalWorktreeFiles(dir);
+  const tree = writeTreeFromFiles(repo, files);
+  const timestamp = Math.floor(Date.now() / 1000);
+  const author: GitAuthor = {
+    name: input.author || AUTHOR.name,
+    email: AUTHOR.email,
+    timestamp,
+    timezone: "+0000",
+  };
+  const parentHashes = (input.parents ?? []) as SHA1[];
+  const commitHash = repo.createCommit(tree, parentHashes, input.message, author);
+  repo.updateRef(input.branchRef, commitHash);
+  return commitHash as string;
 }
 
 function writeTreeToDirectory(repo: FileRepository, treeHash: SHA1, dir: string) {
@@ -105,17 +102,15 @@ export async function checkoutRefToWorktree(input: {
   workspaceId: string;
   ref: string;
 }) {
-  return withProjectLock(input.projectId, async () => {
-    const repo = getOrInitRepo(input.projectId);
-    const dir = getProjectWorktreeDir(input.projectId, input.workspaceId);
-    fs.mkdirSync(dir, { recursive: true });
+  const repo = getOrInitRepo(input.projectId);
+  const dir = getProjectWorktreeDir(input.projectId, input.workspaceId);
+  fs.mkdirSync(dir, { recursive: true });
 
-    const commitOid = repo.readRef(input.ref);
-    if (!commitOid) return;
-    const commit = repo.catFile(commitOid);
-    if (commit.type !== "commit") return;
-    writeTreeToDirectory(repo, commit.tree, dir);
-  });
+  const commitOid = repo.readRef(input.ref);
+  if (!commitOid) return;
+  const commit = repo.catFile(commitOid);
+  if (commit.type !== "commit") return;
+  writeTreeToDirectory(repo, commit.tree, dir);
 }
 
 export async function checkoutCommitToWorktree(input: {
@@ -123,15 +118,13 @@ export async function checkoutCommitToWorktree(input: {
   workspaceId: string;
   commitId: string;
 }) {
-  return withProjectLock(input.projectId, async () => {
-    const repo = getOrInitRepo(input.projectId);
-    const dir = getProjectWorktreeDir(input.projectId, input.workspaceId);
-    fs.mkdirSync(dir, { recursive: true });
+  const repo = getOrInitRepo(input.projectId);
+  const dir = getProjectWorktreeDir(input.projectId, input.workspaceId);
+  fs.mkdirSync(dir, { recursive: true });
 
-    const commit = repo.catFile(input.commitId as SHA1);
-    if (commit.type !== "commit") return;
-    writeTreeToDirectory(repo, commit.tree, dir);
-  });
+  const commit = repo.catFile(input.commitId as SHA1);
+  if (commit.type !== "commit") return;
+  writeTreeToDirectory(repo, commit.tree, dir);
 }
 
 function splitTreeFiles(files: Record<string, string>) {
@@ -272,36 +265,29 @@ export async function commitCustomRef(input: {
   message: string;
   replace?: boolean;
 }) {
-  return withProjectLock(input.projectId, async () => {
-    const repo = getOrInitRepo(input.projectId);
-    const previous = repo.readRef(input.ref);
-    const base: SHA1 =
-      previous && !input.replace ? (repo.catFile(previous) as GitCommit).tree : repo.createTree([]);
+  const repo = getOrInitRepo(input.projectId);
+  const previous = repo.readRef(input.ref);
+  const base: SHA1 =
+    previous && !input.replace ? (repo.catFile(previous) as GitCommit).tree : repo.createTree([]);
 
-    const ops = Object.entries(input.files).map(([path, content]) => ({
-      op: "upsert" as const,
-      path,
-      mode: "100644" as const,
-      hash: repo.writeBlob(Buffer.from(content, "utf8")),
-    }));
+  const ops = Object.entries(input.files).map(([path, content]) => ({
+    op: "upsert" as const,
+    path,
+    mode: "100644" as const,
+    hash: repo.writeBlob(Buffer.from(content, "utf8")),
+  }));
 
-    const { rootHash } = patchTree(repo.objects, base, ops);
-    const timestamp = Math.floor(Date.now() / 1000);
-    const author: GitAuthor = {
-      name: AUTHOR.name,
-      email: AUTHOR.email,
-      timestamp,
-      timezone: "+0000",
-    };
-    const commitHash = repo.createCommit(
-      rootHash,
-      previous ? [previous] : [],
-      input.message,
-      author,
-    );
-    repo.updateRef(input.ref, commitHash);
-    return commitHash as string;
-  });
+  const { rootHash } = patchTree(repo.objects, base, ops);
+  const timestamp = Math.floor(Date.now() / 1000);
+  const author: GitAuthor = {
+    name: AUTHOR.name,
+    email: AUTHOR.email,
+    timestamp,
+    timezone: "+0000",
+  };
+  const commitHash = repo.createCommit(rootHash, previous ? [previous] : [], input.message, author);
+  repo.updateRef(input.ref, commitHash);
+  return commitHash as string;
 }
 
 export async function readFileAtRef(input: { projectId: string; ref: string; filepath: string }) {

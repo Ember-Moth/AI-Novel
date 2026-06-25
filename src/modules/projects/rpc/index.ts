@@ -9,7 +9,6 @@ import {
   readProjectMeta,
   updateProjectMeta,
 } from "@/modules/workspace/domain/git-storage/project-meta-store";
-import { withProjectLock } from "@/modules/workspace/domain/git-storage/lock";
 import {
   getProjectRepoGitDir,
   getProjectWorktreeRoot,
@@ -81,12 +80,7 @@ export const setDefaultBranch = mutation<{ projectId: string; branchId: string }
 export const deleteMutation = mutation<{ id: string }, void, RpcTagList>({
   invalidate: ({ id }) => [rpcTags.projectsList(), rpcTags.project(id)],
   handler: async ({ id }) => {
-    const cleanup = () => {
-      rmSync(getProjectRepoGitDir(id), { recursive: true, force: true });
-      rmSync(getProjectWorktreeRoot(id), { recursive: true, force: true });
-    };
-    await withProjectLock(id, async () => {
-      cleanup();
-    });
+    rmSync(getProjectRepoGitDir(id), { recursive: true, force: true });
+    rmSync(getProjectWorktreeRoot(id), { recursive: true, force: true });
   },
 });
