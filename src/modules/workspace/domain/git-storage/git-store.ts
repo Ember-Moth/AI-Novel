@@ -100,7 +100,7 @@ function writeTreeToDirectory(repo: FileRepository, treeHash: SHA1, dir: string)
   // Write all tree entries to disk
   const entries = readTree(repo.objects, treeHash);
   for (const entry of entries) {
-    if (entry.mode === "40000") continue; // skip directories
+    if (entry.mode === "040000") continue; // skip directories
     const filePath = path.join(dir, entry.path);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     const obj = repo.catFile(entry.hash);
@@ -179,7 +179,7 @@ function writeTreeFromFiles(repo: FileRepository, files: Record<string, string>)
 
   for (const [dirname, childFiles] of [...dirs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const subTreeHash = writeTreeFromFiles(repo, childFiles);
-    entries.push({ mode: "40000", name: dirname, hash: subTreeHash });
+    entries.push({ mode: "040000", name: dirname, hash: subTreeHash });
   }
 
   return repo.createTree(entries);
@@ -189,7 +189,7 @@ function readTreeFiles(repo: FileRepository, treeOid: SHA1): Record<string, stri
   const files: Record<string, string> = {};
   const entries = readTree(repo.objects, treeOid);
   for (const entry of entries) {
-    if (entry.mode === "40000") continue; // skip directories (tree entries)
+    if (entry.mode === "040000") continue; // skip directories (tree entries)
     const obj = repo.catFile(entry.hash);
     if (obj.type === "blob") {
       files[entry.path] = obj.content.toString("utf8");
