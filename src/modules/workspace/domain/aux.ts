@@ -708,9 +708,19 @@ export async function moveAuxNodeAt(input: {
     pointId,
     auxPath: sourcePath,
   });
-  // Note: moveAuxNodeAt workdir sync is intentionally omitted because the source
-  // may reside in a different layer than pointId. The physical materializeSubtreeAt
-  // + deleteVisiblePathFromLayer handles the correct layer semantics.
+  // Phase 2.2: sync to VirtualWorkdir via wd.move（支持跨目录树，自动创建中间目录）
+  {
+    const wd = getWorkdirForBranch(workspace.projectId, workspace.id);
+    if (wd) {
+      // 从 snapshot 中读取源文件的实际层（可能在 origin 或某个 timeline point）
+      const sourceRawPointId = normalizePointId(existing.timelinePointId);
+      const fromWp = auxWorkdirRelPath(sourceRawPointId, sourcePath);
+      const toWp = auxWorkdirRelPath(pointId, targetPath);
+      if (wd.exists(fromWp)) {
+        wd.move(fromWp, toWp);
+      }
+    }
+  }
   await touchWorkspace(workspace.projectId, workspace.id);
   return {
     path: targetPath,
