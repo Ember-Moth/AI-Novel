@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
-
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
 import { invariant } from "@/shared/lib/domain";
 
@@ -18,19 +15,6 @@ const MANUSCRIPT_DIR = "manuscript";
 const INDEX_FILE = "index.jsonl";
 export const AUX_ORIGIN_DIR = "aux/origin";
 export const AUX_TIMELINE_DIR = "aux/timeline";
-
-export function readTextSync(filePath: string) {
-  try {
-    return fs.readFileSync(filePath, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
-}
-
-function ensureDirSync(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
 
 /** 每行一个节点的 index.jsonl 行格式 */
 interface IndexRow {
@@ -58,13 +42,8 @@ function* dfsRows(nodes: ManuscriptNodeDiskState[]): Generator<IndexRow> {
 }
 
 /** 从 index.jsonl + manuscript/<id>.md 重建节点树 */
-function rebuildTree(
-  dir: string,
-  rows: IndexRow[],
-  idToBody: Map<string, string>,
-): ManuscriptNodeDiskState[] {
+function rebuildTree(rows: IndexRow[], idToBody: Map<string, string>): ManuscriptNodeDiskState[] {
   const nodeMap = new Map<string, ManuscriptNodeDiskState>();
-  // 第一趟：DFS pre-order 保证 parent 已存在于 nodeMap
   for (const row of rows) {
     const node: ManuscriptNodeDiskState = {
       id: row.id,
@@ -76,12 +55,10 @@ function rebuildTree(
     };
     if (row.parentId == null) {
       nodeMap.set(row.id, node);
-      // 暂存到 roots，下面处理
       continue;
     }
     const parent = nodeMap.get(row.parentId);
     if (!parent) {
-      // parent 尚未出现 → 该节点提升为 root（容错）
       node.parentId = null;
     } else {
       parent.children.push(node);
@@ -89,7 +66,6 @@ function rebuildTree(
     nodeMap.set(row.id, node);
   }
 
-  // 根节点：DFS 行序中 parentId == null 的按行序排列
   const roots: ManuscriptNodeDiskState[] = [];
   for (const row of rows) {
     if (row.parentId == null) {
@@ -98,31 +74,6 @@ function rebuildTree(
     }
   }
   return roots;
-}
-
-export function readWorktreeState(dir: string): WorktreeState {
-  const indexContent = readTextSync(path.join(dir, INDEX_FILE));
-  const rows: IndexRow[] = indexContent ? parseJsonl<IndexRow>(indexContent) : [];
-
-  // 读正文文件
-  const manuscriptDir = path.join(dir, MANUSCRIPT_DIR);
-  const idToBody = new Map<string, string>();
-  if (fs.existsSync(manuscriptDir)) {
-    for (const entry of fs.readdirSync(manuscriptDir, { withFileTypes: true })) {
-      if (entry.isFile() && entry.name.endsWith(".md") && entry.name !== INDEX_FILE) {
-        const id = entry.name.slice(0, -3); // remove .md
-        const content = readTextSync(path.join(manuscriptDir, entry.name));
-        if (content != null) {
-          idToBody.set(id, normalizeBody(content));
-        }
-      }
-    }
-  }
-
-  return {
-    content: rebuildTree(dir, rows, idToBody),
-    timeline: parseJsonl<TimelineMetaRow>(readTextSync(path.join(dir, TIMELINE_FILE))),
-  };
 }
 
 export function readWorktreeStateFromFiles(files: Record<string, string>): WorktreeState {
@@ -135,91 +86,18 @@ export function readWorktreeStateFromFiles(files: Record<string, string>): Workt
     }
     const filename = filepath.slice(MANUSCRIPT_DIR.length + 1);
     const id = filename.slice(0, -3);
-    if (!id) {
-      continue;
-    }
+    if (!id) continue;
     idToBody.set(id, normalizeBody(content));
   }
 
   return {
-    content: rebuildTree("", rows, idToBody),
+    content: rebuildTree(rows, idToBody),
     timeline: parseJsonl<TimelineMetaRow>(files[TIMELINE_FILE]),
   };
 }
 
 function flattenContent(nodes: ManuscriptNodeDiskState[]): ManuscriptNodeDiskState[] {
   return nodes.flatMap((node) => [node, ...flattenContent(node.children)]);
-}
-
-/** 写 index.jsonl 和 manuscript/<id>.md 文件 */
-function writeManuscriptFiles(dir: string, roots: ManuscriptNodeDiskState[]) {
-  const manuscriptDir = path.join(dir, MANUSCRIPT_DIR);
-  ensureDirSync(manuscriptDir);
-
-  // 收集 index 中声明的所有 id
-  const indexIds = new Set<string>();
-  const indexLines: string[] = [];
-  for (const row of dfsRows(roots)) {
-    indexIds.add(row.id);
-    indexLines.push(JSON.stringify(row));
-  }
-  indexLines.push(""); // trailing newline
-
-  // 写 index.jsonl
-  fs.writeFileSync(path.join(dir, INDEX_FILE), indexLines.join("\n"), "utf8");
-
-  // 增量同步 .md 文件
-  const existingFiles = new Set<string>();
-  for (const entry of fs.readdirSync(manuscriptDir, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name.endsWith(".md") && entry.name !== INDEX_FILE) {
-      existingFiles.add(entry.name);
-    }
-  }
-
-  const requiredFiles = new Set<string>();
-  for (const node of flattenContent(roots)) {
-    const filename = `${node.id}.md`;
-    requiredFiles.add(filename);
-    existingFiles.delete(filename);
-
-    const filePath = path.join(manuscriptDir, filename);
-    const body = normalizeBody(node.body);
-    const existing = readTextSync(filePath);
-    if (existing !== body) {
-      fs.writeFileSync(filePath, body, "utf8");
-    }
-  }
-
-  // 删除孤儿文件（index 中不存在的）
-  for (const orphan of existingFiles) {
-    fs.rmSync(path.join(manuscriptDir, orphan), { force: true });
-  }
-}
-
-export async function writeWorktreeState(dir: string, state: WorktreeState) {
-  await fs.promises.mkdir(dir, { recursive: true });
-  await fs.promises.writeFile(
-    path.join(dir, TIMELINE_FILE),
-    stringifyJsonl(state.timeline),
-    "utf8",
-  );
-  writeManuscriptFiles(dir, state.content);
-  await fs.promises.mkdir(path.join(dir, AUX_ORIGIN_DIR), { recursive: true });
-}
-
-export function writeWorktreeStateSync(dir: string, state: WorktreeState) {
-  ensureDirSync(dir);
-  fs.writeFileSync(path.join(dir, TIMELINE_FILE), stringifyJsonl(state.timeline), "utf8");
-  writeManuscriptFiles(dir, state.content);
-  ensureDirSync(path.join(dir, AUX_ORIGIN_DIR));
-}
-
-export function seedEmptyWorktree(dir: string) {
-  ensureDirSync(dir);
-  writeWorktreeStateSync(dir, {
-    content: [],
-    timeline: [],
-  });
 }
 
 export function orderTimelineRows(rows: TimelineMetaRow[]) {
@@ -279,13 +157,11 @@ export function listManuscriptChildren(
 }
 
 export function insertManuscriptNode(
-  rootDir: string,
   state: WorktreeState,
   input: {
     node: ManuscriptNodeDiskState;
     parentId: string | null;
     afterSiblingId?: string | null;
-    writeNodeImmediately?: boolean;
   },
 ) {
   const siblings = listManuscriptChildren(state, input.parentId);
@@ -325,23 +201,13 @@ export function removeNodeFromTree(
   return null;
 }
 
-export function removeManuscriptNode(rootDir: string, state: WorktreeState, nodeId: string) {
+export function removeManuscriptNode(state: WorktreeState, nodeId: string) {
   const removed = removeNodeFromTree(state.content, nodeId);
   invariant(removed, "未找到章节。");
-
-  // 删除该节点及其所有子节点的 .md 文件
-  const allNodes = flattenContent([removed]);
-  const manuscriptDir = path.join(rootDir, MANUSCRIPT_DIR);
-  for (const n of allNodes) {
-    const filePath = path.join(manuscriptDir, `${n.id}.md`);
-    fs.rmSync(filePath, { force: true });
-  }
-
   return removed;
 }
 
 export function moveManuscriptNode(
-  rootDir: string,
   state: WorktreeState,
   input: {
     nodeId: string;
@@ -378,11 +244,10 @@ export function moveManuscriptNode(
   const moved = removeNodeFromTree(state.content, input.nodeId);
   invariant(moved, "未找到章节。");
 
-  insertManuscriptNode(rootDir, state, {
+  insertManuscriptNode(state, {
     node: moved,
     parentId: input.newParentId,
     afterSiblingId: input.afterSiblingId,
-    writeNodeImmediately: false,
   });
 
   return moved;
@@ -419,7 +284,7 @@ export function readWorktreeStateFromWorkdir(workdir: VirtualWorkdir): WorktreeS
     ? workdir.readFile("timeline.jsonl").toString("utf8")
     : "";
   return {
-    content: rebuildTree("", rows, idToBody),
+    content: rebuildTree(rows, idToBody),
     timeline: parseJsonl<TimelineMetaRow>(timelineContent),
   };
 }

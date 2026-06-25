@@ -7,10 +7,7 @@ import {
   readProjectMeta,
 } from "@/modules/workspace/domain/git-storage/project-meta-store";
 import * as auxService from "@/modules/workspace/domain/aux";
-import {
-  getProjectRepoGitDir,
-  getProjectWorktreeRoot,
-} from "@/modules/workspace/domain/git-storage/paths";
+import { getProjectRepoGitDir } from "@/modules/workspace/domain/git-storage/paths";
 import * as workspaceService from "@/modules/workspace/domain";
 import { listBranches } from "@/modules/workspace/domain/branches";
 import { rpcTags } from "@/rpc/tags";
@@ -118,7 +115,6 @@ test("delete project cascades default workspace roots", async () => {
   ]);
   expect(await projectIndexCounts()).toEqual({ projects: 0, branches: 0, workspaces: 0 });
   expect(existsSync(getProjectRepoGitDir("project_delete_default"))).toBe(false);
-  expect(existsSync(getProjectWorktreeRoot("project_delete_default"))).toBe(false);
 });
 
 test("delete project cascades content anchored to timeline points", async () => {
@@ -139,7 +135,6 @@ test("delete project cascades content anchored to timeline points", async () => 
   await expect(deleteProject("project_delete_content_anchor")).resolves.toBeDefined();
   expect(await projectIndexCounts()).toEqual({ projects: 0, branches: 0, workspaces: 0 });
   expect(existsSync(getProjectRepoGitDir("project_delete_content_anchor"))).toBe(false);
-  expect(existsSync(getProjectWorktreeRoot("project_delete_content_anchor"))).toBe(false);
 });
 
 test("delete project cascades aux overlay files", async () => {
@@ -160,5 +155,4 @@ test("delete project cascades aux overlay files", async () => {
   await expect(deleteProject("project_delete_aux_overlay")).resolves.toBeDefined();
   expect(await projectIndexCounts()).toEqual({ projects: 0, branches: 0, workspaces: 0 });
   expect(existsSync(getProjectRepoGitDir("project_delete_aux_overlay"))).toBe(false);
-  expect(existsSync(getProjectWorktreeRoot("project_delete_aux_overlay"))).toBe(false);
 });

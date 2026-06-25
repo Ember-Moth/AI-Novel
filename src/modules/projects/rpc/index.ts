@@ -9,10 +9,7 @@ import {
   readProjectMeta,
   updateProjectMeta,
 } from "@/modules/workspace/domain/git-storage/project-meta-store";
-import {
-  getProjectRepoGitDir,
-  getProjectWorktreeRoot,
-} from "@/modules/workspace/domain/git-storage/paths";
+import { getProjectRepoGitDir } from "@/modules/workspace/domain/git-storage/paths";
 import type { ProjectIndexRow } from "@/modules/workspace/domain/git-storage/types";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
 
@@ -81,6 +78,5 @@ export const deleteMutation = mutation<{ id: string }, void, RpcTagList>({
   invalidate: ({ id }) => [rpcTags.projectsList(), rpcTags.project(id)],
   handler: async ({ id }) => {
     rmSync(getProjectRepoGitDir(id), { recursive: true, force: true });
-    rmSync(getProjectWorktreeRoot(id), { recursive: true, force: true });
   },
 });

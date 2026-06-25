@@ -54,6 +54,5 @@ export function getCatalogModelPath(modelId: string) {
 export function ensureProjectStorageRoot() {
   const root = ensureStorageRoot();
   mkdirSync(join(root, "repos"), { recursive: true });
-  mkdirSync(join(root, "worktrees"), { recursive: true });
   return root;
 }

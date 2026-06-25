@@ -118,7 +118,7 @@ export async function createContentNode(input: {
     children: [],
   };
 
-  insertManuscriptNode(workspace.id, state, {
+  insertManuscriptNode(state, {
     node,
     parentId: input.parentId,
     afterSiblingId: input.afterSiblingId,
@@ -149,7 +149,7 @@ export async function moveContentNode(input: {
   if (input.newParentId) {
     findManuscriptNode(state, input.newParentId);
   }
-  const moved = moveManuscriptNode(workspace.id, state, {
+  const moved = moveManuscriptNode(state, {
     nodeId: input.nodeId,
     newParentId: input.newParentId,
     afterSiblingId: input.afterSiblingId,
@@ -175,7 +175,7 @@ export async function deleteContentNode(input: {
 }) {
   const workspace = await getWorkspace(input.projectId, input.workspaceId);
   const state = readWorkdirState(workspace.projectId, workspace.id);
-  removeManuscriptNode(workspace.id, state, input.nodeId);
+  removeManuscriptNode(state, input.nodeId);
   writeWorkdirState(workspace.projectId, workspace.id, state);
   await touchWorkspace(workspace.projectId, workspace.id);
 }
@@ -322,10 +322,8 @@ export async function revertContentChange(input: {
   const previousState = readWorktreeStateFromFiles(previousFiles);
 
   if (input.kind === "added") {
-    // 新增→删除：直接删除该节点及所有子节点
-    removeManuscriptNode(workspace.id, state, input.nodeId);
+    removeManuscriptNode(state, input.nodeId);
   } else if (input.kind === "deleted") {
-    // 删除→恢复：从 HEAD 中取出节点及其完整子树，插入回 HEAD 中的位置
     const previousNode = findManuscriptNode(previousState, input.nodeId);
     const restored = cloneNode(previousNode);
 
@@ -336,7 +334,7 @@ export async function revertContentChange(input: {
     );
 
     const afterSiblingId = findHeadSiblingId(previousState, input.nodeId, flatCurrent);
-    insertManuscriptNode(workspace.id, state, {
+    insertManuscriptNode(state, {
       node: restored,
       parentId: restored.parentId,
       afterSiblingId,
@@ -371,7 +369,7 @@ export async function revertContentChange(input: {
         ? findHeadSiblingId(previousState, input.nodeId, flatCurrent)
         : null;
 
-      insertManuscriptNode(workspace.id, state, {
+      insertManuscriptNode(state, {
         node: removed,
         parentId: removed.parentId,
         afterSiblingId,
