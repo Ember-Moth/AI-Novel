@@ -56,10 +56,6 @@ export function ProjectHistoryTimeline({
           <div className="px-3 pb-3">
             <LoadingBlock label="正在加载提交历史..." />
           </div>
-        ) : commitHistory.length === 0 ? (
-          <div className="mx-3 mb-3 rounded-md border border-dashed border-border bg-editor-background px-3 py-6 text-sm text-foreground-muted">
-            这个分支还没有提交历史。
-          </div>
         ) : (
           <div>
             {commitHistory.map((commit, index) => (
@@ -113,7 +109,7 @@ function TimelineRail({
       />
       <span
         className={cn(
-          "relative top-[0.5rem] h-2.5 w-2.5 rounded-full border-2",
+          "relative top-2 h-2.5 w-2.5 rounded-full border-2",
           variant === "working"
             ? "border-dashed border-accent-foreground bg-editor-background"
             : variant === "head"
