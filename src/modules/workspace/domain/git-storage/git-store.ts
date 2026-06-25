@@ -5,6 +5,11 @@ import git from "isomorphic-git";
 
 import { getProjectRepoGitDir, getProjectWorktreeDir } from "./paths";
 import { withProjectLock } from "./lock";
+import { getOrInitRepo } from "./nano-git-store";
+import type { GitAuthor, GitCommit, SHA1, TreeEntry, FileRepository } from "nano-git";
+import { readTree } from "nano-git/repository/tree/tree-walk";
+import { patchTree } from "nano-git/repository/tree/tree-patch";
+import { walkLogEntries } from "nano-git/log";
 
 const AUTHOR = {
   name: "NovelEvolver",
@@ -41,23 +46,22 @@ export async function ensureProjectRepo(projectId: string) {
   return gitdir;
 }
 
-async function removeWorktreeGitFile(dir: string) {
-  await fs.promises.rm(path.join(dir, ".git"), { force: true });
-}
-
-async function clearVersionedWorktreeFiles(dir: string) {
-  await Promise.all(
-    ["index.jsonl", "timeline.jsonl", "manuscript", "aux"].map((entry) =>
-      fs.promises.rm(path.join(dir, entry), { recursive: true, force: true }),
-    ),
-  );
-}
-
-export async function ensureWorktree(projectId: string, workspaceId: string) {
-  const dir = getProjectWorktreeDir(projectId, workspaceId);
-  await fs.promises.mkdir(dir, { recursive: true });
-  await removeWorktreeGitFile(dir);
-  return dir;
+function readPhysicalWorktreeFiles(dir: string): Record<string, string> {
+  const files: Record<string, string> = {};
+  function walk(prefix: string, currentDir: string) {
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      if (entry.name === ".git") continue;
+      const fullPath = path.join(currentDir, entry.name);
+      const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isFile()) {
+        files[relPath] = fs.readFileSync(fullPath, "utf8");
+      } else if (entry.isDirectory()) {
+        walk(relPath, fullPath);
+      }
+    }
+  }
+  walk("", dir);
+  return files;
 }
 
 export async function addAllAndCommit(input: {
@@ -69,25 +73,45 @@ export async function addAllAndCommit(input: {
   parents?: string[];
 }) {
   return withProjectLock(input.projectId, async () => {
-    const gitdir = await ensureProjectRepo(input.projectId);
-    const dir = await ensureWorktree(input.projectId, input.workspaceId);
-    await git.add({ fs, dir, gitdir, filepath: "." });
-    const oid = await git.commit({
-      fs,
-      dir,
-      gitdir,
-      ref: input.branchRef,
-      message: input.message,
-      parent: input.parents,
-      author: {
-        name: input.author || AUTHOR.name,
-        email: AUTHOR.email,
-      },
-      committer: AUTHOR,
-    });
-    await git.writeRef({ fs, gitdir, ref: input.branchRef, value: oid, force: true });
-    return oid;
+    const repo = getOrInitRepo(input.projectId);
+    const dir = getProjectWorktreeDir(input.projectId, input.workspaceId);
+    const files = readPhysicalWorktreeFiles(dir);
+    const tree = writeTreeFromFiles(repo, files);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const author: GitAuthor = {
+      name: input.author || AUTHOR.name,
+      email: AUTHOR.email,
+      timestamp,
+      timezone: "+0000",
+    };
+    const parentHashes = (input.parents ?? []) as SHA1[];
+    const commitHash = repo.createCommit(tree, parentHashes, input.message, author);
+    repo.updateRef(input.branchRef, commitHash);
+    return commitHash as string;
   });
+}
+
+function writeTreeToDirectory(repo: FileRepository, treeHash: SHA1, dir: string) {
+  // Clear existing versioned files
+  for (const entry of ["index.jsonl", "timeline.jsonl", "manuscript", "aux"]) {
+    fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
+  }
+
+  // Write all tree entries to disk
+  const entries = readTree(repo.objects, treeHash);
+  for (const entry of entries) {
+    if (entry.mode === "40000") continue; // skip directories
+    const filePath = path.join(dir, entry.path);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const obj = repo.catFile(entry.hash);
+    if (obj.type === "blob") {
+      fs.writeFileSync(filePath, obj.content);
+    }
+  }
+
+  // Ensure aux directories exist
+  fs.mkdirSync(path.join(dir, "aux", "origin"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "aux", "timeline"), { recursive: true });
 }
 
 export async function checkoutRefToWorktree(input: {
@@ -96,11 +120,15 @@ export async function checkoutRefToWorktree(input: {
   ref: string;
 }) {
   return withProjectLock(input.projectId, async () => {
-    const gitdir = await ensureProjectRepo(input.projectId);
-    const dir = await ensureWorktree(input.projectId, input.workspaceId);
-    await clearVersionedWorktreeFiles(dir);
-    await git.checkout({ fs, dir, gitdir, ref: input.ref, force: true });
-    await removeWorktreeGitFile(dir);
+    const repo = getOrInitRepo(input.projectId);
+    const dir = getProjectWorktreeDir(input.projectId, input.workspaceId);
+    fs.mkdirSync(dir, { recursive: true });
+
+    const commitOid = repo.readRef(input.ref);
+    if (!commitOid) return;
+    const commit = repo.catFile(commitOid);
+    if (commit.type !== "commit") return;
+    writeTreeToDirectory(repo, commit.tree, dir);
   });
 }
 
@@ -110,11 +138,13 @@ export async function checkoutCommitToWorktree(input: {
   commitId: string;
 }) {
   return withProjectLock(input.projectId, async () => {
-    const gitdir = await ensureProjectRepo(input.projectId);
-    const dir = await ensureWorktree(input.projectId, input.workspaceId);
-    await clearVersionedWorktreeFiles(dir);
-    await git.checkout({ fs, dir, gitdir, ref: input.commitId, force: true });
-    await removeWorktreeGitFile(dir);
+    const repo = getOrInitRepo(input.projectId);
+    const dir = getProjectWorktreeDir(input.projectId, input.workspaceId);
+    fs.mkdirSync(dir, { recursive: true });
+
+    const commit = repo.catFile(input.commitId as SHA1);
+    if (commit.type !== "commit") return;
+    writeTreeToDirectory(repo, commit.tree, dir);
   });
 }
 
@@ -138,61 +168,49 @@ function splitTreeFiles(files: Record<string, string>) {
   return { blobs, dirs };
 }
 
-async function writeTreeFromFiles(gitdir: string, files: Record<string, string>): Promise<string> {
+function writeTreeFromFiles(repo: FileRepository, files: Record<string, string>): SHA1 {
   const { blobs, dirs } = splitTreeFiles(files);
-  const tree = [];
+  const entries: TreeEntry[] = [];
 
   for (const [filepath, content] of [...blobs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    const oid = await git.writeBlob({ fs, gitdir, blob: Buffer.from(content, "utf8") });
-    tree.push({ mode: "100644" as const, path: filepath, oid, type: "blob" as const });
+    const hash = repo.writeBlob(Buffer.from(content, "utf8"));
+    entries.push({ mode: "100644", name: filepath, hash });
   }
 
   for (const [dirname, childFiles] of [...dirs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    const oid = await writeTreeFromFiles(gitdir, childFiles);
-    tree.push({ mode: "040000" as const, path: dirname, oid, type: "tree" as const });
+    const subTreeHash = writeTreeFromFiles(repo, childFiles);
+    entries.push({ mode: "40000", name: dirname, hash: subTreeHash });
   }
 
-  return await git.writeTree({ fs, gitdir, tree });
+  return repo.createTree(entries);
 }
 
-async function readTreeFiles(input: {
-  gitdir: string;
-  treeOid: string;
-  prefix?: string;
-}): Promise<Record<string, string>> {
+function readTreeFiles(repo: FileRepository, treeOid: SHA1): Record<string, string> {
   const files: Record<string, string> = {};
-  const { tree } = await git.readTree({ fs, gitdir: input.gitdir, oid: input.treeOid });
-
-  for (const entry of tree) {
-    const filepath = input.prefix ? `${input.prefix}/${entry.path}` : entry.path;
-    if (entry.type === "tree") {
-      Object.assign(
-        files,
-        await readTreeFiles({ gitdir: input.gitdir, treeOid: entry.oid, prefix: filepath }),
-      );
-      continue;
-    }
-    if (entry.type === "blob") {
-      const { blob } = await git.readBlob({
-        fs,
-        gitdir: input.gitdir,
-        oid: entry.oid,
-      });
-      files[filepath] = Buffer.from(blob).toString("utf8");
+  const entries = readTree(repo.objects, treeOid);
+  for (const entry of entries) {
+    if (entry.mode === "40000") continue; // skip directories (tree entries)
+    const obj = repo.catFile(entry.hash);
+    if (obj.type === "blob") {
+      files[entry.path] = obj.content.toString("utf8");
     }
   }
-
   return files;
 }
 
 export async function writeRef(input: { projectId: string; ref: string; value: string }) {
-  const gitdir = await ensureProjectRepo(input.projectId);
-  await git.writeRef({ fs, gitdir, ref: input.ref, value: input.value, force: true });
+  const repo = getOrInitRepo(input.projectId);
+  repo.updateRef(input.ref, input.value as SHA1);
 }
 
 export async function deleteRef(input: { projectId: string; ref: string }) {
-  const gitdir = await ensureProjectRepo(input.projectId);
-  await fs.promises.rm(path.join(gitdir, input.ref), { force: true });
+  const repo = getOrInitRepo(input.projectId);
+  // nano-git RefStore.delete throws if ref doesn't exist, so we catch
+  try {
+    repo.refs.delete(input.ref);
+  } catch {
+    // compatible with old { force: true } behavior
+  }
 }
 
 export async function writeTreeAtRef(input: {
@@ -200,19 +218,20 @@ export async function writeTreeAtRef(input: {
   ref: string;
   files: Record<string, string>;
 }) {
-  const gitdir = await ensureProjectRepo(input.projectId);
-  const tree = await writeTreeFromFiles(gitdir, input.files);
-  await git.writeRef({ fs, gitdir, ref: input.ref, value: tree, force: true });
-  return tree;
+  const repo = getOrInitRepo(input.projectId);
+  const tree = writeTreeFromFiles(repo, input.files);
+  repo.updateRef(input.ref, tree);
+  return tree as string;
 }
 
 export async function readTreeAtRef(input: {
   projectId: string;
   ref: string;
 }): Promise<Record<string, string>> {
-  const gitdir = await ensureProjectRepo(input.projectId);
-  const oid = await git.resolveRef({ fs, gitdir, ref: input.ref });
-  return await readTreeFiles({ gitdir, treeOid: oid });
+  const repo = getOrInitRepo(input.projectId);
+  const oid = repo.readRef(input.ref);
+  if (!oid) return {};
+  return readTreeFiles(repo, oid);
 }
 
 // ---------------------------------------------------------------------------
@@ -224,22 +243,22 @@ export async function writeBranchMeta(
   branchId: string,
   data: Record<string, unknown>,
 ) {
-  const gitdir = await ensureProjectRepo(projectId);
+  const repo = getOrInitRepo(projectId);
   const blob = Buffer.from(JSON.stringify(data), "utf8");
-  const oid = await git.writeBlob({ fs, gitdir, blob });
-  await git.writeRef({ fs, gitdir, ref: branchMetaRef(branchId), value: oid, force: true });
+  const oid = repo.writeBlob(blob);
+  repo.updateRef(branchMetaRef(branchId), oid);
 }
 
 export async function readBranchMeta<T = Record<string, unknown>>(
   projectId: string,
   branchId: string,
 ): Promise<T | null> {
-  const gitdir = await ensureProjectRepo(projectId);
-  const ref = branchMetaRef(branchId);
-  const oid = await git.resolveRef({ fs, gitdir, ref }).catch(() => null);
+  const repo = getOrInitRepo(projectId);
+  const oid = repo.readRef(branchMetaRef(branchId));
   if (!oid) return null;
-  const { blob } = await git.readBlob({ fs, gitdir, oid });
-  return JSON.parse(Buffer.from(blob).toString("utf8")) as T;
+  const obj = repo.catFile(oid);
+  if (obj.type !== "blob") return null;
+  return JSON.parse(obj.content.toString("utf8")) as T;
 }
 
 export async function deleteBranchMeta(projectId: string, branchId: string) {
@@ -247,8 +266,8 @@ export async function deleteBranchMeta(projectId: string, branchId: string) {
 }
 
 export async function listBranchMetaIds(projectId: string): Promise<string[]> {
-  const gitdir = await ensureProjectRepo(projectId);
-  const branchesDir = path.join(gitdir, "refs", "novel-evolver", "branches");
+  const repo = getOrInitRepo(projectId);
+  const branchesDir = path.join(repo.gitDir, "refs", "novel-evolver", "branches");
   try {
     const entries = await fs.promises.readdir(branchesDir, { withFileTypes: true });
     return entries
@@ -268,58 +287,73 @@ export async function commitCustomRef(input: {
   replace?: boolean;
 }) {
   return withProjectLock(input.projectId, async () => {
-    const gitdir = await ensureProjectRepo(input.projectId);
-    const previous = await git.resolveRef({ fs, gitdir, ref: input.ref }).catch(() => undefined);
-    const previousFiles =
-      previous && !input.replace
-        ? await git
-            .readCommit({ fs, gitdir, oid: previous })
-            .then(({ commit }) => readTreeFiles({ gitdir, treeOid: commit.tree }))
-            .catch(() => ({}))
-        : {};
-    const tree = await writeTreeFromFiles(gitdir, { ...previousFiles, ...input.files });
+    const repo = getOrInitRepo(input.projectId);
+    const previous = repo.readRef(input.ref);
+    const base: SHA1 =
+      previous && !input.replace ? (repo.catFile(previous) as GitCommit).tree : repo.createTree([]);
+
+    const ops = Object.entries(input.files).map(([path, content]) => ({
+      op: "upsert" as const,
+      path,
+      mode: "100644" as const,
+      hash: repo.writeBlob(Buffer.from(content, "utf8")),
+    }));
+
+    const { rootHash } = patchTree(repo.objects, base, ops);
     const timestamp = Math.floor(Date.now() / 1000);
-    const oid = await git.writeCommit({
-      fs,
-      gitdir,
-      commit: {
-        message: input.message,
-        tree,
-        parent: previous ? [previous] : [],
-        author: { ...AUTHOR, timestamp, timezoneOffset: 0 },
-        committer: { ...AUTHOR, timestamp, timezoneOffset: 0 },
-      },
-    });
-    await git.writeRef({ fs, gitdir, ref: input.ref, value: oid, force: true });
-    return oid;
+    const author: GitAuthor = {
+      name: AUTHOR.name,
+      email: AUTHOR.email,
+      timestamp,
+      timezone: "+0000",
+    };
+    const commitHash = repo.createCommit(
+      rootHash,
+      previous ? [previous] : [],
+      input.message,
+      author,
+    );
+    repo.updateRef(input.ref, commitHash);
+    return commitHash as string;
   });
 }
 
 export async function readFileAtRef(input: { projectId: string; ref: string; filepath: string }) {
-  const gitdir = await ensureProjectRepo(input.projectId);
-  const oid = await git.resolveRef({ fs, gitdir, ref: input.ref });
-  const { commit } = await git.readCommit({ fs, gitdir, oid });
-  const { blob } = await git.readBlob({ fs, gitdir, oid: commit.tree, filepath: input.filepath });
-  return Buffer.from(blob).toString("utf8");
+  const repo = getOrInitRepo(input.projectId);
+  const oid = repo.readRef(input.ref);
+  if (!oid) throw new Error(`Ref not found: ${input.ref}`);
+  const commit = repo.catFile(oid);
+  if (commit.type !== "commit")
+    throw new Error(`Expected commit at ${input.ref}, got ${commit.type}`);
+  const entries = readTree(repo.objects, commit.tree);
+  const entry = entries.find((e) => e.path === input.filepath);
+  if (!entry) throw new Error(`File not found: ${input.filepath}`);
+  const obj = repo.catFile(entry.hash);
+  if (obj.type !== "blob") throw new Error(`Expected blob, got ${obj.type}`);
+  return obj.content.toString("utf8");
 }
 
 export async function readFilesAtRef(input: { projectId: string; ref: string }) {
-  const gitdir = await ensureProjectRepo(input.projectId);
-  const oid = await git.resolveRef({ fs, gitdir, ref: input.ref });
-  const { commit } = await git.readCommit({ fs, gitdir, oid });
-  return await readTreeFiles({ gitdir, treeOid: commit.tree });
+  const repo = getOrInitRepo(input.projectId);
+  const oid = repo.readRef(input.ref);
+  if (!oid) return {};
+  const commit = repo.catFile(oid);
+  if (commit.type !== "commit") return {};
+  return readTreeFiles(repo, commit.tree);
 }
 
 export async function readFilesAtCommit(input: { projectId: string; commitId: string }) {
-  const gitdir = await ensureProjectRepo(input.projectId);
-  const { commit } = await git.readCommit({ fs, gitdir, oid: input.commitId });
-  return await readTreeFiles({ gitdir, treeOid: commit.tree });
+  const repo = getOrInitRepo(input.projectId);
+  const commit = repo.catFile(input.commitId as SHA1);
+  if (commit.type !== "commit") return {};
+  return readTreeFiles(repo, commit.tree);
 }
 
 export async function readCommit(projectId: string, oid: string) {
-  const gitdir = await ensureProjectRepo(projectId);
-  const { commit } = await git.readCommit({ fs, gitdir, oid });
-  return commit;
+  const repo = getOrInitRepo(projectId);
+  const obj = repo.catFile(oid as SHA1);
+  if (obj.type !== "commit") throw new Error(`Expected commit, got ${obj.type}`);
+  return obj;
 }
 
 export async function touchProjectRepo(projectId: string) {
@@ -329,13 +363,33 @@ export async function touchProjectRepo(projectId: string) {
 }
 
 export async function resolveRef(projectId: string, ref: string) {
-  const gitdir = await ensureProjectRepo(projectId);
-  return await git.resolveRef({ fs, gitdir, ref }).catch(() => null);
+  const repo = getOrInitRepo(projectId);
+  return repo.readRef(ref) as string | null;
 }
 
 export async function listLog(input: { projectId: string; ref: string; depth?: number }) {
-  const gitdir = await ensureProjectRepo(input.projectId);
-  const head = await resolveRef(input.projectId, input.ref);
+  const repo = getOrInitRepo(input.projectId);
+  const head = repo.readRef(input.ref);
   if (!head) return [];
-  return await git.log({ fs, gitdir, ref: input.ref, depth: input.depth });
+  const entries = [...walkLogEntries(repo.objects, { from: [head], maxCount: input.depth })];
+  return entries.map((entry) => ({
+    oid: entry.hash as string,
+    commit: {
+      message: entry.commit.message,
+      tree: entry.commit.tree as string,
+      parent: entry.commit.parents.map((p) => p as string),
+      author: {
+        name: entry.commit.author.name,
+        email: entry.commit.author.email,
+        timestamp: entry.commit.author.timestamp,
+        timezoneOffset: 0,
+      },
+      committer: {
+        name: entry.commit.committer.name,
+        email: entry.commit.committer.email,
+        timestamp: entry.commit.committer.timestamp,
+        timezoneOffset: 0,
+      },
+    },
+  }));
 }
