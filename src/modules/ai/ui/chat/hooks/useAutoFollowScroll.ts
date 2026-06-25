@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-const BOTTOM_THRESHOLD_PX = 24;
+const LEAVE_BOTTOM_THRESHOLD_PX = 24;
+const RESUME_AT_BOTTOM_THRESHOLD_PX = 2;
 
-function isViewportNearBottom(viewport: HTMLElement) {
-  return viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= BOTTOM_THRESHOLD_PX;
+function getDistanceToBottom(viewport: HTMLElement) {
+  return viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+}
+
+function shouldLeaveAutoFollow(viewport: HTMLElement) {
+  return getDistanceToBottom(viewport) > LEAVE_BOTTOM_THRESHOLD_PX;
+}
+
+function shouldResumeAutoFollow(viewport: HTMLElement) {
+  return getDistanceToBottom(viewport) <= RESUME_AT_BOTTOM_THRESHOLD_PX;
 }
 
 function scrollViewportToBottom(viewport: HTMLElement, behavior: ScrollBehavior | "instant") {
@@ -42,7 +51,17 @@ export function useAutoFollowScroll(sessionKey: string, contentVersion: string) 
     if (viewport == null) {
       return;
     }
-    updateShouldAutoFollow(isViewportNearBottom(viewport));
+
+    if (shouldAutoFollowRef.current) {
+      if (shouldLeaveAutoFollow(viewport)) {
+        updateShouldAutoFollow(false);
+      }
+      return;
+    }
+
+    if (shouldResumeAutoFollow(viewport)) {
+      updateShouldAutoFollow(true);
+    }
   }, [updateShouldAutoFollow]);
 
   useEffect(() => {
