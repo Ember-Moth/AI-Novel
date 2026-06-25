@@ -2,7 +2,7 @@ import { customAlphabet } from "nanoid";
 
 const createEntityIdSuffix = customAlphabet(
   "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-  21,
+  10,
 );
 
 export function createId(_prefix: string) {
