@@ -1,6 +1,4 @@
 import posix from "node:path/posix";
-import type { SHA1 } from "nano-git";
-
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
 import { invariant } from "@/shared/lib/domain";
 
@@ -15,9 +13,8 @@ import type {
   TimelinePointRef,
 } from "./types";
 import { getWorkspace, touchWorkspaceMeta } from "./lifecycle";
-import { getBranch, getBranchHeadCommitId } from "./branches";
+import { getBranch } from "./branches";
 import { getWorkspaceForBranchId } from "./lifecycle";
-import { readFilesAtCommit } from "./git-storage/git-store";
 import { getBranchMapping, getWorkdirForBranch } from "./git-storage/git-store";
 import type { VirtualWorkdir } from "nano-git/workdir/core";
 import {
@@ -811,7 +808,6 @@ export async function revertAuxChange(input: {
   kind: "added" | "deleted" | "modified";
 }) {
   const branch = getBranch(input.projectId, input.branchId);
-  const headCommitId = getBranchHeadCommitId(input.projectId, branch.name);
   const workspace = getWorkspaceForBranchId(input.projectId, branch.name);
   invariant(workspace, "该分支没有关联的工作区。");
 
@@ -823,22 +819,10 @@ export async function revertAuxChange(input: {
     : input.filepath;
   invariant(normalizedStoragePath.startsWith("aux/"), "仅支持撤回辅助信息路径。");
 
-  if (input.kind === "added") {
-    wd.restore(normalizedStoragePath, { force: true });
-    await touchWorkspace(workspace.projectId, workspace.id);
-    return;
-  }
-
-  const headFiles = headCommitId
-    ? readFilesAtCommit({ projectId: input.projectId, commitId: headCommitId as SHA1 })
-    : {};
-  const headContent = headFiles[input.filepath] ?? headFiles[normalizedStoragePath];
-  invariant(headContent !== undefined, "无法恢复辅助信息：HEAD 中不存在该路径。");
-
   if (input.kind === "modified") {
     invariant(wd.exists(normalizedStoragePath), "无法恢复辅助信息：当前工作区不存在该路径。");
   }
 
-  wd.restore(normalizedStoragePath);
+  wd.restore(normalizedStoragePath, { force: true });
   await touchWorkspace(workspace.projectId, workspace.id);
 }

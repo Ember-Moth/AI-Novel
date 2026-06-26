@@ -775,7 +775,7 @@ test("revertAuxChange('modified') restores file content", async () => {
   ).toBe("base");
 });
 
-test("revertAuxChange('modified') rejects renamed aux file targets without same-path HEAD entry", async () => {
+test("revertAuxChange('modified') removes renamed aux file targets without same-path HEAD entry", async () => {
   const workspace = await seedProject("revert_aux_renamed");
   await service.mkdirAt({
     projectId: workspace.projectId,
@@ -801,14 +801,12 @@ test("revertAuxChange('modified') rejects renamed aux file targets without same-
     newPath: "/设定/主角.md",
   });
 
-  await expect(
-    service.revertAuxChange({
-      projectId: workspace.projectId,
-      branchId: workspace.branchName,
-      filepath: "aux/origin/设定/主角.md",
-      kind: "modified",
-    }),
-  ).rejects.toThrow("无法恢复辅助信息：HEAD 中不存在该路径。");
+  await service.revertAuxChange({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    filepath: "aux/origin/设定/主角.md",
+    kind: "modified",
+  });
 
   const status = await service.getWorkingTreeStatus(workspace.projectId, workspace.branchName);
   expect(status.hasChanges).toBe(true);
@@ -819,7 +817,7 @@ test("revertAuxChange('modified') rejects renamed aux file targets without same-
       service.ORIGIN_TIMELINE_POINT_ID,
       "/设定/主角.md",
     ),
-  ).not.toBeNull();
+  ).toBeNull();
   expect(
     await service.readAuxByPathAt(
       workspace.projectId,
