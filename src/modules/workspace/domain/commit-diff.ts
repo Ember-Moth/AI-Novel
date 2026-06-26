@@ -3,7 +3,13 @@ import type { SHA1 } from "nano-git";
 import { readFilesAtCommit } from "./git-storage/git-store";
 import { flattenManuscriptNodes, readWorktreeStateFromFiles } from "./git-storage/worktree-state";
 import { getCommit } from "./commits";
-import { compareContentStates, compareTimelineStates } from "./working-tree-status";
+import {
+  buildStructuredAuxChange,
+  compareContentStates,
+  compareTimelineStates,
+  resolveAuxChangeTimelineLabel,
+  shouldIgnoreAuxDiffPath,
+} from "./working-tree-status";
 import type { CommitDiff, WorkingTreePathChangeItem } from "./types";
 
 function pathChangeKind(
@@ -54,6 +60,7 @@ export async function getCommitDiff(projectId: string, commitId: string): Promis
     flattenManuscriptNodes(nextState),
     Object.keys(nextFiles),
   );
+  const timelinePointNameMap = new Map(nextState.timeline.map((point) => [point.id, point.label]));
 
   const allPaths = [...new Set([...Object.keys(previousFiles), ...Object.keys(nextFiles)])];
   for (const filepath of allPaths) {
@@ -63,11 +70,17 @@ export async function getCommitDiff(projectId: string, commitId: string): Promis
     ) {
       continue;
     }
+    if (shouldIgnoreAuxDiffPath(filepath)) {
+      continue;
+    }
     const kind = pathChangeKind(previousFiles[filepath], nextFiles[filepath]);
     if (!kind) {
       continue;
     }
-    areas.aux.changes.push({ label: filepath, kind });
+    areas.aux.changes.push({
+      ...resolveAuxChangeTimelineLabel(buildStructuredAuxChange(filepath), timelinePointNameMap),
+      kind,
+    });
   }
 
   for (const area of Object.values(areas)) {

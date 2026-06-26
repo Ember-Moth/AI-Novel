@@ -17,6 +17,7 @@ import type {
   ContentChangeAspect,
   TimelineChangeAspect,
   WorkingTreeContentChangeItem,
+  WorkingTreePathChangeItem,
   WorkingTreeStatus,
   WorkingTreeTimelineChangeItem,
 } from "./types";
@@ -36,6 +37,76 @@ export function areaForPath(
   if (filepath === "timeline.jsonl") return "timeline";
   if (filepath.startsWith("aux/") || filepath.startsWith("novel-evolver/aux")) return "aux";
   return "content";
+}
+
+function normalizeAuxStoragePath(filepath: string) {
+  return filepath.startsWith("novel-evolver/") ? filepath.slice("novel-evolver/".length) : filepath;
+}
+
+export function shouldIgnoreAuxDiffPath(filepath: string) {
+  const normalizedPath = normalizeAuxStoragePath(filepath);
+  return normalizedPath === "aux/origin/.gitkeep" || normalizedPath.endsWith("/.gitkeep");
+}
+
+export function buildStructuredAuxChange(
+  filepath: string,
+): Omit<WorkingTreePathChangeItem, "kind"> {
+  const normalizedPath = normalizeAuxStoragePath(filepath);
+  const originMatch = normalizedPath.match(/^aux\/origin(?:\/(.*))?$/);
+  if (originMatch) {
+    const path = originMatch[1] ?? "";
+    const basename = path.split("/").at(-1) ?? "";
+    return {
+      label: filepath,
+      path,
+      timelinePointId: ORIGIN_TIMELINE_POINT_ID,
+      timelinePointLabel: "原点",
+      isWhiteout: basename.startsWith(".wh."),
+    };
+  }
+
+  const timelineMatch = normalizedPath.match(/^aux\/timeline\/([^/]+)(?:\/(.*))?$/);
+  if (timelineMatch) {
+    const path = timelineMatch[2] ?? "";
+    const basename = path.split("/").at(-1) ?? "";
+    return {
+      label: filepath,
+      path,
+      timelinePointId: timelineMatch[1]!,
+      timelinePointLabel: timelineMatch[1]!,
+      isWhiteout: basename.startsWith(".wh."),
+    };
+  }
+
+  const basename = normalizedPath.split("/").at(-1) ?? "";
+  return {
+    label: filepath,
+    path: normalizedPath,
+    timelinePointId: null,
+    timelinePointLabel: null,
+    isWhiteout: basename.startsWith(".wh."),
+  };
+}
+
+function buildTimelinePointNameMap(points: TimelinePointLike[]) {
+  const map = new Map<string, string>();
+  for (const point of points) {
+    map.set(point.id, point.label);
+  }
+  return map;
+}
+
+export function resolveAuxChangeTimelineLabel(
+  change: Omit<WorkingTreePathChangeItem, "kind">,
+  timelineLabelMap: Map<string, string>,
+): Omit<WorkingTreePathChangeItem, "kind"> {
+  if (!change.timelinePointId || change.timelinePointId === ORIGIN_TIMELINE_POINT_ID) {
+    return change;
+  }
+  return {
+    ...change,
+    timelinePointLabel: timelineLabelMap.get(change.timelinePointId) ?? change.timelinePointId,
+  };
 }
 
 function buildNodeMap(nodes: FlatContentNode[]) {
@@ -611,6 +682,7 @@ async function getWorkingTreeStatusFromWorkdir(
     flattenManuscriptNodes(state),
     Object.keys(workdirFiles),
   );
+  const timelinePointNameMap = buildTimelinePointNameMap(state.timeline);
 
   // Aux: compare workdir files against HEAD files
   const allPaths = [...new Set([...Object.keys(headFiles), ...Object.keys(workdirFiles)])];
@@ -618,14 +690,24 @@ async function getWorkingTreeStatusFromWorkdir(
     const areaKey = areaForPath(filepath);
     if (areaKey === "content") continue;
     if (areaKey === "timeline") continue;
+    if (shouldIgnoreAuxDiffPath(filepath)) continue;
     const headContent = headFiles[filepath];
     const wdContent = workdirFiles[filepath];
     if (headContent === undefined && wdContent !== undefined) {
-      areas[areaKey].changes.push({ label: filepath, kind: "added" });
+      areas[areaKey].changes.push({
+        ...resolveAuxChangeTimelineLabel(buildStructuredAuxChange(filepath), timelinePointNameMap),
+        kind: "added",
+      });
     } else if (headContent !== undefined && wdContent === undefined) {
-      areas[areaKey].changes.push({ label: filepath, kind: "deleted" });
+      areas[areaKey].changes.push({
+        ...resolveAuxChangeTimelineLabel(buildStructuredAuxChange(filepath), timelinePointNameMap),
+        kind: "deleted",
+      });
     } else if (headContent !== wdContent) {
-      areas[areaKey].changes.push({ label: filepath, kind: "modified" });
+      areas[areaKey].changes.push({
+        ...resolveAuxChangeTimelineLabel(buildStructuredAuxChange(filepath), timelinePointNameMap),
+        kind: "modified",
+      });
     }
   }
 

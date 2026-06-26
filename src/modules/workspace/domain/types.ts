@@ -152,7 +152,11 @@ export type TimelineChangeAspect = "label" | "description" | "order";
 
 export interface WorkingTreePathChangeItem {
   label: string;
+  path: string;
   kind: WorkingTreeChangeKind;
+  timelinePointId?: string | typeof ORIGIN_TIMELINE_POINT_ID | null;
+  timelinePointLabel?: string | null;
+  isWhiteout?: boolean;
 }
 
 export interface WorkingTreeContentChangeItem {

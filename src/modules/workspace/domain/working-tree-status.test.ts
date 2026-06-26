@@ -80,7 +80,17 @@ test("uncommitted edits before first commit appear as additions", async () => {
     label: "Intro",
     changedAspects: ["label", "description", "order"],
   });
-  expect(status.areas.aux.changes.some((change) => change.label.startsWith("aux/"))).toBe(true);
+  expect(status.areas.aux.changes).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        label: "aux/origin/lore/world.md",
+        path: "lore/world.md",
+        timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+        timelinePointLabel: "原点",
+        isWhiteout: false,
+      }),
+    ]),
+  );
 });
 
 test("committed workspace with no edits reports hasChanges false", async () => {
@@ -187,6 +197,23 @@ test("content, timeline and aux edits appear in the diff summary", async () => {
     label: "Middle",
   });
   expect(status.areas.aux.changed).toBe(true);
+  expect(status.areas.aux.changes).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        label: "aux/origin/lore/world.md",
+        path: "lore/world.md",
+        timelinePointLabel: "原点",
+        kind: "deleted",
+      }),
+      expect.objectContaining({
+        label: `aux/timeline/${introPoint.id}/notes/draft.md`,
+        path: "notes/draft.md",
+        timelinePointId: introPoint.id,
+        timelinePointLabel: "Intro",
+        isWhiteout: false,
+      }),
+    ]),
+  );
 });
 
 test("content move and anchor updates are summarized semantically", async () => {

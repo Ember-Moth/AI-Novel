@@ -139,3 +139,61 @@ test("getCommitDiff reports structured timeline changes", async () => {
   });
   expect(change?.changedAspects).toContain("label");
 });
+
+test("getCommitDiff structures aux paths and resolves timeline labels", async () => {
+  const workspace = await seedProject("diff_aux_structured");
+  const point = await workspaceService.createTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    label: "第二幕",
+  });
+  await workspaceService.writeFileAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    path: "/notes.md",
+    content: "origin",
+  });
+  await workspaceService.createCommit({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    message: "base",
+  });
+
+  await workspaceService.deleteAuxNodeAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    path: "/notes.md",
+  });
+  await workspaceService.writeFileAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    timelinePointId: point.id,
+    path: "/notes.md",
+    content: "point",
+  });
+  const second = await workspaceService.createCommit({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    message: "aux",
+  });
+
+  const diff = await workspaceService.getCommitDiff(workspace.projectId, second.id);
+
+  expect(diff.areas.aux.changes).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        label: "aux/origin/notes.md",
+        path: "notes.md",
+        timelinePointLabel: "原点",
+        kind: "deleted",
+      }),
+      expect.objectContaining({
+        label: `aux/timeline/${point.id}/notes.md`,
+        path: "notes.md",
+        timelinePointId: point.id,
+        timelinePointLabel: "第二幕",
+        isWhiteout: false,
+      }),
+    ]),
+  );
+});

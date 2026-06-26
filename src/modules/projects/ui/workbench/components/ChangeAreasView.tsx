@@ -131,10 +131,10 @@ function renderPathArea(changes: ChangeAreas["aux"]["changes"], emphasizeTimelin
       {changes.map((change) => (
         <li
           key={`${change.kind}-${change.label}`}
-          className="flex items-center gap-2 text-sm text-foreground"
+          className="flex items-start gap-2 text-sm text-foreground"
         >
           <WorkingTreeChangeBadge kind={change.kind} />
-          <WorkingTreeChangeLabel label={change.label} emphasizeTimeline={emphasizeTimeline} />
+          <WorkingTreeChangeLabel change={change} emphasizeTimeline={emphasizeTimeline} />
         </li>
       ))}
     </ul>
@@ -142,29 +142,59 @@ function renderPathArea(changes: ChangeAreas["aux"]["changes"], emphasizeTimelin
 }
 
 function WorkingTreeChangeLabel({
-  label,
+  change,
   emphasizeTimeline,
 }: {
-  label: string;
+  change: ChangeAreas["aux"]["changes"][number];
   emphasizeTimeline: boolean;
 }) {
+  const label = change.label;
   if (!emphasizeTimeline) {
     return <span className="min-w-0 truncate">{label}</span>;
   }
 
-  const timelineMarkerIndex = label.lastIndexOf("@");
-  if (timelineMarkerIndex < 0) {
-    return <span className="min-w-0 truncate">{label}</span>;
-  }
-
-  const path = label.slice(0, timelineMarkerIndex);
-  const timelineRef = label.slice(timelineMarkerIndex);
+  const rawPath = change.path || label;
+  const segments = rawPath.split("/").filter(Boolean);
+  const filename = segments.at(-1) ?? rawPath;
+  const parents = segments.slice(0, -1);
+  const isWhiteout = change.isWhiteout === true && filename.startsWith(".wh.");
+  const whiteoutTarget = isWhiteout ? filename.slice(4) : null;
+  const timelineLabel = change.timelinePointLabel ?? change.timelinePointId ?? "辅助信息";
 
   return (
-    <span className="min-w-0 truncate">
-      {path}
-      <span className="text-foreground-muted italic">{timelineRef}</span>
-    </span>
+    <div className="min-w-0">
+      <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+        {parents.map((segment, index) => (
+          <span
+            key={`${change.label}-${segment}-${index}`}
+            className="flex min-w-0 shrink items-center gap-1"
+          >
+            {index > 0 ? (
+              <span className="shrink-0 text-sm text-foreground-muted/55">{"/"}</span>
+            ) : null}
+            <span className="min-w-0 truncate text-sm text-foreground-muted">{segment}</span>
+          </span>
+        ))}
+        {parents.length > 0 ? (
+          <span className="shrink-0 text-sm text-foreground-muted/55">{"/"}</span>
+        ) : null}
+        {isWhiteout ? (
+          <>
+            <span className="shrink-0 rounded-sm border border-red-500/20 bg-red-500/10 px-1 py-0.5 text-[10px] leading-none text-red-200/85">
+              .wh
+            </span>
+            <span className="min-w-0 truncate font-medium text-foreground">
+              {whiteoutTarget || filename}
+            </span>
+          </>
+        ) : (
+          <span className="min-w-0 truncate font-medium text-foreground">{filename || "/"}</span>
+        )}
+      </div>
+      <div className="mt-1">
+        <SemanticPlacementChip label="位于" value={timelineLabel} tone="sky" />
+      </div>
+    </div>
   );
 }
 
