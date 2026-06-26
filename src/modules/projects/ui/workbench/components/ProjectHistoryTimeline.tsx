@@ -203,11 +203,6 @@ function CommitRowItem({
       <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-1.5">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-[13px] leading-4.5 text-foreground">{commitSubject}</span>
-          {isHead ? (
-            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-accent-foreground">
-              HEAD
-            </span>
-          ) : null}
           {isMerge ? (
             <span className="icon-[material-symbols--merge] shrink-0 text-sm text-foreground-muted" />
           ) : null}
