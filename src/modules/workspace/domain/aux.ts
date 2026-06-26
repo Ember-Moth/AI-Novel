@@ -356,6 +356,14 @@ async function currentLayerDeletedEntries(input: {
   });
 }
 
+function currentLayerTouchedPaths(wd: VirtualWorkdir, pointId: string | null): ReadonlySet<string> {
+  if (pointId == null) {
+    return new Set();
+  }
+
+  return new Set(readLayerEntriesFromWorkdir(wd, pointId).map((entry) => entry.path));
+}
+
 export async function mkdirAt(input: {
   projectId: string;
   workspaceId: string;
@@ -643,6 +651,9 @@ export async function exportAuxSnapshotTree(
     pointId: normalizedPointId,
     snapshot,
   } = await buildSnapshot(projectId, workspaceId, pointId);
+  const wd = resolveWorkdir(projectId, workspaceId);
+  invariant(wd, "工作目录未初始化");
+  const touchedPaths = currentLayerTouchedPaths(wd, normalizedPointId);
   const deletedEntries = await currentLayerDeletedEntries({
     projectId,
     workspaceId,
@@ -657,7 +668,7 @@ export async function exportAuxSnapshotTree(
       symlinkTargetPath: node.symlinkTargetPath,
       timelinePointId: node.timelinePointId,
       path: node.path,
-      hasTimelineChange: node.timelinePointId !== ORIGIN_TIMELINE_POINT_ID,
+      hasTimelineChange: touchedPaths.has(node.path),
       overlayStatus: "visible" as const,
       children: node.nodeType === "dir" ? build(node.path) : [],
     }));

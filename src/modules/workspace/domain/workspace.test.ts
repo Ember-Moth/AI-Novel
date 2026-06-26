@@ -655,6 +655,57 @@ test("aux snapshot marks visible nodes with layers at the active timeline point"
   expect(changesByPath.get("/cast.md")).toBe(true);
 });
 
+test("aux snapshot marks inherited earlier timeline nodes as unchanged at the current point", async () => {
+  const workspace = await seedProject("project_aux_snapshot_inherited_layer_flags");
+
+  const firstPoint = await service.createTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    label: "First point",
+  });
+  await service.mkdirAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    timelinePointId: firstPoint.id,
+    path: "/state",
+  });
+  await service.writeFileAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    timelinePointId: firstPoint.id,
+    path: "/state/location.md",
+    content: "home",
+  });
+
+  const secondPoint = await service.createTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    afterPointId: firstPoint.id,
+    label: "Second point",
+  });
+  await service.writeFileAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    timelinePointId: secondPoint.id,
+    path: "/notes.md",
+    content: "delta",
+  });
+
+  const snapshot = await service.exportAuxSnapshotTree(
+    workspace.projectId,
+    workspace.id,
+    secondPoint.id,
+  );
+  const changesByPath = new Map(
+    flattenAuxNodes(snapshot.nodes).map((node) => [node.path, node.hasTimelineChange]),
+  );
+
+  expect(changesByPath.get("/state")).toBe(false);
+  expect(changesByPath.get("/state/location.md")).toBe(false);
+  expect(changesByPath.get("/notes.md")).toBe(true);
+});
+
 test("aux snapshot shows deleted folder tombstones without descendants", async () => {
   const workspace = await seedProject("project_aux_deleted_ghosts");
 
