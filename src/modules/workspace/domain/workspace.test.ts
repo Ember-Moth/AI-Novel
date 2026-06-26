@@ -201,6 +201,56 @@ test("symlink stores a logical aux path target and does not follow target moves"
   ).toEqual(["home", "villa"]);
 });
 
+test("moving an inherited aux file across directories writes the whiteout at the source path", async () => {
+  const workspace = await seedProject("project_aux_move_inherited_whiteout_path");
+
+  await service.mkdirAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    path: "/设定",
+  });
+  await service.mkdirAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    path: "/资料库",
+  });
+  await service.writeFileAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    timelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
+    path: "/设定/角色.md",
+    content: "主角设定",
+  });
+  const point = await service.createTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    label: "move inherited file",
+  });
+
+  await service.moveAuxNodeAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    timelinePointId: point.id,
+    path: "/设定/角色.md",
+    newPath: "/资料库/角色.md",
+  });
+
+  const wd = wdFor(workspace);
+  expect(wd?.exists(`aux/timeline/${point.id}/设定/.wh.角色.md`) ?? false).toBe(true);
+  expect(wd?.exists(`aux/timeline/${point.id}/资料库/.wh.角色.md`) ?? false).toBe(false);
+  expect(wd?.exists(`aux/timeline/${point.id}/资料库/角色.md`) ?? false).toBe(true);
+  expect(
+    await service.readAuxByPathAt(workspace.projectId, workspace.id, point.id, "/设定/角色.md"),
+  ).toBeNull();
+  expect(
+    (await service.readAuxByPathAt(workspace.projectId, workspace.id, point.id, "/资料库/角色.md"))
+      ?.content,
+  ).toBe("主角设定");
+});
+
 test("retargetAuxSymlinkAt updates the exported symlink target path", async () => {
   const workspace = await seedProject("project_symlink_retarget");
 

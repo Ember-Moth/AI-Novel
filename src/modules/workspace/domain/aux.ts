@@ -477,7 +477,7 @@ export async function moveAuxNodeAt(input: {
     if (sourceRawPointId === pointId) {
       wd.delete(fromWp, { force: true });
     } else {
-      const whiteoutDir = posix.dirname(toWp);
+      const whiteoutDir = posix.dirname(auxWorkdirRelPath(pointId, sourcePath));
       const basename = posix.basename(sourcePath);
       ensureWorkdirDir(wd, whiteoutDir);
       wd.writeFile(`${whiteoutDir}/.wh.${basename}`, Buffer.from(""));
