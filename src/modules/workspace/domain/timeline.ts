@@ -1,7 +1,9 @@
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
 import { createId, invariant } from "@/shared/lib/domain";
 
+import { getBranch, getBranchHeadCommitId } from "./branches";
 import { getWorkspace, touchWorkspaceMeta } from "./lifecycle";
+import { getWorkspaceForBranchId } from "./lifecycle";
 import { getWorkdirForBranch, getBranchMapping } from "./git-storage/git-store";
 import type { TimelinePointRef, TimelinePointView } from "./types";
 import {
@@ -14,6 +16,9 @@ import {
 } from "./git-storage/worktree-state";
 import type { WorktreeState } from "./git-storage/worktree-state";
 import { listAnchoredTimelinePointIds } from "./content";
+import { readFilesAtCommit } from "./git-storage/git-store";
+import { readWorktreeStateFromFiles } from "./git-storage/worktree-state";
+import type { SHA1 } from "nano-git";
 
 function touchWorkspaceAsync(projectId: string, workspaceId: string) {
   touchWorkspaceMeta(projectId, workspaceId);
@@ -194,6 +199,120 @@ export async function deleteTimelinePoint(
     wd.delete(`${AUX_TIMELINE_DIR}/${pointId}`, { force: true });
   }
   writeWorktreeStateToWorkdir(wd, state);
+  touchWorkspaceAsync(workspace.projectId, workspace.id);
+}
+
+function findTimelinePointIndex(state: WorktreeState, pointId: string) {
+  return orderTimelineRows(state.timeline).findIndex((point) => point.id === pointId);
+}
+
+function findTimelineAnchorAfterPointId(
+  headState: WorktreeState,
+  pointId: string,
+  currentState: WorktreeState,
+) {
+  const orderedHead = orderTimelineRows(headState.timeline);
+  const headIndex = orderedHead.findIndex((point) => point.id === pointId);
+  if (headIndex <= 0) {
+    return ORIGIN_TIMELINE_POINT_ID;
+  }
+
+  const currentIds = new Set(currentState.timeline.map((point) => point.id));
+  for (let index = headIndex - 1; index >= 0; index -= 1) {
+    const candidate = orderedHead[index];
+    if (candidate && currentIds.has(candidate.id)) {
+      return candidate.id;
+    }
+  }
+  return ORIGIN_TIMELINE_POINT_ID;
+}
+
+export async function revertTimelineChange(input: {
+  projectId: string;
+  branchId: string;
+  pointId: string;
+  kind: "added" | "deleted" | "modified";
+}) {
+  invariant(input.pointId !== ORIGIN_TIMELINE_POINT_ID, "无法恢复原点时间点。");
+  const branch = getBranch(input.projectId, input.branchId);
+  const headCommitId = getBranchHeadCommitId(input.projectId, branch.name);
+  const workspace = getWorkspaceForBranchId(input.projectId, branch.name);
+  invariant(workspace, "该分支没有关联的工作区。");
+
+  const state = readWorkdirState(workspace.projectId, workspace.id);
+  const previousFiles = headCommitId
+    ? readFilesAtCommit({ projectId: input.projectId, commitId: headCommitId as SHA1 })
+    : {};
+  const previousState = readWorktreeStateFromFiles(previousFiles);
+
+  if (input.kind === "added") {
+    const wd = resolveWorkdir(workspace.projectId, workspace.id);
+    invariant(wd, "工作目录未初始化");
+    invariant(
+      !(await listAnchoredTimelinePointIds(input.projectId, workspace.id)).has(input.pointId),
+      "无法撤回新增时间点：仍有章节锚定到该时间点。",
+    );
+    const auxTimelineDir = `${AUX_TIMELINE_DIR}/${input.pointId}`;
+    invariant(
+      !wd.exists(auxTimelineDir) || wd.readdir(auxTimelineDir).length === 0,
+      "无法撤回新增时间点：该时间点仍有辅助信息变更。",
+    );
+    const point = state.timeline.find((item) => item.id === input.pointId);
+    invariant(point, "未找到时间点。");
+    const successor = state.timeline.find((item) => item.prevPointId === point.id);
+    if (successor) {
+      successor.prevPointId = point.prevPointId;
+    }
+    state.timeline = state.timeline.filter((item) => item.id !== input.pointId);
+  } else if (input.kind === "deleted") {
+    const previousPoint = previousState.timeline.find((item) => item.id === input.pointId);
+    invariant(previousPoint, "无法恢复时间点：HEAD 中不存在该时间点。");
+    invariant(
+      !state.timeline.some((item) => item.id === input.pointId),
+      "无法恢复时间点：当前工作区已存在同名时间点。",
+    );
+    const afterPointId = findTimelineAnchorAfterPointId(previousState, input.pointId, state);
+    const successor = state.timeline.find(
+      (item) =>
+        item.prevPointId === (afterPointId === ORIGIN_TIMELINE_POINT_ID ? null : afterPointId),
+    );
+    state.timeline.push({
+      ...previousPoint,
+      prevPointId: afterPointId === ORIGIN_TIMELINE_POINT_ID ? null : afterPointId,
+    });
+    if (successor && successor.id !== previousPoint.id) {
+      successor.prevPointId = previousPoint.id;
+    }
+  } else {
+    const previousPoint = previousState.timeline.find((item) => item.id === input.pointId);
+    const currentPoint = state.timeline.find((item) => item.id === input.pointId);
+    invariant(previousPoint, "无法恢复时间点：HEAD 中不存在该时间点。");
+    invariant(currentPoint, "未找到时间点。");
+
+    currentPoint.label = previousPoint.label;
+    currentPoint.description = previousPoint.description;
+
+    const headOrder = findTimelinePointIndex(previousState, input.pointId);
+    const currentOrder = findTimelinePointIndex(state, input.pointId);
+    if (headOrder !== currentOrder) {
+      const oldSuccessor = state.timeline.find((item) => item.prevPointId === currentPoint.id);
+      if (oldSuccessor) {
+        oldSuccessor.prevPointId = currentPoint.prevPointId;
+      }
+      const afterPointId = findTimelineAnchorAfterPointId(previousState, input.pointId, state);
+      const normalizedAfterPointId =
+        afterPointId === ORIGIN_TIMELINE_POINT_ID ? null : afterPointId;
+      const targetSuccessor = state.timeline.find(
+        (item) => item.prevPointId === normalizedAfterPointId,
+      );
+      currentPoint.prevPointId = normalizedAfterPointId;
+      if (targetSuccessor && targetSuccessor.id !== currentPoint.id) {
+        targetSuccessor.prevPointId = currentPoint.id;
+      }
+    }
+  }
+
+  writeWorkdirState(workspace.projectId, workspace.id, state);
   touchWorkspaceAsync(workspace.projectId, workspace.id);
 }
 

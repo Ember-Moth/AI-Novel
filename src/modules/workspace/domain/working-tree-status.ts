@@ -7,18 +7,27 @@ import { readFilesAtCommit, getBranchMapping } from "./git-storage/git-store";
 import { getWorkdirForBranch } from "./git-storage/git-store";
 import {
   flattenManuscriptNodes,
+  orderTimelineRows,
   pointIdOrOrigin,
   readWorktreeStateFromFiles,
   readWorktreeStateFromWorkdir,
 } from "./git-storage/worktree-state";
 import { getWorkspaceForBranchId } from "./lifecycle";
-import type { ContentChangeAspect, WorkingTreeContentChangeItem, WorkingTreeStatus } from "./types";
+import type {
+  ContentChangeAspect,
+  TimelineChangeAspect,
+  WorkingTreeContentChangeItem,
+  WorkingTreeStatus,
+  WorkingTreeTimelineChangeItem,
+} from "./types";
 
 type FlatContentNode = ReturnType<typeof flattenManuscriptNodes>[number];
 
 type TimelinePointLike = {
   id: string;
   label: string;
+  description?: string | null;
+  prevPointId?: string | null;
 };
 
 export function areaForPath(
@@ -35,6 +44,23 @@ function buildNodeMap(nodes: FlatContentNode[]) {
 
 function buildTimelineLabelMap(points: TimelinePointLike[]) {
   return new Map(points.map((point) => [point.id, point.label] as const));
+}
+
+function buildTimelineRelativeOrderMap(points: TimelinePointLike[], commonIds: Set<string>) {
+  const order = new Map<string, number>();
+  orderTimelineRows(
+    points.map((point) => ({
+      id: point.id,
+      label: point.label,
+      description: point.description ?? null,
+      prevPointId: point.prevPointId ?? null,
+    })),
+  )
+    .filter((point) => commonIds.has(point.id))
+    .forEach((point, index) => {
+      order.set(point.id, index);
+    });
+  return order;
 }
 
 /**
@@ -199,6 +225,154 @@ function resolveTimelinePointLabel(
     return "原点";
   }
   return labelMap.get(pointId) ?? pointId;
+}
+
+function resolveTimelinePrevLabel(
+  labelMap: Map<string, string>,
+  pointId: string | typeof ORIGIN_TIMELINE_POINT_ID | null,
+) {
+  return resolveTimelinePointLabel(labelMap, pointId);
+}
+
+export function compareTimelineStates(
+  previousTimeline: TimelinePointLike[],
+  nextTimeline: TimelinePointLike[],
+  nextNodes: FlatContentNode[],
+  nextAuxPaths: string[] = [],
+): WorkingTreeTimelineChangeItem[] {
+  const previousOrdered = orderTimelineRows(
+    previousTimeline.map((point) => ({
+      id: point.id,
+      label: point.label,
+      description: point.description ?? null,
+      prevPointId: point.prevPointId ?? null,
+    })),
+  );
+  const nextOrdered = orderTimelineRows(
+    nextTimeline.map((point) => ({
+      id: point.id,
+      label: point.label,
+      description: point.description ?? null,
+      prevPointId: point.prevPointId ?? null,
+    })),
+  );
+  const previousById = new Map(previousOrdered.map((point) => [point.id, point] as const));
+  const nextById = new Map(nextOrdered.map((point) => [point.id, point] as const));
+  const previousLabels = buildTimelineLabelMap(previousOrdered);
+  const nextLabels = buildTimelineLabelMap(nextOrdered);
+  const anchoredPointIds = new Set(
+    nextNodes
+      .map((node) => pointIdOrOrigin(node.anchorTimelinePointId))
+      .filter((pointId) => pointId !== ORIGIN_TIMELINE_POINT_ID),
+  );
+  const auxPointIds = new Set(
+    nextAuxPaths.flatMap((path) => {
+      const match = path.match(/^aux\/timeline\/([^/]+)(?:\/|$)/);
+      return match?.[1] ? [match[1]] : [];
+    }),
+  );
+
+  const commonIds = new Set<string>();
+  for (const id of previousById.keys()) {
+    if (nextById.has(id)) {
+      commonIds.add(id);
+    }
+  }
+  const previousRelativeOrder = buildTimelineRelativeOrderMap(previousOrdered, commonIds);
+  const nextRelativeOrder = buildTimelineRelativeOrderMap(nextOrdered, commonIds);
+  const allIds = [...new Set([...previousById.keys(), ...nextById.keys()])].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const changes: WorkingTreeTimelineChangeItem[] = [];
+
+  for (const pointId of allIds) {
+    const previousPoint = previousById.get(pointId);
+    const nextPoint = nextById.get(pointId);
+
+    if (!previousPoint && nextPoint) {
+      const normalizedPrevPointId = pointIdOrOrigin(nextPoint.prevPointId);
+      changes.push({
+        pointId,
+        label: nextPoint.label,
+        kind: "added",
+        description: nextPoint.description ?? null,
+        prevPointId: normalizedPrevPointId,
+        prevPointLabel: resolveTimelinePrevLabel(nextLabels, normalizedPrevPointId),
+        changedAspects: ["label", "description", "order"],
+        previousLabel: null,
+        previousDescription: null,
+        previousPrevPointId: null,
+        previousPrevPointLabel: null,
+        revertable: !anchoredPointIds.has(pointId) && !auxPointIds.has(pointId),
+      });
+      continue;
+    }
+
+    if (previousPoint && !nextPoint) {
+      const normalizedPrevPointId = pointIdOrOrigin(previousPoint.prevPointId);
+      changes.push({
+        pointId,
+        label: previousPoint.label,
+        kind: "deleted",
+        description: previousPoint.description ?? null,
+        prevPointId: normalizedPrevPointId,
+        prevPointLabel: resolveTimelinePrevLabel(previousLabels, normalizedPrevPointId),
+        changedAspects: ["label", "description", "order"],
+        previousLabel: previousPoint.label,
+        previousDescription: previousPoint.description ?? null,
+        previousPrevPointId: normalizedPrevPointId,
+        previousPrevPointLabel: resolveTimelinePrevLabel(previousLabels, normalizedPrevPointId),
+        revertable: true,
+      });
+      continue;
+    }
+
+    if (!previousPoint || !nextPoint) {
+      continue;
+    }
+
+    const changedAspects: TimelineChangeAspect[] = [];
+    if (previousPoint.label !== nextPoint.label) {
+      changedAspects.push("label");
+    }
+    if ((previousPoint.description ?? null) !== (nextPoint.description ?? null)) {
+      changedAspects.push("description");
+    }
+    if ((previousRelativeOrder.get(pointId) ?? -1) !== (nextRelativeOrder.get(pointId) ?? -1)) {
+      changedAspects.push("order");
+    }
+    if (changedAspects.length === 0) {
+      continue;
+    }
+
+    const normalizedPrevPointId = pointIdOrOrigin(nextPoint.prevPointId);
+    const normalizedPreviousPrevPointId = pointIdOrOrigin(previousPoint.prevPointId);
+    changes.push({
+      pointId,
+      label: nextPoint.label,
+      kind: "modified",
+      description: nextPoint.description ?? null,
+      prevPointId: normalizedPrevPointId,
+      prevPointLabel: resolveTimelinePrevLabel(nextLabels, normalizedPrevPointId),
+      changedAspects,
+      previousLabel: previousPoint.label,
+      previousDescription: previousPoint.description ?? null,
+      previousPrevPointId: normalizedPreviousPrevPointId,
+      previousPrevPointLabel: resolveTimelinePrevLabel(
+        previousLabels,
+        normalizedPreviousPrevPointId,
+      ),
+      revertable: true,
+    });
+  }
+
+  return changes.sort((a, b) => {
+    if (a.kind !== b.kind) {
+      const rank = { modified: 0, added: 1, deleted: 2 } as const;
+      return rank[a.kind] - rank[b.kind];
+    }
+    return a.label.localeCompare(b.label);
+  });
 }
 
 export function compareContentStates(
@@ -430,16 +604,20 @@ async function getWorkingTreeStatusFromWorkdir(
     headState.timeline,
     state.timeline,
   );
-
-  // Timeline & aux: compare workdir files against HEAD files
   const workdirFiles = collectWorkdirFiles(workdir);
-  // 无 HEAD 时，timeline.jsonl 若无实际数据则不算变更
-  const skipTimelineFile = !headCommitId && state.timeline.length === 0;
+  areas.timeline.changes = compareTimelineStates(
+    headState.timeline,
+    state.timeline,
+    flattenManuscriptNodes(state),
+    Object.keys(workdirFiles),
+  );
+
+  // Aux: compare workdir files against HEAD files
   const allPaths = [...new Set([...Object.keys(headFiles), ...Object.keys(workdirFiles)])];
   for (const filepath of allPaths) {
     const areaKey = areaForPath(filepath);
     if (areaKey === "content") continue;
-    if (skipTimelineFile && filepath === "timeline.jsonl") continue;
+    if (areaKey === "timeline") continue;
     const headContent = headFiles[filepath];
     const wdContent = workdirFiles[filepath];
     if (headContent === undefined && wdContent !== undefined) {

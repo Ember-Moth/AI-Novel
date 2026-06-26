@@ -14,6 +14,7 @@ export function WorkingTreeStatusPanel({
   isDiscardingChanges,
   onDiscardChanges,
   onRevertContentChange,
+  onRevertTimelineChange,
 }: {
   status: WorkingTreeStatus | null;
   loading: boolean;
@@ -25,6 +26,10 @@ export function WorkingTreeStatusPanel({
   onRevertContentChange?: (
     nodeId: string,
     kind: ChangeAreas["content"]["changes"][number]["kind"],
+  ) => void;
+  onRevertTimelineChange?: (
+    pointId: string,
+    kind: ChangeAreas["timeline"]["changes"][number]["kind"],
   ) => void;
 }) {
   return (
@@ -68,7 +73,11 @@ export function WorkingTreeStatusPanel({
               : "工作区与 HEAD 一致，无未提交变更。"}
           </p>
         ) : (
-          <ChangeAreasView areas={status.areas} onRevertContentChange={onRevertContentChange} />
+          <ChangeAreasView
+            areas={status.areas}
+            onRevertContentChange={onRevertContentChange}
+            onRevertTimelineChange={onRevertTimelineChange}
+          />
         )}
       </div>
     </section>

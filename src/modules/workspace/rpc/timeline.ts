@@ -6,6 +6,7 @@ import {
   listTimelinePoints,
   moveTimelinePoint,
   ORIGIN_TIMELINE_POINT_ID,
+  revertTimelineChange,
   updateTimelinePoint,
 } from "@/modules/workspace/domain";
 import { rpcTags, type RpcTagList } from "@/rpc/tags";
@@ -73,3 +74,16 @@ export const update = mutation<
   invalidate: (input) => [rpcTags.timelineList(input.workspaceId)],
   handler: async (input) => await updateTimelinePoint(input),
 });
+
+export const revert = mutation<Parameters<typeof revertTimelineChange>[0], void, RpcTagList>(
+  async (input, ctx) => {
+    await revertTimelineChange(input);
+    const workspaceId = input.branchId;
+    ctx.invalidate(
+      rpcTags.timelineList(workspaceId),
+      rpcTags.contentTree(workspaceId),
+      rpcTags.auxWorkspace(workspaceId),
+      rpcTags.commitHistory(input.branchId),
+    );
+  },
+);

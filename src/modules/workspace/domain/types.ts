@@ -148,6 +148,7 @@ export interface ResolvedAuxSnapshotNode extends ResolvedAuxNode {
 export type WorkingTreeChangeKind = "added" | "modified" | "deleted";
 
 export type ContentChangeAspect = "title" | "body" | "parent" | "order" | "anchor";
+export type TimelineChangeAspect = "label" | "description" | "order";
 
 export interface WorkingTreePathChangeItem {
   label: string;
@@ -179,6 +180,21 @@ export interface WorkingTreeContentChangeItem {
   revertable: boolean;
 }
 
+export interface WorkingTreeTimelineChangeItem {
+  label: string;
+  kind: WorkingTreeChangeKind;
+  pointId: string;
+  description: string | null;
+  prevPointId: string | typeof ORIGIN_TIMELINE_POINT_ID | null;
+  prevPointLabel: string | null;
+  changedAspects: TimelineChangeAspect[];
+  previousLabel: string | null;
+  previousDescription: string | null;
+  previousPrevPointId: string | typeof ORIGIN_TIMELINE_POINT_ID | null;
+  previousPrevPointLabel: string | null;
+  revertable: boolean;
+}
+
 export interface WorkingTreeAreaSummary<TChange = WorkingTreePathChangeItem> {
   changed: boolean;
   changes: TChange[];
@@ -189,7 +205,7 @@ export interface WorkingTreeStatus {
   headCommitId: string | null;
   areas: {
     content: WorkingTreeAreaSummary<WorkingTreeContentChangeItem>;
-    timeline: WorkingTreeAreaSummary<WorkingTreePathChangeItem>;
+    timeline: WorkingTreeAreaSummary<WorkingTreeTimelineChangeItem>;
     aux: WorkingTreeAreaSummary<WorkingTreePathChangeItem>;
   };
 }
@@ -203,7 +219,7 @@ export interface CommitDiff {
   hasChanges: boolean;
   areas: {
     content: WorkingTreeAreaSummary<WorkingTreeContentChangeItem>;
-    timeline: WorkingTreeAreaSummary<WorkingTreePathChangeItem>;
+    timeline: WorkingTreeAreaSummary<WorkingTreeTimelineChangeItem>;
     aux: WorkingTreeAreaSummary<WorkingTreePathChangeItem>;
   };
 }

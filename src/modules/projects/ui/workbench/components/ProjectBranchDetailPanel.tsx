@@ -213,6 +213,7 @@ function WorkingChangesDetail({ workspaceMissing }: { workspaceMissing: boolean 
         isDiscardingChanges={commitFeature.isDiscardingChanges}
         onDiscardChanges={() => void commitFeature.handleDiscardChanges()}
         onRevertContentChange={revertFeature.handleRevertContentChange}
+        onRevertTimelineChange={revertFeature.handleRevertTimelineChange}
       />
 
       <form

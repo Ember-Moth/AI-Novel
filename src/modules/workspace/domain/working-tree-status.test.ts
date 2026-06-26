@@ -74,9 +74,11 @@ test("uncommitted edits before first commit appear as additions", async () => {
     previousAnchorTimelinePointLabel: null,
     revertable: true,
   });
-  expect(status.areas.timeline.changes).toContainEqual({
-    label: "timeline.jsonl",
+  expect(status.areas.timeline.changes).toHaveLength(1);
+  expect(status.areas.timeline.changes[0]).toMatchObject({
     kind: "added",
+    label: "Intro",
+    changedAspects: ["label", "description", "order"],
   });
   expect(status.areas.aux.changes.some((change) => change.label.startsWith("aux/"))).toBe(true);
 });
@@ -179,9 +181,10 @@ test("content, timeline and aux edits appear in the diff summary", async () => {
     bodyCharDelta: { added: 8, removed: 3 },
   });
   expect(chapterChange?.changedAspects).toEqual(expect.arrayContaining(["title", "body"]));
-  expect(status.areas.timeline.changes).toContainEqual({
-    label: "timeline.jsonl",
-    kind: "modified",
+  expect(status.areas.timeline.changes).toHaveLength(1);
+  expect(status.areas.timeline.changes[0]).toMatchObject({
+    kind: "added",
+    label: "Middle",
   });
   expect(status.areas.aux.changed).toBe(true);
 });
@@ -375,6 +378,87 @@ test("truly swapping two nodes marks both as order-changed", async () => {
   expect(changeB).toBeDefined();
   expect(changeA!.changedAspects).toContain("order");
   expect(changeB!.changedAspects).toContain("order");
+});
+
+test("inserting a new timeline point before existing ones does not mark them as order-changed", async () => {
+  const workspace = await seedProject("status_timeline_order_noise");
+  const pointA = await service.createTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    label: "A",
+  });
+  const pointB = await service.createTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    afterPointId: pointA.id,
+    label: "B",
+  });
+  await service.createCommit({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    message: "base",
+  });
+
+  await service.createTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    label: "X",
+  });
+
+  const status = await service.getWorkingTreeStatus(workspace.projectId, workspace.branchName);
+  const changeA = status.areas.timeline.changes.find((change) => change.pointId === pointA.id);
+  const changeB = status.areas.timeline.changes.find((change) => change.pointId === pointB.id);
+
+  expect(changeA).toBeUndefined();
+  expect(changeB).toBeUndefined();
+});
+
+test("revertTimelineChange('modified') restores label, description and order", async () => {
+  const workspace = await seedProject("revert_timeline_modified");
+  const pointA = await service.createTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    label: "A",
+    description: "desc-a",
+  });
+  const pointB = await service.createTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    afterPointId: pointA.id,
+    label: "B",
+    description: "desc-b",
+  });
+  await service.createCommit({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    message: "base",
+  });
+
+  await service.updateTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    pointId: pointB.id,
+    label: "B2",
+    description: "desc-b2",
+  });
+  await service.moveTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    pointId: pointB.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+  });
+
+  await service.revertTimelineChange({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    pointId: pointB.id,
+    kind: "modified",
+  });
+
+  const status = await service.getWorkingTreeStatus(workspace.projectId, workspace.branchName);
+  expect(status.areas.timeline.changes).toEqual([]);
+  expect(status.hasChanges).toBe(false);
 });
 
 test("revertContentChange('modified') restores title and body", async () => {

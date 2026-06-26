@@ -26,11 +26,16 @@ const workingTreeAreaLabels = {
 export function ChangeAreasView({
   areas,
   onRevertContentChange,
+  onRevertTimelineChange,
 }: {
   areas: ChangeAreas;
   onRevertContentChange?: (
     nodeId: string,
     kind: ChangeAreas["content"]["changes"][number]["kind"],
+  ) => void;
+  onRevertTimelineChange?: (
+    pointId: string,
+    kind: ChangeAreas["timeline"]["changes"][number]["kind"],
   ) => void;
 }) {
   return (
@@ -49,7 +54,9 @@ export function ChangeAreasView({
               </div>
               {areaKey === "content"
                 ? renderContentArea(areas.content.changes, onRevertContentChange)
-                : renderPathArea(area.changes, areaKey === "aux")}
+                : areaKey === "timeline"
+                  ? renderTimelineArea(areas.timeline.changes, onRevertTimelineChange)
+                  : renderPathArea(areas.aux.changes, true)}
             </div>
           );
         },
@@ -75,7 +82,7 @@ function renderContentArea(
           <div className="flex items-center gap-2">
             <WorkingTreeChangeBadge
               kind={change.kind}
-              nodeId={change.nodeId}
+              itemId={change.nodeId}
               revertable={change.revertable}
               onRevert={onRevertContentChange}
             />
@@ -88,7 +95,37 @@ function renderContentArea(
   );
 }
 
-function renderPathArea(changes: ChangeAreas["timeline"]["changes"], emphasizeTimeline: boolean) {
+function renderTimelineArea(
+  changes: ChangeAreas["timeline"]["changes"],
+  onRevertTimelineChange?: (
+    pointId: string,
+    kind: ChangeAreas["timeline"]["changes"][number]["kind"],
+  ) => void,
+) {
+  return (
+    <ul className="mt-1 space-y-1">
+      {changes.map((change) => (
+        <li
+          key={`timeline-${change.kind}-${change.pointId}`}
+          className="flex flex-col gap-1 text-sm text-foreground"
+        >
+          <div className="flex items-center gap-2">
+            <WorkingTreeChangeBadge
+              kind={change.kind}
+              itemId={change.pointId}
+              revertable={change.revertable}
+              onRevert={onRevertTimelineChange}
+            />
+            <span className="min-w-0 truncate font-medium">{change.label}</span>
+          </div>
+          <WorkingTreeTimelineChangeDetails change={change} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function renderPathArea(changes: ChangeAreas["aux"]["changes"], emphasizeTimeline: boolean) {
   return (
     <ul className="mt-1 space-y-1">
       {changes.map((change) => (
@@ -133,14 +170,14 @@ function WorkingTreeChangeLabel({
 
 function WorkingTreeChangeBadge({
   kind,
-  nodeId,
+  itemId,
   revertable,
   onRevert,
 }: {
   kind: ChangeAreas["timeline"]["changes"][number]["kind"];
-  nodeId?: string;
+  itemId?: string;
   revertable?: boolean;
-  onRevert?: (nodeId: string, kind: ChangeAreas["content"]["changes"][number]["kind"]) => void;
+  onRevert?: (itemId: string, kind: ChangeAreas["content"]["changes"][number]["kind"]) => void;
 }) {
   const label = workingTreeChangeKindLabels[kind];
   const className =
@@ -152,7 +189,7 @@ function WorkingTreeChangeBadge({
 
   const revertLabel = kind === "added" ? "删除" : kind === "deleted" ? "恢复" : "恢复";
   const canRevert = revertable !== false;
-  const hasRevert = typeof nodeId === "string" && typeof onRevert === "function";
+  const hasRevert = typeof itemId === "string" && typeof onRevert === "function";
 
   return (
     <span
@@ -171,7 +208,7 @@ function WorkingTreeChangeBadge({
           onClick={(event) => {
             event.stopPropagation();
             if (canRevert) {
-              onRevert(nodeId, kind);
+              onRevert(itemId, kind);
             }
           }}
           className={cn(
@@ -184,6 +221,79 @@ function WorkingTreeChangeBadge({
         </button>
       ) : null}
     </span>
+  );
+}
+
+function WorkingTreeTimelineChangeDetails({
+  change,
+}: {
+  change: ChangeAreas["timeline"]["changes"][number];
+}) {
+  if (change.kind === "added") {
+    return (
+      <div className="ml-5 flex flex-wrap items-center gap-1.5 text-[11px] leading-relaxed text-foreground-muted">
+        {change.prevPointLabel ? (
+          <SemanticPlacementChip label="插入到" value={change.prevPointLabel} tone="sky" />
+        ) : null}
+        {change.description ? (
+          <SemanticPlacementChip label="描述" value={change.description} tone="emerald" />
+        ) : null}
+      </div>
+    );
+  }
+
+  if (change.kind === "deleted") {
+    return (
+      <div className="ml-5 flex flex-wrap items-center gap-1.5 text-[11px] leading-relaxed text-foreground-muted">
+        {change.previousPrevPointLabel ? (
+          <SemanticPlacementChip label="原位置" value={change.previousPrevPointLabel} tone="red" />
+        ) : null}
+        {change.previousDescription ? (
+          <SemanticPlacementChip label="原描述" value={change.previousDescription} tone="red" />
+        ) : null}
+      </div>
+    );
+  }
+
+  const labelChanged =
+    change.changedAspects.includes("label") &&
+    change.previousLabel &&
+    change.previousLabel !== change.label;
+  const descriptionChanged =
+    change.changedAspects.includes("description") &&
+    (change.previousDescription ?? "") !== (change.description ?? "");
+  const orderChanged = change.changedAspects.includes("order");
+
+  return (
+    <div className="ml-5 flex flex-wrap items-center gap-1.5 text-[11px] leading-relaxed text-foreground-muted">
+      {labelChanged ? (
+        <SemanticTransitionChip
+          label="标题"
+          from={change.previousLabel ?? "未命名"}
+          to={change.label}
+          fromTone="red"
+          toTone="emerald"
+        />
+      ) : null}
+      {descriptionChanged ? (
+        <SemanticTransitionChip
+          label="描述"
+          from={change.previousDescription ?? "空"}
+          to={change.description ?? "空"}
+          fromTone="slate"
+          toTone="sky"
+        />
+      ) : null}
+      {orderChanged ? (
+        <SemanticTransitionChip
+          label="顺序"
+          from={change.previousPrevPointLabel ?? "原点"}
+          to={change.prevPointLabel ?? "原点"}
+          fromTone="slate"
+          toTone="sky"
+        />
+      ) : null}
+    </div>
   );
 }
 

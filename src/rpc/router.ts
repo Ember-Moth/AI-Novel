@@ -92,6 +92,7 @@ export const timeline = {
   move: timelineHandlers.move,
   delete: timelineHandlers.deleteMutation,
   update: timelineHandlers.update,
+  revert: timelineHandlers.revert,
 };
 
 export const content = {

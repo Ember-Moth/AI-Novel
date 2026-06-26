@@ -101,3 +101,41 @@ test("getCommitDiff reports no changes for an empty-message-only commit", async 
   expect(diff.hasChanges).toBe(false);
   expect(diff.areas.content.changes).toHaveLength(0);
 });
+
+test("getCommitDiff reports structured timeline changes", async () => {
+  const workspace = await seedProject("diff_timeline_structured");
+  const pointA = await workspaceService.createTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    label: "A",
+    description: "desc-a",
+  });
+  await workspaceService.createCommit({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    message: "base",
+  });
+
+  await workspaceService.updateTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    pointId: pointA.id,
+    label: "A2",
+  });
+  const second = await workspaceService.createCommit({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    message: "timeline",
+  });
+
+  const diff = await workspaceService.getCommitDiff(workspace.projectId, second.id);
+  const change = diff.areas.timeline.changes[0];
+
+  expect(change).toMatchObject({
+    pointId: pointA.id,
+    kind: "modified",
+    label: "A2",
+    previousLabel: "A",
+  });
+  expect(change?.changedAspects).toContain("label");
+});
