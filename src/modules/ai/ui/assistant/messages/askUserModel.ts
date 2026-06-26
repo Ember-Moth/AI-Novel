@@ -9,11 +9,11 @@ function isNonNullable<T>(value: T | null | undefined): value is T {
 }
 
 function getRecordField(payload: unknown, key: string) {
-  if (!payload || typeof payload !== "object") {
+  if (!isRecord(payload)) {
     return null;
   }
 
-  return Reflect.get(payload as Record<string, unknown>, key) ?? null;
+  return payload[key] ?? null;
 }
 
 function getRecordString(payload: unknown, key: string) {
@@ -22,11 +22,11 @@ function getRecordString(payload: unknown, key: string) {
 }
 
 function getToolPayloadField(payload: unknown, key: string) {
-  if (!payload || typeof payload !== "object") {
+  if (!isRecord(payload)) {
     return null;
   }
 
-  return Reflect.get(payload as Record<string, unknown>, key) ?? null;
+  return payload[key] ?? null;
 }
 
 function getToolPayloadString(payload: unknown, key: string) {

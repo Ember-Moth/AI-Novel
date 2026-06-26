@@ -98,33 +98,6 @@ export function buildStructuredAuxChange(
   };
 }
 
-function buildStructuredAuxSource(
-  sourcePath: string,
-): Pick<
-  WorkingTreePathChangeItem,
-  "sourcePath" | "sourceTimelinePointId" | "sourceTimelinePointLabel"
-> {
-  const structured = buildStructuredAuxChange(sourcePath);
-  return {
-    sourcePath: structured.path,
-    sourceTimelinePointId: structured.timelinePointId ?? null,
-    sourceTimelinePointLabel: structured.timelinePointLabel ?? null,
-  };
-}
-
-function readDiffEntrySource(entry: DiffEntry): { kind: "move" | "copy"; path: string } | null {
-  const source = Reflect.get(entry, "source");
-  if (typeof source !== "object" || source == null) {
-    return null;
-  }
-  const kind = Reflect.get(source, "kind");
-  const path = Reflect.get(source, "path");
-  if ((kind !== "move" && kind !== "copy") || typeof path !== "string") {
-    return null;
-  }
-  return { kind, path };
-}
-
 export function diffEntryPathKind(entry: DiffEntry): WorkingTreePathChangeItem["kind"] | null {
   if (entry.kind === "create") return "added";
   if (entry.kind === "remove") return "deleted";
@@ -186,30 +159,13 @@ export function resolveAuxChangeTimelineLabel(
     resolvedChange.timelinePointLabel =
       timelineLabelMap.get(resolvedChange.timelinePointId) ?? resolvedChange.timelinePointId;
   }
-  if (
-    resolvedChange.sourceTimelinePointId &&
-    resolvedChange.sourceTimelinePointId !== ORIGIN_TIMELINE_POINT_ID
-  ) {
-    resolvedChange.sourceTimelinePointLabel =
-      timelineLabelMap.get(resolvedChange.sourceTimelinePointId) ??
-      resolvedChange.sourceTimelinePointId;
-  }
   return resolvedChange;
 }
 
 export function buildStructuredAuxChangeFromDiffEntry(
   entry: DiffEntry,
 ): Omit<WorkingTreePathChangeItem, "kind"> {
-  const structured = buildStructuredAuxChange(entry.path);
-  const source = readDiffEntrySource(entry);
-  if (!source) {
-    return structured;
-  }
-  return {
-    ...structured,
-    sourceKind: source.kind,
-    ...buildStructuredAuxSource(source.path),
-  };
+  return buildStructuredAuxChange(entry.path);
 }
 
 function buildNodeMap(nodes: FlatContentNode[]) {

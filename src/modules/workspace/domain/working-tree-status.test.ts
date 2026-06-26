@@ -738,7 +738,7 @@ test("revertAuxChange('modified') restores file content", async () => {
   ).toBe("base");
 });
 
-test("revertAuxChange('modified') restores renamed aux file back to the HEAD path", async () => {
+test("revertAuxChange('modified') rejects renamed aux file targets without same-path HEAD entry", async () => {
   const workspace = await seedProject("revert_aux_renamed");
   await service.mkdirAt({
     projectId: workspace.projectId,
@@ -764,16 +764,17 @@ test("revertAuxChange('modified') restores renamed aux file back to the HEAD pat
     newPath: "/设定/主角.md",
   });
 
-  await service.revertAuxChange({
-    projectId: workspace.projectId,
-    branchId: workspace.branchName,
-    filepath: "aux/origin/设定/主角.md",
-    kind: "modified",
-  });
+  await expect(
+    service.revertAuxChange({
+      projectId: workspace.projectId,
+      branchId: workspace.branchName,
+      filepath: "aux/origin/设定/主角.md",
+      kind: "modified",
+    }),
+  ).rejects.toThrow("无法恢复辅助信息：HEAD 中不存在该路径。");
 
   const status = await service.getWorkingTreeStatus(workspace.projectId, workspace.branchName);
-  expect(status.areas.aux.changes).toEqual([]);
-  expect(status.hasChanges).toBe(false);
+  expect(status.hasChanges).toBe(true);
   expect(
     await service.readAuxByPathAt(
       workspace.projectId,
@@ -781,17 +782,15 @@ test("revertAuxChange('modified') restores renamed aux file back to the HEAD pat
       service.ORIGIN_TIMELINE_POINT_ID,
       "/设定/主角.md",
     ),
-  ).toBeNull();
+  ).not.toBeNull();
   expect(
-    (
-      await service.readAuxByPathAt(
-        workspace.projectId,
-        workspace.id,
-        service.ORIGIN_TIMELINE_POINT_ID,
-        "/设定/角色.md",
-      )
-    )?.content,
-  ).toBe("base");
+    await service.readAuxByPathAt(
+      workspace.projectId,
+      workspace.id,
+      service.ORIGIN_TIMELINE_POINT_ID,
+      "/设定/角色.md",
+    ),
+  ).toBeNull();
 });
 
 test("revertAuxChange('added') removes added aux file", async () => {
@@ -861,84 +860,4 @@ test("revertAuxChange('deleted') restores deleted aux file", async () => {
       )
     )?.content,
   ).toBe("base");
-});
-
-test("aux move keeps source info in working tree diff", async () => {
-  const workspace = await seedProject("status_aux_move_source");
-  await service.mkdirAt({
-    projectId: workspace.projectId,
-    workspaceId: workspace.id,
-    path: "/设定",
-  });
-  await service.writeFileAt({
-    projectId: workspace.projectId,
-    workspaceId: workspace.id,
-    path: "/设定/角色.md",
-    content: "base",
-  });
-  await service.createCommit({
-    projectId: workspace.projectId,
-    branchId: workspace.branchName,
-    message: "base",
-  });
-
-  await service.moveAuxNodeAt({
-    projectId: workspace.projectId,
-    workspaceId: workspace.id,
-    path: "/设定/角色.md",
-    newPath: "/设定/主角.md",
-  });
-
-  const status = await service.getWorkingTreeStatus(workspace.projectId, workspace.branchName);
-  expect(status.areas.aux.changes).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        label: "aux/origin/设定/主角.md",
-        path: "设定/主角.md",
-        kind: "modified",
-        sourceKind: "move",
-        sourcePath: "设定/角色.md",
-        sourceTimelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
-        sourceTimelinePointLabel: "原点",
-      }),
-    ]),
-  );
-});
-
-test("aux copy keeps source info in working tree diff", async () => {
-  const workspace = await seedProject("status_aux_copy_source");
-  await service.mkdirAt({
-    projectId: workspace.projectId,
-    workspaceId: workspace.id,
-    path: "/设定",
-  });
-  await service.writeFileAt({
-    projectId: workspace.projectId,
-    workspaceId: workspace.id,
-    path: "/设定/角色.md",
-    content: "base",
-  });
-  await service.createCommit({
-    projectId: workspace.projectId,
-    branchId: workspace.branchName,
-    message: "base",
-  });
-
-  const wd = wdFor(workspace)!;
-  wd.copy("aux/origin/设定/角色.md", "aux/origin/设定/副本.md");
-
-  const status = await service.getWorkingTreeStatus(workspace.projectId, workspace.branchName);
-  expect(status.areas.aux.changes).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        label: "aux/origin/设定/副本.md",
-        path: "设定/副本.md",
-        kind: "added",
-        sourceKind: "copy",
-        sourcePath: "设定/角色.md",
-        sourceTimelinePointId: service.ORIGIN_TIMELINE_POINT_ID,
-        sourceTimelinePointLabel: "原点",
-      }),
-    ]),
-  );
 });

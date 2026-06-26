@@ -14,14 +14,13 @@ function normalizeId(value: unknown): string {
 export function getAiAssistantModelSelection(): AiAssistantModelSelection | null {
   const storedValue = getGlobalConfig<unknown>(AI_ASSISTANT_MODEL_SELECTION_KEY, null);
 
-  if (!storedValue || typeof storedValue !== "object") {
+  if (!storedValue || typeof storedValue !== "object" || Array.isArray(storedValue)) {
     return null;
   }
 
-  const connectionId = normalizeId(
-    Reflect.get(storedValue as Record<string, unknown>, "connectionId"),
-  );
-  const modelId = normalizeId(Reflect.get(storedValue as Record<string, unknown>, "modelId"));
+  const record = storedValue as Record<string, unknown>;
+  const connectionId = normalizeId(record.connectionId);
+  const modelId = normalizeId(record.modelId);
 
   if (!connectionId || !modelId) {
     return null;

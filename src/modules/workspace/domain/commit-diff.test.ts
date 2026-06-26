@@ -267,8 +267,4 @@ test("getCommitDiff does not infer aux source info when tree diff lacks it", asy
   const targetChange = diff.areas.aux.changes.find((change) => change.path === "设定/主角.md");
 
   expect(targetChange?.kind).toBe("added");
-  expect(targetChange?.sourceKind).toBeUndefined();
-  expect(targetChange?.sourcePath).toBeUndefined();
-  expect(targetChange?.sourceTimelinePointId).toBeUndefined();
-  expect(targetChange?.sourceTimelinePointLabel).toBeUndefined();
 });

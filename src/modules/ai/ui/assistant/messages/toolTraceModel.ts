@@ -15,20 +15,24 @@ export interface AssistantToolTraceEntry {
   streamingRequestPayload: unknown | null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 function getToolPayloadField(payload: unknown, key: string) {
-  if (!payload || typeof payload !== "object") {
+  if (!isRecord(payload)) {
     return null;
   }
 
-  return Reflect.get(payload as Record<string, unknown>, key) ?? null;
+  return payload[key] ?? null;
 }
 
 function getRecordField(payload: unknown, key: string) {
-  if (!payload || typeof payload !== "object") {
+  if (!isRecord(payload)) {
     return null;
   }
 
-  return Reflect.get(payload as Record<string, unknown>, key) ?? null;
+  return payload[key] ?? null;
 }
 
 function getRecordString(payload: unknown, key: string) {
@@ -281,14 +285,14 @@ function getToolResultStatus(payload: unknown, partKind: "tool-result" | "tool-e
   }
 
   const output = getToolPayloadField(payload, "output");
-  if (output && typeof output === "object") {
-    if (Reflect.get(output as Record<string, unknown>, "ok") === false) {
+  if (isRecord(output)) {
+    if (output.ok === false) {
       return "error" as const;
     }
 
-    const nestedValue = Reflect.get(output as Record<string, unknown>, "value");
-    if (nestedValue && typeof nestedValue === "object") {
-      if (Reflect.get(nestedValue as Record<string, unknown>, "ok") === false) {
+    const nestedValue = output.value;
+    if (isRecord(nestedValue)) {
+      if (nestedValue.ok === false) {
         return "error" as const;
       }
     }

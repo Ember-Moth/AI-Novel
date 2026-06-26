@@ -101,6 +101,10 @@ function jsonError(message: string, status = 400) {
   return Response.json({ error: message }, { status });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 function normalizeProjectId(projectId: unknown) {
   const normalized = typeof projectId === "string" ? projectId.trim() : "";
   invariant(normalized.length > 0, "projectId required");
@@ -114,12 +118,12 @@ function normalizeChatId(chatId: unknown) {
 }
 
 function unwrapToolOutput(output: unknown) {
-  if (!output || typeof output !== "object") {
+  if (!isRecord(output)) {
     return null;
   }
 
-  const value = Reflect.get(output as Record<string, unknown>, "value");
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : output;
+  const value = output.value;
+  return isRecord(value) ? value : output;
 }
 
 async function extractWorkspaceRefreshRequestedEventFromToolResult({
@@ -145,19 +149,18 @@ async function extractWorkspaceRefreshRequestedEventFromToolResult({
   }
 
   const unwrapped = unwrapToolOutput(output);
-  if (!unwrapped || Reflect.get(unwrapped, "ok") !== true) {
+  if (!unwrapped || unwrapped.ok !== true) {
     return null;
   }
 
-  const data = Reflect.get(unwrapped, "data");
-  if (!data || typeof data !== "object") {
+  const data = unwrapped.data;
+  if (!isRecord(data)) {
     return null;
   }
 
-  const record = data as Record<string, unknown>;
-  const nodeId = Reflect.get(record, "nodeId");
-  const auxPathValue = Reflect.get(record, "path");
-  const timelinePointId = Reflect.get(record, "timelinePointId");
+  const nodeId = data.nodeId;
+  const auxPathValue = data.path;
+  const timelinePointId = data.timelinePointId;
   let areas: readonly WorkspaceRefreshArea[];
   let contentNodeId: string | null | undefined;
   let auxPath: string | null | undefined;
@@ -218,22 +221,21 @@ async function extractTimelineSelectionUpdatedEventFromToolResult({
   }
 
   const unwrapped = unwrapToolOutput(output);
-  if (!unwrapped || Reflect.get(unwrapped, "ok") !== true) {
+  if (!unwrapped || unwrapped.ok !== true) {
     return null;
   }
 
-  const data = Reflect.get(unwrapped, "data");
-  if (!data || typeof data !== "object") {
+  const data = unwrapped.data;
+  if (!isRecord(data)) {
     return null;
   }
 
-  const record = data as Record<string, unknown>;
-  const timelinePointId = Reflect.get(record, "timelinePointId");
+  const timelinePointId = data.timelinePointId;
   if (typeof timelinePointId !== "string" || timelinePointId.trim().length === 0) {
     return null;
   }
 
-  const timelineLabel = Reflect.get(record, "timelineLabel");
+  const timelineLabel = data.timelineLabel;
   return {
     type: "timeline-selection-updated",
     workspaceId: workspace.id,
