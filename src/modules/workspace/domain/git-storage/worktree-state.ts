@@ -16,6 +16,10 @@ const INDEX_FILE = "index.jsonl";
 export const AUX_ORIGIN_DIR = "aux/origin";
 export const AUX_TIMELINE_DIR = "aux/timeline";
 
+function isDirectoryPath(workdir: VirtualWorkdir, path: string) {
+  return workdir.stat(path)?.kind === "tree";
+}
+
 /** 每行一个节点的 index.jsonl 行格式 */
 interface IndexRow {
   id: string;
@@ -268,7 +272,7 @@ export function readWorktreeStateFromWorkdir(workdir: VirtualWorkdir): WorktreeS
   const rows: IndexRow[] = indexContent ? parseJsonl<IndexRow>(indexContent) : [];
 
   const idToBody = new Map<string, string>();
-  if (workdir.exists("manuscript")) {
+  if (isDirectoryPath(workdir, MANUSCRIPT_DIR)) {
     for (const entry of workdir.readdir("manuscript")) {
       if (entry.kind === "blob" && entry.name.endsWith(".md") && entry.name !== INDEX_FILE) {
         const id = entry.name.slice(0, -3);
@@ -312,8 +316,12 @@ export function writeWorktreeStateToWorkdir(workdir: VirtualWorkdir, state: Work
   workdir.writeFile("timeline.jsonl", Buffer.from(stringifyJsonl(state.timeline), "utf8"));
 
   // write manuscript/<id>.md
-  if (!workdir.exists("manuscript")) {
-    workdir.mkdir("manuscript");
+  const manuscriptStat = workdir.stat(MANUSCRIPT_DIR);
+  if (manuscriptStat && manuscriptStat.kind !== "tree") {
+    workdir.delete(MANUSCRIPT_DIR, { force: true });
+  }
+  if (!isDirectoryPath(workdir, MANUSCRIPT_DIR)) {
+    workdir.mkdir(MANUSCRIPT_DIR);
   }
   const declaredIds = new Set<string>();
   for (const node of flattenContent(state.content)) {

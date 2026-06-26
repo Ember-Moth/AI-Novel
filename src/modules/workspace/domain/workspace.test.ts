@@ -1867,6 +1867,28 @@ test("timeline point label can be updated", async () => {
   expect(updated?.label).toBe("After update");
 });
 
+test("creating a timeline point recovers when manuscript path was accidentally stored as a file", async () => {
+  const workspace = await seedProject("project_timeline_recovers_manuscript_dir");
+  const wd = wdFor(workspace);
+  expect(wd).toBeDefined();
+
+  wd!.delete("manuscript", { force: true });
+  wd!.writeFile("manuscript", Buffer.from("broken", "utf8"));
+
+  const point = await service.createTimelinePoint({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    afterPointId: service.ORIGIN_TIMELINE_POINT_ID,
+    label: "Recovered",
+  });
+
+  expect(point.label).toBe("Recovered");
+  expect(wd!.stat("manuscript")?.kind).toBe("tree");
+  expect(await service.listTimelinePoints(workspace.projectId, workspace.id)).toContainEqual(
+    expect.objectContaining({ id: point.id, label: "Recovered" }),
+  );
+});
+
 test("implicit origin timeline point cannot be updated", async () => {
   const workspace = await seedProject("project_timeline_origin_guard");
 
