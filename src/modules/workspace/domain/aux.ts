@@ -17,7 +17,7 @@ import type {
 import { getWorkspace, touchWorkspaceMeta } from "./lifecycle";
 import { getBranch, getBranchHeadCommitId } from "./branches";
 import { getWorkspaceForBranchId } from "./lifecycle";
-import { readFilesAtCommit } from "./git-storage/git-store";
+import { readFilesAtCommit, readWorkdirDiff } from "./git-storage/git-store";
 import { getBranchMapping, getWorkdirForBranch } from "./git-storage/git-store";
 import type { VirtualWorkdir } from "nano-git/workdir/core";
 import {
@@ -128,6 +128,24 @@ function auxWorkdirRelPath(pointId: string | null, auxPath: string): string {
   if (auxPath === "/") return base;
   const trimmed = auxPath.startsWith("/") ? auxPath.slice(1) : auxPath;
   return `${base}/${trimmed}`;
+}
+
+function auxPathFromWorkdirStoragePath(storagePath: string) {
+  const originMatch = storagePath.match(/^aux\/origin(?:\/(.*))?$/);
+  if (originMatch) {
+    return {
+      pointId: null,
+      auxPath: originMatch[1] ? `/${originMatch[1]}` : "/",
+    };
+  }
+  const timelineMatch = storagePath.match(/^aux\/timeline\/([^/]+)(?:\/(.*))?$/);
+  if (timelineMatch) {
+    return {
+      pointId: timelineMatch[1]!,
+      auxPath: timelineMatch[2] ? `/${timelineMatch[2]}` : "/",
+    };
+  }
+  return null;
 }
 
 /** 确保 VirtualWorkdir 内路径的所有祖先目录存在 */
@@ -823,6 +841,23 @@ export async function revertAuxChange(input: {
     : input.filepath;
   invariant(normalizedStoragePath.startsWith("aux/"), "仅支持撤回辅助信息路径。");
 
+  const moveSource = (() => {
+    const diffEntry = readWorkdirDiff(wd).find((entry) => entry.path === normalizedStoragePath);
+    if (!diffEntry) {
+      return null;
+    }
+    const source = Reflect.get(diffEntry, "source");
+    if (typeof source !== "object" || source == null) {
+      return null;
+    }
+    const kind = Reflect.get(source, "kind");
+    const path = Reflect.get(source, "path");
+    if (kind !== "move" || typeof path !== "string") {
+      return null;
+    }
+    return path;
+  })();
+
   const headFiles = headCommitId
     ? readFilesAtCommit({ projectId: input.projectId, commitId: headCommitId as SHA1 })
     : {};
@@ -843,8 +878,20 @@ export async function revertAuxChange(input: {
     return;
   }
 
+  if (input.kind === "modified" && moveSource) {
+    const sourceInfo = auxPathFromWorkdirStoragePath(moveSource);
+    invariant(sourceInfo, "无法恢复辅助信息：无法解析移动来源路径。");
+    const headSourceContent = headFiles[moveSource];
+    invariant(headSourceContent !== undefined, "无法恢复辅助信息：HEAD 中不存在原路径。");
+    wd.delete(normalizedStoragePath, { force: true });
+    ensureWorkdirDir(wd, posix.dirname(moveSource));
+    wd.writeFile(moveSource, Buffer.from(headSourceContent, "utf8"));
+    await touchWorkspace(workspace.projectId, workspace.id);
+    return;
+  }
+
   invariant(headContent !== undefined, "无法恢复辅助信息：HEAD 中不存在该路径。");
   invariant(currentExists, "无法恢复辅助信息：当前工作区不存在该路径。");
-  wd.writeFile(normalizedStoragePath, Buffer.from(headContent, "utf8"));
+  wd.revert(normalizedStoragePath);
   await touchWorkspace(workspace.projectId, workspace.id);
 }
