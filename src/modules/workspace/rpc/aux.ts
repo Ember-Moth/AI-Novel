@@ -11,6 +11,7 @@ import {
   moveAuxNodeAt,
   ORIGIN_TIMELINE_POINT_ID,
   readAuxByPathAt,
+  revertAuxChange,
   restoreDeletedAuxNodeAt,
   retargetAuxSymlinkAt,
   writeFileAt,
@@ -88,6 +89,14 @@ export const restoreDeleted = mutation<
   invalidate: (input) => [rpcTags.auxWorkspace(input.workspaceId)],
   handler: async (input) => await restoreDeletedAuxNodeAt(input),
 });
+
+export const revert = mutation<Parameters<typeof revertAuxChange>[0], void, RpcTagList>(
+  async (input, ctx) => {
+    await revertAuxChange(input);
+    const workspaceId = input.branchId;
+    ctx.invalidate(rpcTags.auxWorkspace(workspaceId), rpcTags.commitHistory(input.branchId));
+  },
+);
 
 export const readByPath = query<
   {

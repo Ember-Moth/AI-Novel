@@ -112,6 +112,7 @@ export const aux = {
   move: auxHandlers.move,
   retargetSymlink: auxHandlers.retargetSymlink,
   delete: auxHandlers.deleteMutation,
+  revert: auxHandlers.revert,
   restoreDeleted: auxHandlers.restoreDeleted,
   readByPath: auxHandlers.readByPath,
   listDir: auxHandlers.listDir,

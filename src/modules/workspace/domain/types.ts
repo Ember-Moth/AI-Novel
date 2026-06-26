@@ -157,6 +157,7 @@ export interface WorkingTreePathChangeItem {
   timelinePointId?: string | typeof ORIGIN_TIMELINE_POINT_ID | null;
   timelinePointLabel?: string | null;
   isWhiteout?: boolean;
+  revertable?: boolean;
 }
 
 export interface WorkingTreeContentChangeItem {

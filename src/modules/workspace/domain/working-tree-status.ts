@@ -62,6 +62,7 @@ export function buildStructuredAuxChange(
       timelinePointId: ORIGIN_TIMELINE_POINT_ID,
       timelinePointLabel: "原点",
       isWhiteout: basename.startsWith(".wh."),
+      revertable: true,
     };
   }
 
@@ -75,6 +76,7 @@ export function buildStructuredAuxChange(
       timelinePointId: timelineMatch[1]!,
       timelinePointLabel: timelineMatch[1]!,
       isWhiteout: basename.startsWith(".wh."),
+      revertable: true,
     };
   }
 
@@ -85,6 +87,7 @@ export function buildStructuredAuxChange(
     timelinePointId: null,
     timelinePointLabel: null,
     isWhiteout: basename.startsWith(".wh."),
+    revertable: true,
   };
 }
 

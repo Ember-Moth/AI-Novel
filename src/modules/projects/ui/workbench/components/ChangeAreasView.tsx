@@ -27,6 +27,7 @@ export function ChangeAreasView({
   areas,
   onRevertContentChange,
   onRevertTimelineChange,
+  onRevertAuxChange,
 }: {
   areas: ChangeAreas;
   onRevertContentChange?: (
@@ -36,6 +37,10 @@ export function ChangeAreasView({
   onRevertTimelineChange?: (
     pointId: string,
     kind: ChangeAreas["timeline"]["changes"][number]["kind"],
+  ) => void;
+  onRevertAuxChange?: (
+    filepath: string,
+    kind: ChangeAreas["aux"]["changes"][number]["kind"],
   ) => void;
 }) {
   return (
@@ -56,7 +61,7 @@ export function ChangeAreasView({
                 ? renderContentArea(areas.content.changes, onRevertContentChange)
                 : areaKey === "timeline"
                   ? renderTimelineArea(areas.timeline.changes, onRevertTimelineChange)
-                  : renderPathArea(areas.aux.changes, true)}
+                  : renderPathArea(areas.aux.changes, true, onRevertAuxChange)}
             </div>
           );
         },
@@ -129,7 +134,14 @@ function renderTimelineArea(
   );
 }
 
-function renderPathArea(changes: ChangeAreas["aux"]["changes"], emphasizeTimeline: boolean) {
+function renderPathArea(
+  changes: ChangeAreas["aux"]["changes"],
+  emphasizeTimeline: boolean,
+  onRevertAuxChange?: (
+    filepath: string,
+    kind: ChangeAreas["aux"]["changes"][number]["kind"],
+  ) => void,
+) {
   return (
     <ul className="mt-1 space-y-1">
       {changes.map((change) => (
@@ -137,7 +149,12 @@ function renderPathArea(changes: ChangeAreas["aux"]["changes"], emphasizeTimelin
           key={`${change.kind}-${change.label}`}
           className="flex items-start gap-2 text-sm text-foreground"
         >
-          <WorkingTreeChangeBadge kind={change.kind} />
+          <WorkingTreeChangeBadge
+            kind={change.kind}
+            itemId={change.label}
+            revertable={change.revertable}
+            onRevert={onRevertAuxChange}
+          />
           <WorkingTreeChangeLabel change={change} emphasizeTimeline={emphasizeTimeline} />
         </li>
       ))}

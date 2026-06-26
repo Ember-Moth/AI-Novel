@@ -1,4 +1,5 @@
 import posix from "node:path/posix";
+import type { SHA1 } from "nano-git";
 
 import { ORIGIN_TIMELINE_POINT_ID } from "@/modules/workspace/domain/constants";
 import { invariant } from "@/shared/lib/domain";
@@ -14,6 +15,9 @@ import type {
   TimelinePointRef,
 } from "./types";
 import { getWorkspace, touchWorkspaceMeta } from "./lifecycle";
+import { getBranch, getBranchHeadCommitId } from "./branches";
+import { getWorkspaceForBranchId } from "./lifecycle";
+import { readFilesAtCommit } from "./git-storage/git-store";
 import { getBranchMapping, getWorkdirForBranch } from "./git-storage/git-store";
 import type { VirtualWorkdir } from "nano-git/workdir/core";
 import {
@@ -798,4 +802,49 @@ export async function summarizeAuxTimelineChangesAt(
     deleted: changes.filter((change) => change.kind === "deleted").length,
     total: changes.length,
   };
+}
+
+export async function revertAuxChange(input: {
+  projectId: string;
+  branchId: string;
+  filepath: string;
+  kind: "added" | "deleted" | "modified";
+}) {
+  const branch = getBranch(input.projectId, input.branchId);
+  const headCommitId = getBranchHeadCommitId(input.projectId, branch.name);
+  const workspace = getWorkspaceForBranchId(input.projectId, branch.name);
+  invariant(workspace, "该分支没有关联的工作区。");
+
+  const wd = resolveWorkdir(workspace.projectId, workspace.id);
+  invariant(wd, "工作目录未初始化");
+
+  const normalizedStoragePath = input.filepath.startsWith("novel-evolver/")
+    ? input.filepath.slice("novel-evolver/".length)
+    : input.filepath;
+  invariant(normalizedStoragePath.startsWith("aux/"), "仅支持撤回辅助信息路径。");
+
+  const headFiles = headCommitId
+    ? readFilesAtCommit({ projectId: input.projectId, commitId: headCommitId as SHA1 })
+    : {};
+  const headContent = headFiles[input.filepath] ?? headFiles[normalizedStoragePath];
+  const currentExists = wd.exists(normalizedStoragePath);
+
+  if (input.kind === "added") {
+    wd.delete(normalizedStoragePath, { force: true });
+    await touchWorkspace(workspace.projectId, workspace.id);
+    return;
+  }
+
+  if (input.kind === "deleted") {
+    invariant(headContent !== undefined, "无法恢复辅助信息：HEAD 中不存在该路径。");
+    ensureWorkdirDir(wd, posix.dirname(normalizedStoragePath));
+    wd.writeFile(normalizedStoragePath, Buffer.from(headContent, "utf8"));
+    await touchWorkspace(workspace.projectId, workspace.id);
+    return;
+  }
+
+  invariant(headContent !== undefined, "无法恢复辅助信息：HEAD 中不存在该路径。");
+  invariant(currentExists, "无法恢复辅助信息：当前工作区不存在该路径。");
+  wd.writeFile(normalizedStoragePath, Buffer.from(headContent, "utf8"));
+  await touchWorkspace(workspace.projectId, workspace.id);
 }

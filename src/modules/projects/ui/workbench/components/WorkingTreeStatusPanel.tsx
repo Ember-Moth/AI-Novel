@@ -15,6 +15,7 @@ export function WorkingTreeStatusPanel({
   onDiscardChanges,
   onRevertContentChange,
   onRevertTimelineChange,
+  onRevertAuxChange,
 }: {
   status: WorkingTreeStatus | null;
   loading: boolean;
@@ -30,6 +31,10 @@ export function WorkingTreeStatusPanel({
   onRevertTimelineChange?: (
     pointId: string,
     kind: ChangeAreas["timeline"]["changes"][number]["kind"],
+  ) => void;
+  onRevertAuxChange?: (
+    filepath: string,
+    kind: ChangeAreas["aux"]["changes"][number]["kind"],
   ) => void;
 }) {
   return (
@@ -77,6 +82,7 @@ export function WorkingTreeStatusPanel({
             areas={status.areas}
             onRevertContentChange={onRevertContentChange}
             onRevertTimelineChange={onRevertTimelineChange}
+            onRevertAuxChange={onRevertAuxChange}
           />
         )}
       </div>

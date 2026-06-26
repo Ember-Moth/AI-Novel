@@ -640,3 +640,115 @@ test("deleted node within a deleted parent reports revertable as false", async (
   expect(childChange?.kind).toBe("deleted");
   expect(childChange?.revertable).toBe(false);
 });
+
+test("revertAuxChange('modified') restores file content", async () => {
+  const workspace = await seedProject("revert_aux_modified");
+  await service.writeFileAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    path: "/lore.md",
+    content: "base",
+  });
+  await service.createCommit({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    message: "base",
+  });
+
+  await service.writeFileAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    path: "/lore.md",
+    content: "changed",
+  });
+
+  await service.revertAuxChange({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    filepath: "aux/origin/lore.md",
+    kind: "modified",
+  });
+
+  const status = await service.getWorkingTreeStatus(workspace.projectId, workspace.branchName);
+  expect(status.areas.aux.changes).toEqual([]);
+  expect(status.hasChanges).toBe(false);
+  expect(
+    (
+      await service.readAuxByPathAt(
+        workspace.projectId,
+        workspace.id,
+        service.ORIGIN_TIMELINE_POINT_ID,
+        "/lore.md",
+      )
+    )?.content,
+  ).toBe("base");
+});
+
+test("revertAuxChange('added') removes added aux file", async () => {
+  const workspace = await seedProject("revert_aux_added");
+  await service.createCommit({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    message: "base",
+  });
+
+  await service.writeFileAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    path: "/draft.md",
+    content: "draft",
+  });
+
+  await service.revertAuxChange({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    filepath: "aux/origin/draft.md",
+    kind: "added",
+  });
+
+  const status = await service.getWorkingTreeStatus(workspace.projectId, workspace.branchName);
+  expect(status.areas.aux.changes).toEqual([]);
+  expect(status.hasChanges).toBe(false);
+});
+
+test("revertAuxChange('deleted') restores deleted aux file", async () => {
+  const workspace = await seedProject("revert_aux_deleted");
+  await service.writeFileAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    path: "/notes.md",
+    content: "base",
+  });
+  await service.createCommit({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    message: "base",
+  });
+
+  await service.deleteAuxNodeAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    path: "/notes.md",
+  });
+
+  await service.revertAuxChange({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    filepath: "aux/origin/notes.md",
+    kind: "deleted",
+  });
+
+  const status = await service.getWorkingTreeStatus(workspace.projectId, workspace.branchName);
+  expect(status.areas.aux.changes).toEqual([]);
+  expect(status.hasChanges).toBe(false);
+  expect(
+    (
+      await service.readAuxByPathAt(
+        workspace.projectId,
+        workspace.id,
+        service.ORIGIN_TIMELINE_POINT_ID,
+        "/notes.md",
+      )
+    )?.content,
+  ).toBe("base");
+});

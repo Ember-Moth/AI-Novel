@@ -12,6 +12,7 @@ export function useRevertContentChangeFeature() {
   const model = useProjectWorkbenchViewModel();
   const revertContentChange = rpc.useMutation("content.revert");
   const revertTimelineChange = rpc.useMutation("timeline.revert");
+  const revertAuxChange = rpc.useMutation("aux.revert");
 
   const handleRevertContentChange = useCallback(
     async (nodeId: string, kind: "added" | "deleted" | "modified") => {
@@ -65,10 +66,42 @@ export function useRevertContentChangeFeature() {
     [model.selectedBranch, projectId, revertTimelineChange],
   );
 
+  const handleRevertAuxChange = useCallback(
+    async (filepath: string, kind: "added" | "deleted" | "modified") => {
+      if (!model.selectedBranch) {
+        return;
+      }
+
+      const confirmMessages: Record<string, string> = {
+        added: "确认撤回该新增辅助信息？将从当前工作区删除该路径。",
+        deleted: "确认恢复该已删除辅助信息？将从 HEAD 恢复该路径。",
+        modified: "确认恢复该辅助信息的修改？当前内容将恢复至 HEAD 状态。",
+      };
+
+      if (!confirm(confirmMessages[kind])) {
+        return;
+      }
+
+      await revertAuxChange.mutate({
+        projectId,
+        branchId: model.selectedBranch.name,
+        filepath,
+        kind,
+      });
+    },
+    [model.selectedBranch, projectId, revertAuxChange],
+  );
+
   return {
     handleRevertContentChange,
     handleRevertTimelineChange,
-    isReverting: revertContentChange.isPending || revertTimelineChange.isPending,
-    revertError: revertContentChange.error?.message ?? revertTimelineChange.error?.message ?? null,
+    handleRevertAuxChange,
+    isReverting:
+      revertContentChange.isPending || revertTimelineChange.isPending || revertAuxChange.isPending,
+    revertError:
+      revertContentChange.error?.message ??
+      revertTimelineChange.error?.message ??
+      revertAuxChange.error?.message ??
+      null,
   };
 }
