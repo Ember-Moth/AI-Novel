@@ -10,7 +10,6 @@ import {
   didTimelinePathChange,
   compareTimelineStates,
   diffEntryPathKind,
-  isFileLikeDiffEntry,
   resolveAuxChangeTimelineLabel,
   shouldIgnoreAuxDiffPath,
 } from "./working-tree-status";
@@ -68,7 +67,6 @@ export async function getCommitDiff(projectId: string, commitId: string): Promis
 
   for (const entry of pathDiff) {
     const filepath = entry.path;
-    if (!isFileLikeDiffEntry(entry)) continue;
     if (!filepath.startsWith("aux/") && !filepath.startsWith("novel-evolver/aux")) {
       continue;
     }
@@ -79,8 +77,12 @@ export async function getCommitDiff(projectId: string, commitId: string): Promis
     if (!kind) {
       continue;
     }
+    const structuredChange = buildStructuredAuxChange(filepath);
+    if (structuredChange.path.length === 0) {
+      continue;
+    }
     areas.aux.changes.push({
-      ...resolveAuxChangeTimelineLabel(buildStructuredAuxChange(filepath), timelinePointNameMap),
+      ...resolveAuxChangeTimelineLabel(structuredChange, timelinePointNameMap),
       kind,
     });
   }

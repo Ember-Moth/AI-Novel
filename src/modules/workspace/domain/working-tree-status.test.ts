@@ -207,6 +207,14 @@ test("content, timeline and aux edits appear in the diff summary", async () => {
   expect(status.areas.aux.changes).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
+        label: `aux/timeline/${introPoint.id}/notes`,
+        path: "notes",
+        timelinePointId: introPoint.id,
+        timelinePointLabel: "Intro",
+        isWhiteout: false,
+        kind: "added",
+      }),
+      expect.objectContaining({
         label: "aux/origin/lore/world.md",
         path: "lore/world.md",
         timelinePointLabel: "原点",

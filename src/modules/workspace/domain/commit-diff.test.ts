@@ -197,3 +197,37 @@ test("getCommitDiff structures aux paths and resolves timeline labels", async ()
     ]),
   );
 });
+
+test("getCommitDiff includes aux directory changes", async () => {
+  const workspace = await seedProject("diff_aux_directory_changes");
+  await workspaceService.createCommit({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    message: "base",
+  });
+
+  await workspaceService.mkdirAt({
+    projectId: workspace.projectId,
+    workspaceId: workspace.id,
+    path: "/设定",
+  });
+  const second = await workspaceService.createCommit({
+    projectId: workspace.projectId,
+    branchId: workspace.branchName,
+    message: "add aux dir",
+  });
+
+  const diff = await workspaceService.getCommitDiff(workspace.projectId, second.id);
+
+  expect(diff.areas.aux.changes).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        label: "aux/origin/设定",
+        path: "设定",
+        timelinePointLabel: "原点",
+        isWhiteout: false,
+        kind: "added",
+      }),
+    ]),
+  );
+});

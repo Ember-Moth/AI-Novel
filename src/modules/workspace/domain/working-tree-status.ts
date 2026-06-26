@@ -46,7 +46,12 @@ function normalizeAuxStoragePath(filepath: string) {
 
 export function shouldIgnoreAuxDiffPath(filepath: string) {
   const normalizedPath = normalizeAuxStoragePath(filepath);
-  return normalizedPath === "aux/origin/.gitkeep" || normalizedPath.endsWith("/.gitkeep");
+  return (
+    normalizedPath === "aux/origin/.gitkeep" ||
+    normalizedPath.endsWith("/.gitkeep") ||
+    normalizedPath === "aux/origin" ||
+    normalizedPath === "aux/timeline"
+  );
 }
 
 export function buildStructuredAuxChange(
@@ -765,15 +770,16 @@ async function getWorkingTreeStatusFromWorkdir(
 
   for (const entry of pathDiff) {
     const filepath = entry.path;
-    if (!isFileLikeDiffEntry(entry)) continue;
     const areaKey = areaForPath(filepath);
     if (areaKey === "content") continue;
     if (areaKey === "timeline") continue;
     if (shouldIgnoreAuxDiffPath(filepath)) continue;
     const kind = diffEntryPathKind(entry);
     if (!kind) continue;
+    const structuredChange = buildStructuredAuxChange(filepath);
+    if (structuredChange.path.length === 0) continue;
     areas[areaKey].changes.push({
-      ...resolveAuxChangeTimelineLabel(buildStructuredAuxChange(filepath), timelinePointNameMap),
+      ...resolveAuxChangeTimelineLabel(structuredChange, timelinePointNameMap),
       kind,
     });
   }
