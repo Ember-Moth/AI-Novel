@@ -14,7 +14,7 @@ export function ProjectWorkbenchMain() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden">
       <PageHeader
         icon="icon-[material-symbols--folder-open]"
         title={project.name}
@@ -29,7 +29,7 @@ export function ProjectWorkbenchMain() {
         }
       />
 
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         <ProjectBranchDetailPanel />
       </div>
     </div>

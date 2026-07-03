@@ -42,13 +42,13 @@ export function PageHeader({
   trailing?: ReactNode;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-3 border-b border-border bg-title-bar-background px-4 py-2">
+    <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-title-bar-background px-4 py-2">
       <span className={`${icon} text-xl text-icon-folder`} />
-      <div className="min-w-0">
-        <h1 className="text-[14px] font-semibold text-foreground">{title}</h1>
-        <p className="text-[11px] text-foreground-muted">{subtitle}</p>
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate text-[14px] font-semibold text-foreground">{title}</h1>
+        <p className="truncate text-[11px] text-foreground-muted">{subtitle}</p>
       </div>
-      {trailing ? <div className="ml-auto">{trailing}</div> : null}
+      {trailing ? <div className="ml-auto max-w-full min-w-0">{trailing}</div> : null}
     </div>
   );
 }
