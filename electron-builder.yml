@@ -30,9 +30,7 @@ mac:
 
 win:
     target:
-        - nsis
+        - portable
+        - zip
     icon: build/icon.ico
-
-nsis:
-    oneClick: false
-    allowToChangeInstallationDirectory: true
+    signAndEditExecutable: false
